@@ -1,49 +1,52 @@
 # Qollab
 
-Wenn mehrere Personen denselben Obsidian-Vault über OneDrive, Dropbox oder einen anderen
-Sync-Dienst teilen, entstehen bei gleichzeitigen Edits Konflikt-Kopien:
+Du kennst das: Du und eine Kollegin arbeitet im selben Obsidian-Vault über OneDrive.
+Ihr bearbeitet gleichzeitig dieselbe Note — und am nächsten Morgen findet ihr das:
 
 ```
-Meine-Note (Marias conflicted copy 2026-05-18).md
+Meetingprotokoll (Marias conflicted copy 2026-05-18).md
 ```
 
-**Qollab löst das automatisch.** Beide Änderungen bleiben erhalten, keine manuelle Arbeit.
+Jetzt müsst ihr manuell schauen was die andere geschrieben hat und die Änderungen zusammenführen.
 
-## Wie es funktioniert
+**Qollab macht das automatisch.** Beide Änderungen bleiben erhalten.
+Keine Konflikt-Kopien mehr. Einfach weiterarbeiten.
 
-Neben jeder Note `note.md` wird eine `note.md.yjs`-Datei gespeichert (CRDT-State).
-Wenn OneDrive eine `.yjs`-Datei synchronisiert, merged das Plugin automatisch via Yjs und
-schreibt den Ergebnis-Text in die `.md`-Note.
+## Installation
 
-```
-Vault/
-  Meine-Note.md        ← sichtbar, bearbeitbar
-  Meine-Note.md.yjs    ← CRDT-State (automatisch, nicht anfassen)
-```
-
-## Installation (manuell)
-
-1. Letzten Build herunterladen: `main.js` + `manifest.json`
-2. Ordner `.obsidian/plugins/crdt-sync/` anlegen
+1. [Letzten Release herunterladen](https://github.com/TillQuandel/obsidian-qollab/releases/latest) — `main.js` + `manifest.json`
+2. Ordner `.obsidian/plugins/qollab/` in deinem Vault anlegen
 3. Beide Dateien hineinkopieren
-4. Obsidian: Einstellungen → Community Plugins → „CRDT Sync" aktivieren
+4. Obsidian: Einstellungen → Community Plugins → **Qollab** aktivieren
 
-## IT-Audit
+Funktioniert mit OneDrive, Dropbox, Google Drive, iCloud, Syncthing — und jedem anderen Dienst der Dateien synchronisiert.
 
-- Keine externen Netzwerk-Calls
-- Keine Backend-Infrastruktur
-- Alle Daten bleiben lokal / auf deiner gewählten Sync-Lösung (OneDrive, Dropbox, Google Drive, iCloud, Syncthing, ...)
-- Open Source, auditierbar (Apache 2.0)
+## Was passiert im Hintergrund?
 
-## Bekannte Limitierungen (Phase 1)
+Qollab legt neben jeder Note eine kleine Hilfsdatei an (`note.md.yjs`).
+Diese Datei enthält die Änderungshistorie der Note auf eine Art, die automatisch zusammengeführt werden kann — egal in welcher Reihenfolge die Änderungen ankommen.
 
-- Bei gleichzeitigen Edits in **derselben Zeile** entscheidet Yjs-Tie-Breaking (nicht diff-basiert)
-- Kein Echtzeit-Cursor-Sync — Phase 2 (erfordert WebSocket-Server + IT-Genehmigung)
+Wenn deine Sync-Lösung die `.yjs`-Datei deiner Kollegin synchronisiert, erkennt Qollab das sofort und aktualisiert die Note. Du siehst eine kurze Meldung oben rechts.
 
-## Entwicklung
+Die `.yjs`-Dateien siehst du im Vault-Explorer nicht — Obsidian blendet sie aus.
+
+## Für IT-Abteilungen
+
+- Keine externen Server, keine Cloud-Dienste
+- Alle Daten bleiben auf eurer Sync-Infrastruktur (SharePoint, OneDrive, ...)
+- Kein Netzwerk-Traffic außer dem normalen Dateisync
+- Open Source, vollständig auditierbar
+
+## Grenzen (v0.1)
+
+Wenn zwei Personen **gleichzeitig dieselbe Zeile** ändern, entscheidet Qollab automatisch welche Version vorne steht — beide Texte bleiben erhalten, aber die Reihenfolge kann überraschend sein. Das verbessern wir in v0.2.
+
+Echtzeit-Cursor-Sync (wie in Google Docs) ist in v1.0 geplant.
+
+## Für Entwickler
 
 ```powershell
 npm install
-npm run build        # Production-Build → main.js
-npx jest             # Tests ausführen
+node esbuild.config.mjs production   # → main.js
+npx jest                              # Tests
 ```
