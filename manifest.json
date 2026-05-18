@@ -1,6 +1,6 @@
 {
-  "id": "crdt-sync",
-  "name": "CRDT Sync",
+  "id": "qollab",
+  "name": "Qollab",
   "version": "0.1.0",
   "minAppVersion": "1.4.0",
   "description": "Automatische Merge-Konfliktlösung via Yjs CRDTs für OneDrive/SharePoint-Sync.",

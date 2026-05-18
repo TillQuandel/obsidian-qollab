@@ -1,4 +1,4 @@
-# obsidian-crdt-sync
+# Qollab
 
 Obsidian-Plugin: automatische Merge-Konfliktlösung via Yjs CRDTs für OneDrive/SharePoint-Sync.
 
