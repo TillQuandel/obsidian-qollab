@@ -21,7 +21,13 @@ export class SyncHandler {
     if (existing) {
       await this.vault.modifyBinary(existing, state.buffer);
     } else {
-      await this.vault.createBinary(stateFile, state.buffer);
+      try {
+        await this.vault.createBinary(stateFile, state.buffer);
+      } catch {
+        // Datei wurde zwischen Check und Create von anderem Prozess angelegt — modify als Fallback
+        const created = this.vault.getAbstractFileByPath(stateFile);
+        if (created) await this.vault.modifyBinary(created, state.buffer);
+      }
     }
   }
 

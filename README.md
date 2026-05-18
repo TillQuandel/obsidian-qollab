@@ -1,10 +1,13 @@
 # Qollab
 
-Obsidian-Plugin: automatische Merge-Konfliktlösung via Yjs CRDTs für OneDrive/SharePoint-Sync.
+Wenn mehrere Personen denselben Obsidian-Vault über OneDrive, Dropbox oder einen anderen
+Sync-Dienst teilen, entstehen bei gleichzeitigen Edits Konflikt-Kopien:
 
-Wenn mehrere Personen denselben Vault über OneDrive synchronisieren, entstehen normalerweise
-manuelle Konflikt-Kopien (`Note (Max's conflicted copy 2026-05-18).md`). Dieses Plugin löst
-Konflikte automatisch auf — beide Änderungen bleiben erhalten.
+```
+Meine-Note (Marias conflicted copy 2026-05-18).md
+```
+
+**Qollab löst das automatisch.** Beide Änderungen bleiben erhalten, keine manuelle Arbeit.
 
 ## Wie es funktioniert
 
@@ -29,7 +32,7 @@ Vault/
 
 - Keine externen Netzwerk-Calls
 - Keine Backend-Infrastruktur
-- Alle Daten bleiben lokal / auf SharePoint
+- Alle Daten bleiben lokal / auf deiner gewählten Sync-Lösung (OneDrive, Dropbox, Google Drive, iCloud, Syncthing, ...)
 - Open Source, auditierbar (Apache 2.0)
 
 ## Bekannte Limitierungen (Phase 1)
