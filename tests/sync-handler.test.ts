@@ -102,6 +102,33 @@ describe('SyncHandler', () => {
     expect(merged).toContain('Bobs Text');
   });
 
+  it('loadAndMerge liest auch alte note.md.yjs (Migration)', async () => {
+    const vault = makeVaultMock() as any;
+
+    const old = new CrdtManager();
+    old.setContent('note.md', 'Alter Inhalt\n');
+    vault._files.set('note.md.yjs', old.encodeState('note.md').buffer);
+
+    const remote = new CrdtManager();
+    remote.setContent('note.md', 'Neuer Inhalt\n');
+    vault._files.set('note.md.a1b2c3d4.yjs', remote.encodeState('note.md').buffer);
+
+    // Mock: listYjsFiles gibt auch alte .yjs zurück
+    const origList = vault.listYjsFiles.bind(vault);
+    vault.listYjsFiles = (notePath: string) => {
+      const newFormat = origList(notePath);
+      const oldPath = notePath + '.yjs';
+      return vault._files.has(oldPath) ? [...newFormat, oldPath] : newFormat;
+    };
+
+    const manager = new CrdtManager();
+    const handler = new SyncHandler(vault, manager, 'local000');
+
+    const merged = await handler.loadAndMerge('note.md');
+    expect(merged).toContain('Alter Inhalt');
+    expect(merged).toContain('Neuer Inhalt');
+  });
+
   it('makeVaultMock.listYjsFiles returns matching paths', () => {
     const vault = makeVaultMock() as any;
     vault._files.set('note.md.a1b2c3d4.yjs', new ArrayBuffer(0));
