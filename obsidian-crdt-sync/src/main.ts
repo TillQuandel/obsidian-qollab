@@ -31,8 +31,7 @@ export default class CrdtSyncPlugin extends Plugin {
           target.getFiles()
             .map((f: { path: string }) => f.path)
             .filter((p: string) =>
-              (/\.[0-9a-f]{8}\.yjs$/.test(p) && p.startsWith(notePath + '.')) ||
-              p === notePath + '.yjs'
+              p.startsWith(`.qollab/${notePath}.`) && p.endsWith('.yjs')
             );
         return (target as any)[prop];
       }
@@ -71,10 +70,10 @@ export default class CrdtSyncPlugin extends Plugin {
         if (!(file instanceof TFile)) return;
         if (!file.path.endsWith('.md')) return;
         const yjsFiles = this.app.vault.getFiles()
-          .filter((f: TFile) => f.path.startsWith(oldPath + '.') && f.path.endsWith('.yjs'));
+          .filter((f: TFile) => f.path.startsWith(`.qollab/${oldPath}.`) && f.path.endsWith('.yjs'));
         for (const yjsFile of yjsFiles) {
-          const suffix = yjsFile.path.slice(oldPath.length);
-          await this.app.fileManager.renameFile(yjsFile, file.path + suffix);
+          const suffix = yjsFile.path.slice(`.qollab/${oldPath}`.length);
+          await this.app.fileManager.renameFile(yjsFile, `.qollab/${file.path}${suffix}`);
         }
         this.crdtManager.disposeDoc(oldPath);
       })
@@ -86,7 +85,7 @@ export default class CrdtSyncPlugin extends Plugin {
         if (!(file instanceof TFile)) return;
         if (!file.path.endsWith('.md')) return;
         const yjsFiles = this.app.vault.getFiles()
-          .filter((f: TFile) => f.path.startsWith(file.path + '.') && f.path.endsWith('.yjs'));
+          .filter((f: TFile) => f.path.startsWith(`.qollab/${file.path}.`) && f.path.endsWith('.yjs'));
         for (const yjsFile of yjsFiles) {
           await this.app.vault.delete(yjsFile);
         }

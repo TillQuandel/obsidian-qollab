@@ -17,8 +17,9 @@ function makeVaultMock() {
     modifyBinary: async (file: { path: string }, data: ArrayBuffer | Uint8Array) => {
       files.set(file.path, (data instanceof Uint8Array ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) : data) as ArrayBuffer);
     },
+    createFolder: async (_path: string) => {},
     listYjsFiles: (notePath: string) =>
-      Array.from(files.keys()).filter(p => p.startsWith(notePath + '.') && p.endsWith('.yjs')),
+      Array.from(files.keys()).filter(p => p.startsWith(`.qollab/${notePath}.`) && p.endsWith('.yjs')),
     _files: files,
     _textFiles: textFiles,
   };
@@ -28,7 +29,7 @@ describe('SyncHandler', () => {
   it('stateFilePath gibt per-User .yjs-Pfad zurück', () => {
     const vault = makeVaultMock() as any;
     const handler = new SyncHandler(vault, new CrdtManager(), 'a1b2c3d4');
-    expect(handler.stateFilePath('folder/note.md')).toBe('folder/note.md.a1b2c3d4.yjs');
+    expect(handler.stateFilePath('folder/note.md')).toBe('.qollab/folder/note.md.a1b2c3d4.yjs');
   });
 
   it('saveState schreibt .yjs-Datei in Vault', async () => {
@@ -39,7 +40,7 @@ describe('SyncHandler', () => {
 
     await handler.saveState('note.md');
 
-    expect(vault._files.has('note.md.a1b2c3d4.yjs')).toBe(true);
+    expect(vault._files.has('.qollab/note.md.a1b2c3d4.yjs')).toBe(true);
   });
 
   it('loadAndMerge liest .yjs-Datei und gibt gemergten Inhalt zurück', async () => {
@@ -47,7 +48,7 @@ describe('SyncHandler', () => {
 
     const remote = new CrdtManager();
     remote.setContent('note.md', 'Remote-Inhalt');
-    vault._files.set('note.md.a1b2c3d4.yjs', remote.encodeState('note.md').buffer);
+    vault._files.set('.qollab/note.md.a1b2c3d4.yjs', remote.encodeState('note.md').buffer);
 
     const manager = new CrdtManager();
     manager.setContent('note.md', 'Lokal-Inhalt');
@@ -67,7 +68,7 @@ describe('SyncHandler', () => {
     // Bob hat Änderungen in .yjs gespeichert
     const remote = new CrdtManager();
     remote.setContent('note.md', 'Bobs Remote-Text');
-    vault._files.set('note.md.a1b2c3d4.yjs', remote.encodeState('note.md').buffer);
+    vault._files.set('.qollab/note.md.a1b2c3d4.yjs', remote.encodeState('note.md').buffer);
 
     const manager = new CrdtManager(); // leerer Doc — kein setContent
     const handler = new SyncHandler(vault, manager, 'a1b2c3d4');
@@ -88,11 +89,11 @@ describe('SyncHandler', () => {
 
     const alice = new CrdtManager();
     alice.setContent('note.md', 'Alices Text\n');
-    vault._files.set('note.md.alice001.yjs', alice.encodeState('note.md').buffer);
+    vault._files.set('.qollab/note.md.alice001.yjs', alice.encodeState('note.md').buffer);
 
     const bob = new CrdtManager();
     bob.setContent('note.md', 'Bobs Text\n');
-    vault._files.set('note.md.bob00001.yjs', bob.encodeState('note.md').buffer);
+    vault._files.set('.qollab/note.md.bob00001.yjs', bob.encodeState('note.md').buffer);
 
     const manager = new CrdtManager();
     const handler = new SyncHandler(vault, manager, 'local000');
@@ -107,19 +108,11 @@ describe('SyncHandler', () => {
 
     const old = new CrdtManager();
     old.setContent('note.md', 'Alter Inhalt\n');
-    vault._files.set('note.md.yjs', old.encodeState('note.md').buffer);
+    vault._files.set('.qollab/note.md.yjs', old.encodeState('note.md').buffer);
 
     const remote = new CrdtManager();
     remote.setContent('note.md', 'Neuer Inhalt\n');
-    vault._files.set('note.md.a1b2c3d4.yjs', remote.encodeState('note.md').buffer);
-
-    // Mock: listYjsFiles gibt auch alte .yjs zurück
-    const origList = vault.listYjsFiles.bind(vault);
-    vault.listYjsFiles = (notePath: string) => {
-      const newFormat = origList(notePath);
-      const oldPath = notePath + '.yjs';
-      return vault._files.has(oldPath) ? [...newFormat, oldPath] : newFormat;
-    };
+    vault._files.set('.qollab/note.md.a1b2c3d4.yjs', remote.encodeState('note.md').buffer);
 
     const manager = new CrdtManager();
     const handler = new SyncHandler(vault, manager, 'local000');
@@ -131,12 +124,12 @@ describe('SyncHandler', () => {
 
   it('makeVaultMock.listYjsFiles returns matching paths', () => {
     const vault = makeVaultMock() as any;
-    vault._files.set('note.md.a1b2c3d4.yjs', new ArrayBuffer(0));
-    vault._files.set('note.md.b5c6d7e8.yjs', new ArrayBuffer(0));
-    vault._files.set('other.md.a1b2c3d4.yjs', new ArrayBuffer(0));
+    vault._files.set('.qollab/note.md.a1b2c3d4.yjs', new ArrayBuffer(0));
+    vault._files.set('.qollab/note.md.b5c6d7e8.yjs', new ArrayBuffer(0));
+    vault._files.set('.qollab/other.md.a1b2c3d4.yjs', new ArrayBuffer(0));
     expect(vault.listYjsFiles('note.md')).toEqual(
-      expect.arrayContaining(['note.md.a1b2c3d4.yjs', 'note.md.b5c6d7e8.yjs'])
+      expect.arrayContaining(['.qollab/note.md.a1b2c3d4.yjs', '.qollab/note.md.b5c6d7e8.yjs'])
     );
-    expect(vault.listYjsFiles('note.md')).not.toContain('other.md.a1b2c3d4.yjs');
+    expect(vault.listYjsFiles('note.md')).not.toContain('.qollab/other.md.a1b2c3d4.yjs');
   });
 });
