@@ -12,10 +12,10 @@ function makeVaultMock() {
     readBinary: async (file: { path: string }) =>
       files.get(file.path)!,
     createBinary: async (path: string, data: ArrayBuffer | Uint8Array) => {
-      files.set(path, data instanceof Uint8Array ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) : data);
+      files.set(path, (data instanceof Uint8Array ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) : data) as ArrayBuffer);
     },
     modifyBinary: async (file: { path: string }, data: ArrayBuffer | Uint8Array) => {
-      files.set(file.path, data instanceof Uint8Array ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) : data);
+      files.set(file.path, (data instanceof Uint8Array ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) : data) as ArrayBuffer);
     },
     listYjsFiles: (notePath: string) =>
       Array.from(files.keys()).filter(p => p.startsWith(notePath + '.') && p.endsWith('.yjs')),
