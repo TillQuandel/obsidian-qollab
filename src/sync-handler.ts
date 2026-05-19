@@ -6,6 +6,7 @@ interface VaultLike {
   readBinary(file: { path: string }): Promise<ArrayBuffer>;
   createBinary(path: string, data: ArrayBuffer | Uint8Array): Promise<unknown>;
   modifyBinary(file: { path: string }, data: ArrayBuffer | Uint8Array): Promise<unknown>;
+  listYjsFiles(notePath: string): string[];
 }
 
 export class SyncHandler {

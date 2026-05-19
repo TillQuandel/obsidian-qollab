@@ -17,6 +17,8 @@ function makeVaultMock() {
     modifyBinary: async (file: { path: string }, data: ArrayBuffer | Uint8Array) => {
       files.set(file.path, data instanceof Uint8Array ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) : data);
     },
+    listYjsFiles: (notePath: string) =>
+      Array.from(files.keys()).filter(p => p.startsWith(notePath + '.') && p.endsWith('.yjs')),
     _files: files,
     _textFiles: textFiles,
   };
@@ -79,5 +81,16 @@ describe('SyncHandler', () => {
     const vault = makeVaultMock() as any;
     const handler = new SyncHandler(vault, new CrdtManager());
     expect(await handler.loadAndMerge('nicht-vorhanden.md')).toBeNull();
+  });
+
+  it('makeVaultMock.listYjsFiles returns matching paths', () => {
+    const vault = makeVaultMock() as any;
+    vault._files.set('note.md.a1b2c3d4.yjs', new ArrayBuffer(0));
+    vault._files.set('note.md.b5c6d7e8.yjs', new ArrayBuffer(0));
+    vault._files.set('other.md.a1b2c3d4.yjs', new ArrayBuffer(0));
+    expect(vault.listYjsFiles('note.md')).toEqual(
+      expect.arrayContaining(['note.md.a1b2c3d4.yjs', 'note.md.b5c6d7e8.yjs'])
+    );
+    expect(vault.listYjsFiles('note.md')).not.toContain('other.md.a1b2c3d4.yjs');
   });
 });
