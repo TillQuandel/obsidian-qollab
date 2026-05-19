@@ -21,6 +21,19 @@ Keine Konflikt-Kopien mehr. Einfach weiterarbeiten.
 
 Funktioniert mit OneDrive, Dropbox, Google Drive, iCloud, Syncthing — und jedem anderen Dienst der Dateien synchronisiert.
 
+## Mit GitHub teilen
+
+Wenn ihr euren Vault über ein privates GitHub-Repository teilt (z.B. mit dem [Obsidian-Git-Plugin](https://github.com/denolehov/obsidian-git)):
+
+1. Fügt eine `.gitattributes`-Datei im Vault-Root hinzu:
+   ```
+   *.yjs binary
+   ```
+2. Stellt sicher dass `*.yjs` **nicht** in `.gitignore` steht.
+3. Fertig — Qollab erkennt automatisch welche Änderungen von wem kommen.
+
+**Warum funktioniert das?** Jedes Gerät schreibt eine eigene `.yjs`-Datei (z.B. `note.md.a1b2c3d4.yjs`). Git merged diese Dateien nie — jeder schreibt nur seine eigene. Wenn ihr zieht (`git pull`), erkennt Qollab die neue Datei und führt die Änderungen automatisch zusammen.
+
 ## Was passiert im Hintergrund?
 
 Qollab legt neben jeder Note eine kleine Hilfsdatei an (`note.md.yjs`).
