@@ -34,11 +34,9 @@ export class SyncHandler {
   }
 
   async loadAndMerge(notePath: string): Promise<string | null> {
-    const stateFile = this.stateFilePath(notePath);
-    const file = this.vault.getAbstractFileByPath(stateFile);
-    if (!file) return null;
+    const yjsFiles = this.vault.listYjsFiles(notePath);
+    if (yjsFiles.length === 0) return null;
 
-    // Lokalen Doc initialisieren falls Note seit Plugin-Start nie bearbeitet wurde
     if (!this.crdtManager.hasDoc(notePath)) {
       const noteFile = this.vault.getAbstractFileByPath(notePath);
       if (noteFile) {
@@ -47,7 +45,13 @@ export class SyncHandler {
       }
     }
 
-    const buffer = await this.vault.readBinary(file);
-    return this.crdtManager.mergeAndGet(notePath, new Uint8Array(buffer));
+    for (const yjsPath of yjsFiles) {
+      const file = this.vault.getAbstractFileByPath(yjsPath);
+      if (!file) continue;
+      const buffer = await this.vault.readBinary(file);
+      this.crdtManager.applyUpdate(notePath, new Uint8Array(buffer));
+    }
+
+    return this.crdtManager.getContent(notePath);
   }
 }

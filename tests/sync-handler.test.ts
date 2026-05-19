@@ -83,6 +83,25 @@ describe('SyncHandler', () => {
     expect(await handler.loadAndMerge('nicht-vorhanden.md')).toBeNull();
   });
 
+  it('loadAndMerge merged Änderungen von zwei verschiedenen Clients', async () => {
+    const vault = makeVaultMock() as any;
+
+    const alice = new CrdtManager();
+    alice.setContent('note.md', 'Alices Text\n');
+    vault._files.set('note.md.alice001.yjs', alice.encodeState('note.md').buffer);
+
+    const bob = new CrdtManager();
+    bob.setContent('note.md', 'Bobs Text\n');
+    vault._files.set('note.md.bob00001.yjs', bob.encodeState('note.md').buffer);
+
+    const manager = new CrdtManager();
+    const handler = new SyncHandler(vault, manager, 'local000');
+
+    const merged = await handler.loadAndMerge('note.md');
+    expect(merged).toContain('Alices Text');
+    expect(merged).toContain('Bobs Text');
+  });
+
   it('makeVaultMock.listYjsFiles returns matching paths', () => {
     const vault = makeVaultMock() as any;
     vault._files.set('note.md.a1b2c3d4.yjs', new ArrayBuffer(0));
