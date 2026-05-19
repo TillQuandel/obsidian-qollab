@@ -23,7 +23,11 @@ export class SyncHandler {
     if (!folderPath || this.vault.getAbstractFileByPath(folderPath)) return;
     const parent = folderPath.split('/').slice(0, -1).join('/');
     if (parent) await this.ensureFolder(parent);
-    await this.vault.createFolder(folderPath);
+    try {
+      await this.vault.createFolder(folderPath);
+    } catch {
+      // Ordner wurde zwischen Check und Create von anderem Prozess angelegt — ok
+    }
   }
 
   async saveState(notePath: string): Promise<void> {

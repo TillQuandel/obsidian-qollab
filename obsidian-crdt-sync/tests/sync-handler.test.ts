@@ -122,6 +122,17 @@ describe('SyncHandler', () => {
     expect(merged).toContain('Neuer Inhalt');
   });
 
+  it('saveState schreibt .yjs-Datei für Note in Unterverzeichnis', async () => {
+    const vault = makeVaultMock() as any;
+    const manager = new CrdtManager();
+    manager.setContent('03-privat/daily-notes/2026-05-19.md', 'Hallo');
+    const handler = new SyncHandler(vault, manager, 'a1b2c3d4');
+
+    await handler.saveState('03-privat/daily-notes/2026-05-19.md');
+
+    expect(vault._files.has('.qollab/03-privat/daily-notes/2026-05-19.md.a1b2c3d4.yjs')).toBe(true);
+  });
+
   it('makeVaultMock.listYjsFiles returns matching paths', () => {
     const vault = makeVaultMock() as any;
     vault._files.set('.qollab/note.md.a1b2c3d4.yjs', new ArrayBuffer(0));
