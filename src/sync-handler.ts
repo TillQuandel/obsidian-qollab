@@ -10,10 +10,10 @@ interface VaultLike {
 }
 
 export class SyncHandler {
-  constructor(private vault: VaultLike, private crdtManager: CrdtManager) {}
+  constructor(private vault: VaultLike, private crdtManager: CrdtManager, private clientId: string) {}
 
   stateFilePath(notePath: string): string {
-    return notePath + '.yjs';
+    return `${notePath}.${this.clientId}.yjs`;
   }
 
   async saveState(notePath: string): Promise<void> {

@@ -25,21 +25,21 @@ function makeVaultMock() {
 }
 
 describe('SyncHandler', () => {
-  it('stateFilePath gibt korrekten .yjs-Pfad zurück', () => {
+  it('stateFilePath gibt per-User .yjs-Pfad zurück', () => {
     const vault = makeVaultMock() as any;
-    const handler = new SyncHandler(vault, new CrdtManager());
-    expect(handler.stateFilePath('folder/note.md')).toBe('folder/note.md.yjs');
+    const handler = new SyncHandler(vault, new CrdtManager(), 'a1b2c3d4');
+    expect(handler.stateFilePath('folder/note.md')).toBe('folder/note.md.a1b2c3d4.yjs');
   });
 
   it('saveState schreibt .yjs-Datei in Vault', async () => {
     const vault = makeVaultMock() as any;
     const manager = new CrdtManager();
     manager.setContent('note.md', 'Hallo');
-    const handler = new SyncHandler(vault, manager);
+    const handler = new SyncHandler(vault, manager, 'a1b2c3d4');
 
     await handler.saveState('note.md');
 
-    expect(vault._files.has('note.md.yjs')).toBe(true);
+    expect(vault._files.has('note.md.a1b2c3d4.yjs')).toBe(true);
   });
 
   it('loadAndMerge liest .yjs-Datei und gibt gemergten Inhalt zurück', async () => {
@@ -47,11 +47,11 @@ describe('SyncHandler', () => {
 
     const remote = new CrdtManager();
     remote.setContent('note.md', 'Remote-Inhalt');
-    vault._files.set('note.md.yjs', remote.encodeState('note.md').buffer);
+    vault._files.set('note.md.a1b2c3d4.yjs', remote.encodeState('note.md').buffer);
 
     const manager = new CrdtManager();
     manager.setContent('note.md', 'Lokal-Inhalt');
-    const handler = new SyncHandler(vault, manager);
+    const handler = new SyncHandler(vault, manager, 'a1b2c3d4');
 
     const merged = await handler.loadAndMerge('note.md');
     expect(merged).toContain('Remote-Inhalt');
@@ -67,10 +67,10 @@ describe('SyncHandler', () => {
     // Bob hat Änderungen in .yjs gespeichert
     const remote = new CrdtManager();
     remote.setContent('note.md', 'Bobs Remote-Text');
-    vault._files.set('note.md.yjs', remote.encodeState('note.md').buffer);
+    vault._files.set('note.md.a1b2c3d4.yjs', remote.encodeState('note.md').buffer);
 
     const manager = new CrdtManager(); // leerer Doc — kein setContent
-    const handler = new SyncHandler(vault, manager);
+    const handler = new SyncHandler(vault, manager, 'a1b2c3d4');
 
     const merged = await handler.loadAndMerge('note.md');
     expect(merged).toContain('Alices lokaler Text');
@@ -79,7 +79,7 @@ describe('SyncHandler', () => {
 
   it('loadAndMerge gibt null zurück wenn keine .yjs-Datei existiert', async () => {
     const vault = makeVaultMock() as any;
-    const handler = new SyncHandler(vault, new CrdtManager());
+    const handler = new SyncHandler(vault, new CrdtManager(), 'a1b2c3d4');
     expect(await handler.loadAndMerge('nicht-vorhanden.md')).toBeNull();
   });
 
