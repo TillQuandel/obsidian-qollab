@@ -4,11 +4,17 @@ import type CrdtSyncPlugin from './main';
 export interface CrdtSyncSettings {
   enabled: boolean;
   statusNotice: boolean;
+  clientId: string;
+}
+
+export function generateClientId(): string {
+  return Math.floor(Math.random() * 0xffffffff).toString(16).padStart(8, '0');
 }
 
 export const DEFAULT_SETTINGS: CrdtSyncSettings = {
   enabled: true,
   statusNotice: true,
+  clientId: '',
 };
 
 export class CrdtSyncSettingTab extends PluginSettingTab {
@@ -44,5 +50,9 @@ export class CrdtSyncSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           })
       );
+
+    new Setting(containerEl)
+      .setName('Client-ID')
+      .setDesc(`Eindeutige ID dieses Geräts: ${this.plugin.settings.clientId}`);
   }
 }
