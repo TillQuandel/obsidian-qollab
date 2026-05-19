@@ -45,6 +45,26 @@ describe('CrdtManager', () => {
     expect(m.getContent('unbekannt.md')).toBe('');
   });
 
+  // Phase-1-Limitation: delete+insert zerstört granulare Yjs-History bei gleichzeitiger
+  // Bearbeitung derselben Zeile. Beide Texte bleiben erhalten, Reihenfolge unbestimmt.
+  // Wird in Phase 2 durch Diff-basiertes Update behoben.
+  it.skip('gleichzeitige Bearbeitung derselben Zeile: beide Texte erhalten (Reihenfolge unbestimmt)', () => {
+    const alice = new CrdtManager();
+    const bob = new CrdtManager();
+
+    alice.setContent('note.md', 'Gemeinsame Zeile\n');
+    bob.applyUpdate('note.md', alice.encodeState('note.md'));
+
+    alice.setContent('note.md', 'Alices Version\n');
+    bob.setContent('note.md', 'Bobs Version\n');
+
+    alice.applyUpdate('note.md', bob.encodeState('note.md'));
+
+    const result = alice.getContent('note.md');
+    expect(result).toContain('Alices Version');
+    expect(result).toContain('Bobs Version');
+  });
+
   it('dispose räumt Doc auf', () => {
     const m = new CrdtManager();
     m.setContent('note.md', 'x');

@@ -7,13 +7,14 @@ export class FileWatcher {
 
   constructor(private vault: Vault, private onChanged: OnYjsChanged) {}
 
-  start(): void {
+  start(): ReturnType<Vault['on']> {
     this.eventRef = this.vault.on('modify', async (file) => {
       if (!(file instanceof TFile)) return;
       if (!file.path.endsWith('.yjs')) return;
       const notePath = file.path.slice(0, -4); // 'note.md.yjs' → 'note.md'
       await this.onChanged(notePath);
     });
+    return this.eventRef;
   }
 
   stop(): void {

@@ -2,8 +2,10 @@ import * as Y from 'yjs';
 
 export class CrdtManager {
   private docs = new Map<string, Y.Doc>();
+  private disposed = false;
 
   private getOrCreate(filePath: string): Y.Doc {
+    if (this.disposed) throw new Error('CrdtManager already disposed');
     if (!this.docs.has(filePath)) {
       this.docs.set(filePath, new Y.Doc());
     }
@@ -20,6 +22,10 @@ export class CrdtManager {
       text.delete(0, text.length);
       text.insert(0, content);
     });
+  }
+
+  hasDoc(filePath: string): boolean {
+    return this.docs.has(filePath);
   }
 
   getContent(filePath: string): string {
@@ -46,6 +52,7 @@ export class CrdtManager {
   }
 
   disposeAll(): void {
+    this.disposed = true;
     for (const doc of this.docs.values()) doc.destroy();
     this.docs.clear();
   }

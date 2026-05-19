@@ -23,7 +23,7 @@ export class CrdtSyncSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Sync aktiviert')
-      .setDesc('Automatisches Mergen bei OneDrive-Sync ein- oder ausschalten.')
+      .setDesc('Automatisches Mergen bei Datei-Sync (OneDrive, Dropbox, iCloud, …) ein- oder ausschalten.')
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.enabled)

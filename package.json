@@ -8,10 +8,10 @@
     "test": "jest"
   },
   "dependencies": {
-    "yjs": "^13.6.0",
-    "obsidian": "latest"
+    "yjs": "^13.6.0"
   },
   "devDependencies": {
+    "obsidian": "^1.12.3",
     "@types/node": "^20.0.0",
     "esbuild": "^0.21.0",
     "jest": "^29.0.0",

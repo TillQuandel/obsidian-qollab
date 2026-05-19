@@ -13,6 +13,7 @@ export default class CrdtSyncPlugin extends Plugin {
   private writingPaths = new Set<string>();
   // Serialisiert Merge-Operationen pro Dateipfad (verhindert Race Condition bei schnellem Sync)
   private mergeQueue = new Map<string, Promise<void>>();
+  private unloaded = false;
 
   async onload() {
     await this.loadSettings();
@@ -24,10 +25,13 @@ export default class CrdtSyncPlugin extends Plugin {
       // Merge-Aufrufe für denselben Pfad sequenziell abarbeiten
       const prev = this.mergeQueue.get(notePath) ?? Promise.resolve();
       const next = prev.then(() => this.onRemoteYjsUpdate(notePath));
-      this.mergeQueue.set(notePath, next.catch(() => {}));
+      const queued = next.catch(() => {}).then(() => {
+        if (this.mergeQueue.get(notePath) === queued) this.mergeQueue.delete(notePath);
+      });
+      this.mergeQueue.set(notePath, queued);
       await next;
     });
-    this.fileWatcher.start();
+    this.registerEvent(this.fileWatcher.start());
 
     // Wenn Nutzer eine .md-Note bearbeitet → CRDT-State aktualisieren + speichern
     this.registerEvent(
@@ -76,6 +80,7 @@ export default class CrdtSyncPlugin extends Plugin {
   }
 
   private async onRemoteYjsUpdate(notePath: string): Promise<void> {
+    if (this.unloaded) return;
     if (!this.settings.enabled) return;
 
     const merged = await this.syncHandler.loadAndMerge(notePath);
@@ -100,6 +105,7 @@ export default class CrdtSyncPlugin extends Plugin {
   }
 
   onunload() {
+    this.unloaded = true;
     this.fileWatcher.stop();
     this.crdtManager.disposeAll();
   }
