@@ -2,7 +2,7 @@ import { Notice, Plugin, TFile } from 'obsidian';
 import { CrdtManager } from './crdt-manager';
 import { SyncHandler } from './sync-handler';
 import { FileWatcher } from './file-watcher';
-import { CrdtSyncSettings, CrdtSyncSettingTab, DEFAULT_SETTINGS } from './settings';
+import { CrdtSyncSettings, CrdtSyncSettingTab, DEFAULT_SETTINGS, generateClientId } from './settings';
 
 export default class CrdtSyncPlugin extends Plugin {
   settings: CrdtSyncSettings;
@@ -18,8 +18,22 @@ export default class CrdtSyncPlugin extends Plugin {
   async onload() {
     await this.loadSettings();
 
+    if (!this.settings.clientId) {
+      this.settings.clientId = generateClientId();
+      await this.saveSettings();
+    }
+
     this.crdtManager = new CrdtManager();
-    this.syncHandler = new SyncHandler(this.app.vault, this.crdtManager);
+    const vaultWithList = Object.assign(Object.create(Object.getPrototypeOf(this.app.vault)), this.app.vault, {
+      listYjsFiles: (notePath: string) =>
+        this.app.vault.getFiles()
+          .map((f: { path: string }) => f.path)
+          .filter((p: string) =>
+            (/\.[0-9a-f]{8}\.yjs$/.test(p) && p.startsWith(notePath + '.')) ||
+            p === notePath + '.yjs'
+          )
+    });
+    this.syncHandler = new SyncHandler(vaultWithList as any, this.crdtManager, this.settings.clientId);
 
     this.fileWatcher = new FileWatcher(this.app.vault, async (notePath) => {
       // Merge-Aufrufe für denselben Pfad sequenziell abarbeiten
@@ -47,29 +61,29 @@ export default class CrdtSyncPlugin extends Plugin {
       })
     );
 
-    // Rename: .yjs-Datei mitumbenennen
+    // Rename: .yjs-Dateien mitumbenennen
     this.registerEvent(
       this.app.vault.on('rename', async (file, oldPath) => {
         if (!(file instanceof TFile)) return;
         if (!file.path.endsWith('.md')) return;
-        const oldYjs = oldPath + '.yjs';
-        const newYjs = file.path + '.yjs';
-        const oldFile = this.app.vault.getAbstractFileByPath(oldYjs);
-        if (oldFile instanceof TFile) {
-          await this.app.fileManager.renameFile(oldFile, newYjs);
+        const yjsFiles = this.app.vault.getFiles()
+          .filter((f: TFile) => f.path.startsWith(oldPath + '.') && f.path.endsWith('.yjs'));
+        for (const yjsFile of yjsFiles) {
+          const suffix = yjsFile.path.slice(oldPath.length);
+          await this.app.fileManager.renameFile(yjsFile, file.path + suffix);
         }
         this.crdtManager.disposeDoc(oldPath);
       })
     );
 
-    // Delete: .yjs-Datei mitlöschen
+    // Delete: .yjs-Dateien mitlöschen
     this.registerEvent(
       this.app.vault.on('delete', async (file) => {
         if (!(file instanceof TFile)) return;
         if (!file.path.endsWith('.md')) return;
-        const yjsPath = file.path + '.yjs';
-        const yjsFile = this.app.vault.getAbstractFileByPath(yjsPath);
-        if (yjsFile instanceof TFile) {
+        const yjsFiles = this.app.vault.getFiles()
+          .filter((f: TFile) => f.path.startsWith(file.path + '.') && f.path.endsWith('.yjs'));
+        for (const yjsFile of yjsFiles) {
           await this.app.vault.delete(yjsFile);
         }
         this.crdtManager.disposeDoc(file.path);
