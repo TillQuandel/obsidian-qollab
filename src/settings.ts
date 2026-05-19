@@ -8,7 +8,9 @@ export interface CrdtSyncSettings {
 }
 
 export function generateClientId(): string {
-  return Math.floor(Math.random() * 0xffffffff).toString(16).padStart(8, '0');
+  return Array.from(crypto.getRandomValues(new Uint8Array(4)))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 export const DEFAULT_SETTINGS: CrdtSyncSettings = {

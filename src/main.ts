@@ -24,14 +24,18 @@ export default class CrdtSyncPlugin extends Plugin {
     }
 
     this.crdtManager = new CrdtManager();
-    const vaultWithList = Object.assign(Object.create(Object.getPrototypeOf(this.app.vault)), this.app.vault, {
-      listYjsFiles: (notePath: string) =>
-        this.app.vault.getFiles()
-          .map((f: { path: string }) => f.path)
-          .filter((p: string) =>
-            (/\.[0-9a-f]{8}\.yjs$/.test(p) && p.startsWith(notePath + '.')) ||
-            p === notePath + '.yjs'
-          )
+    const vault = this.app.vault;
+    const vaultWithList = new Proxy(vault, {
+      get(target, prop) {
+        if (prop === 'listYjsFiles') return (notePath: string) =>
+          target.getFiles()
+            .map((f: { path: string }) => f.path)
+            .filter((p: string) =>
+              (/\.[0-9a-f]{8}\.yjs$/.test(p) && p.startsWith(notePath + '.')) ||
+              p === notePath + '.yjs'
+            );
+        return (target as any)[prop];
+      }
     });
     this.syncHandler = new SyncHandler(vaultWithList as any, this.crdtManager, this.settings.clientId);
 
