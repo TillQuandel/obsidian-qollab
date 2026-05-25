@@ -8,6 +8,10 @@ Alle nennenswerten Aenderungen an Qollab. Format orientiert sich an [Keep a Chan
 
 - Plugin verpasste `.md`-Edits, die extern bei geschlossener Obsidian-App passierten (CLI-Tools, LLM-Agents, Git-Merge). Neuer `onload`-Sweep schreibt fuer jede `.md` mit mtime > zugehoeriger `.yjs` einen frischen CRDT-Snapshot. Kein `loadAndMerge` im Sweep — verhindert dass stale Snapshots aktuelle Inhalte zurueckrollen. (#8)
 
+### Known Issues
+
+- Mirror-Sidecar-Architektur (1 `.yjs` pro `.md` im gespiegelten `.qollab/`-Tree) skaliert nicht fuer grosse Vaults. Refactor auf Yjs-Subdocuments + SQLite-Single-Store geplant. Bis dahin: bei Vaults mit 500+ Notes besser deaktiviert lassen. Siehe #9.
+
 ## [0.2.0] - 2026-05-19
 
 ### Changed

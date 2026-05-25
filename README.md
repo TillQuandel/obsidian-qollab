@@ -50,11 +50,17 @@ Die `.yjs`-Dateien siehst du im Vault-Explorer nicht — Obsidian blendet sie au
 - Kein Netzwerk-Traffic außer dem normalen Dateisync
 - Open Source, vollständig auditierbar
 
-## Grenzen (v0.1)
+## Grenzen
 
-Wenn zwei Personen **gleichzeitig dieselbe Zeile** ändern, entscheidet Qollab automatisch welche Version vorne steht — beide Texte bleiben erhalten, aber die Reihenfolge kann überraschend sein. Das verbessern wir in v0.2.
+Wenn zwei Personen **gleichzeitig dieselbe Zeile** ändern, entscheidet Qollab automatisch welche Version vorne steht — beide Texte bleiben erhalten, aber die Reihenfolge kann überraschend sein.
 
 Echtzeit-Cursor-Sync (wie in Google Docs) ist in v1.0 geplant.
+
+## Bekannte Architektur-Schwäche (v0.3)
+
+Qollab legt aktuell pro Note eine eigene `.yjs`-Sidecar-Datei unter `.qollab/<vault-path>/<note>.md.<clientId>.yjs` an — das Vault-Tree wird unter `.qollab/` gespiegelt. Bei großen Vaults (1000+ Notes) entstehen entsprechend viele Dateien, was OneDrive/Dropbox unnötig belastet (jede Sidecar ist eine eigene Konflikt-Achse) und gegen die [Yjs-Empfehlung](https://docs.yjs.dev/api/faq) zu „hunderten gleichzeitig geladenen YDocs" verstößt.
+
+Für kleine Vaults (<100 Notes) ist das vernachlässigbar. Für große Vaults aktuell besser deaktivieren bis [Issue #9](https://github.com/TillQuandel/obsidian-qollab/issues/9) (v0.4-Refactor auf Subdocuments + SQLite-Single-Store) umgesetzt ist.
 
 ## Für Entwickler
 
