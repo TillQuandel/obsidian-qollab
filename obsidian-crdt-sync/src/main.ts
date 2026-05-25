@@ -94,6 +94,38 @@ export default class CrdtSyncPlugin extends Plugin {
     );
 
     this.addSettingTab(new CrdtSyncSettingTab(this.app, this));
+
+    // Externe FS-Edits (z.B. CLI/LLM bei geschlossener App) erzeugen kein
+    // 'modify'-Event. Beim Start nachziehen: fuer jede .md, deren mtime
+    // neuer ist als die zugehoerige .yjs (oder die noch keine .yjs hat),
+    // einen frischen Snapshot schreiben. KEIN loadAndMerge — sonst wuerden
+    // stale .yjs-Stati in den aktuellen .md-Inhalt zurueckgemergt.
+    this.app.workspace.onLayoutReady(() => {
+      void this.snapshotStaleMarkdownFiles();
+    });
+  }
+
+  private async snapshotStaleMarkdownFiles(): Promise<void> {
+    if (!this.settings.enabled) return;
+
+    const files = this.app.vault.getMarkdownFiles();
+    for (const file of files) {
+      if (this.unloaded) return;
+
+      const statePath = this.syncHandler.stateFilePath(file.path);
+      const stateFile = this.app.vault.getAbstractFileByPath(statePath);
+      if (stateFile instanceof TFile && stateFile.stat.mtime >= file.stat.mtime) {
+        continue;
+      }
+
+      try {
+        const content = await this.app.vault.read(file);
+        this.crdtManager.setContent(file.path, content);
+        await this.syncHandler.saveState(file.path);
+      } catch {
+        // Einzelne Datei darf den Sweep nicht abbrechen
+      }
+    }
   }
 
   private async onRemoteYjsUpdate(notePath: string): Promise<void> {
