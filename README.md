@@ -9,8 +9,10 @@ Meetingprotokoll (Marias conflicted copy 2026-05-18).md
 
 Jetzt müsst ihr manuell schauen was die andere geschrieben hat und die Änderungen zusammenführen.
 
-**Qollab macht das automatisch.** Beide Änderungen bleiben erhalten.
-Keine Konflikt-Kopien mehr. Einfach weiterarbeiten.
+**Qollab versucht das automatisch zusammenzuführen.** Beide Texte sollen erhalten bleiben — ohne dass ihr Konflikt-Kopien von Hand mergen müsst.
+
+> [!WARNING]
+> **Experimentell — noch nicht für wichtige Daten.** Im häufigen Fall (zwei Geräte mit demselben Ausgangsstand einer Note) kann der erste Merge den Note-Inhalt **verdoppeln** — der ganze Text erscheint dann zweimal in der Note. Lasst die Konflikt-Kopie-Sicherung eures Sync-Dienstes vorerst **aktiv** und verlasst euch nicht allein auf Qollab. Details unter [Grenzen](#grenzen).
 
 ## Installation
 
@@ -52,9 +54,11 @@ Die `.yjs`-Dateien siehst du im Vault-Explorer nicht — Obsidian blendet sie au
 
 ## Grenzen
 
+**Inhalts-Verdopplung beim ersten Merge (bekannter Fehler).** Qollab baut seinen Merge-Zustand aktuell, indem es bei jeder Änderung den kompletten Note-Text neu setzt. Zwei Geräte, die unabhängig vom selben Ausgangsstand starten, erzeugen dadurch getrennte Änderungs-Historien — beim Zusammenführen wird der gemeinsame Text **aneinandergehängt statt erkannt**. Aus `Hallo Welt` wird dann `Hallo Welt\nHallo Welt`. Das betrifft den typischen Einstiegsfall (zwei Personen, geteilter Vault, dieselbe Note). Fix in Arbeit (Umstellung auf positionsgenaue Diffs).
+
 Wenn zwei Personen **gleichzeitig dieselbe Zeile** ändern, entscheidet Qollab automatisch welche Version vorne steht — beide Texte bleiben erhalten, aber die Reihenfolge kann überraschend sein.
 
-Echtzeit-Cursor-Sync (wie in Google Docs) ist in v1.0 geplant.
+Echtzeit-Cursor-Sync (wie in Google Docs) ist angedacht, aber mit der server-losen File-Sync-Architektur nicht ohne Weiteres umsetzbar — kein fester Termin.
 
 ## Bekannte Architektur-Schwäche (v0.3)
 
