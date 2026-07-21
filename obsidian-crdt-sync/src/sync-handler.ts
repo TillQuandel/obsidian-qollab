@@ -192,6 +192,26 @@ export class SyncHandler {
     const winner = this.pickWinnerGuid(foreign, undefined);
     this.guids.set(notePath, winner ?? generateGuid());
     this.mergeCompatible(notePath, foreign);
+
+    // Adopt-Fall (KEIN eigener State): Nach dem Adoptieren der fremden Basis den
+    // lokalen .md-Text als Diff einspielen — analog zu switchToGuid. Asymmetrie
+    // zum own-Branch: OHNE eigenen State ist die .md der EINZIGE Träger lokaler
+    // Daten; würde sie nicht eingediffed, überschriebe der loadAndMerge-Write-Back
+    // die (nie erfasste) lokale Note mit dem reinen Fremd-Stand → dauerhafter
+    // lokaler Datenverlust bei frischen kollaborativen Setups. MIT eigenem State
+    // sind lokale Edits dagegen bereits im CRDT erfasst; die .md darf in
+    // loadAndMerge dann NICHT re-injiziert werden (würde ankommende Remote-Edits
+    // zurückrollen) — deshalb sitzt dieser Diff ausschließlich hier im Adopt-Zweig.
+    //
+    // Transiente Staleness: Eine hier eingediffte veraltete .md rollt fremde Edits
+    // vorübergehend zurück; das heilt sich selbst, sobald die neuere .md via
+    // Datei-Sync nachkommt (nächstes create/modify → loadAndMerge mit dann bereits
+    // erfasstem eigenem State läuft über den own-Branch ohne .md-Injektion).
+    const file = this.vault.getAbstractFileByPath(notePath);
+    if (file) {
+      const mdText = await this.vault.read(file);
+      this.crdtManager.setContent(notePath, mdText);
+    }
   }
 
   // Merged alle Siblings, deren GUID der aktuellen entspricht oder die Legacy

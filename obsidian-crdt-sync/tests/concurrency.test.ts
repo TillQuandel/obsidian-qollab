@@ -67,6 +67,14 @@ function setup() {
   base.setContent(NOTE, BASE);
   const baseState = base.encodeState(NOTE);
 
+  // Lokaler eigener State = Basis-Historie (legacy). Nötig nach Fix 2: der
+  // ZUSTANDSLOSE Adopt-Fall diff-merged inzwischen die lokale .md ein, und die
+  // hier stale .md (= BASE) würde den Remote-Edit auf Zeile 1 zurückrollen. Mit
+  // eigenem State greift der own-Branch von ensureDoc (keine .md-Injektion), der
+  // Remote-Edit überlebt — was auch der Realität entspricht (ein laufendes Gerät
+  // hat eigenen State). Die zu testende Serialisierung bleibt davon unberührt.
+  vault._files.set('.qollab/note.md.local000.yjs', baseState.buffer as ArrayBuffer);
+
   const remote = new CrdtManager();
   remote.applyUpdate(NOTE, baseState);
   remote.setContent(NOTE, REMOTE);

@@ -119,7 +119,18 @@ describe('Merge-Kern-Konvergenz', () => {
     expect(merged).toBe(text);
   });
 
-  it('Nur-Remote-Änderung wird ohne Verdopplung übernommen', async () => {
+  it('Nur-Remote-Änderung wird übernommen (lokaler State erfasst, .md nicht eingespielt)', async () => {
+    // Vor Fix 2 pinnte dieser Test die alte Adopt-Semantik: kein eigener State,
+    // .md = alter Basistext, Erwartung = reiner Remote-Stand (die stale .md wurde
+    // NICHT eingespielt). Nach Fix 2 diff-merged der ZUSTANDSLOSE Adopt-Fall die
+    // .md aber ein (dort ist sie der einzige Träger lokaler Daten) — eine stale
+    // .md würde den Remote-Edit zurückrollen.
+    //
+    // Um hier die REINE Remote-Übernahme zu prüfen, hält die lokale Seite jetzt
+    // bereits EIGENEN State (die Basis-Historie, ohne neue lokale Edits). Damit
+    // greift der own-Branch von ensureDoc → die .md wird NICHT eingespielt, und
+    // der Remote-Edit ist das einzige Delta. Das entspricht der Realität: ein
+    // laufendes Qollab-Gerät hat immer eigenen State.
     const vault = makeVaultMock();
     const OLD = 'Zeile 1\nZeile 2\n';
     const NEW = 'Zeile 1\nZeile 2 geändert\n';
@@ -128,6 +139,12 @@ describe('Merge-Kern-Konvergenz', () => {
     const base = new CrdtManager();
     base.setContent('note.md', OLD);
     const baseState = base.encodeState('note.md');
+
+    // Lokaler eigener State = Basis-Historie (legacy → kompatibel mit dem Remote).
+    vault._files.set(
+      '.qollab/note.md.local000.yjs',
+      baseState.buffer as ArrayBuffer
+    );
 
     // Remote baut seine Änderung auf dieser geteilten Historie auf.
     const remote = new CrdtManager();
@@ -138,14 +155,54 @@ describe('Merge-Kern-Konvergenz', () => {
       remote.encodeState('note.md').buffer as ArrayBuffer
     );
 
-    // Lokale .md hält den alten Stand; lokaler Manager ist frisch (Doc nicht
-    // geladen) → ensureDoc adoptiert die Remote-Historie als Basis, die .md wird
-    // NICHT eingespielt → nur die Remote-Änderung bleibt stehen.
+    // .md steht noch auf dem alten Stand — darf das Ergebnis NICHT beeinflussen,
+    // da eigener State existiert (own-Branch spielt die .md nicht ein).
     vault._textFiles.set('note.md', OLD);
     const manager = new CrdtManager();
     const handler = new SyncHandler(vault as any, manager, 'local000');
 
     const merged = await handler.loadAndMerge('note.md');
     expect(merged).toBe(NEW);
+  });
+
+  it('Adopt ohne eigenen State: lokale .md-Zeile geht NICHT verloren (Fix 2)', async () => {
+    // Frischer kollaborativer Aufbau: dieses Gerät hat KEINEN eigenen .yjs-State.
+    // Es sieht eine fremde Sibling-.yjs (Basis + Remote-Edit) und hält lokal eine
+    // .md. Vor Fix 2 adoptierte ensureDoc nur die fremde Basis und der
+    // loadAndMerge-Write-Back überschrieb die (nie erfasste) lokale .md → die
+    // lokale Zeile ging dauerhaft verloren. Nach Fix 2 wird im zustandslosen
+    // Adopt-Fall die .md als Diff eingespielt (sie ist der EINZIGE Träger lokaler
+    // Daten).
+    //
+    // Determinismus: Im Adopt-Fall erzwingt setContent Text-Gleichheit mit der
+    // .md — das Ergebnis IST exakt der .md-Text (keine Zeichen-Interleaving-
+    // Mehrdeutigkeit). Der Remote-Edit überlebt hier, weil die .md ihn (via
+    // Datei-Sync) bereits reflektiert; die distinkte lokale Zeile ist das, was
+    // Fix 2 vor dem Verlust rettet.
+    const vault = makeVaultMock();
+    const base = 'Gemeinsame Zeile\n';
+
+    // Fremde Inkarnation: Basis + Remote-Edit (hängt eine Zeile an).
+    const remote = new CrdtManager();
+    remote.setContent('note.md', base);
+    remote.setContent('note.md', 'Gemeinsame Zeile\nRemote-Zeile\n');
+    vault._files.set(
+      '.qollab/note.md.remote01.yjs',
+      remote.encodeState('note.md').buffer as ArrayBuffer
+    );
+
+    // Lokale .md: Remote-Zeile (bereits per Datei-Sync da) PLUS eine distinkte
+    // lokale Zeile.
+    vault._textFiles.set(
+      'note.md',
+      'Gemeinsame Zeile\nRemote-Zeile\nLokale Zeile\n'
+    );
+
+    const manager = new CrdtManager();
+    const handler = new SyncHandler(vault as any, manager, 'local000');
+
+    const merged = await handler.loadAndMerge('note.md');
+    // Beide überleben: Remote-Edit UND die lokale Zeile.
+    expect(merged).toBe('Gemeinsame Zeile\nRemote-Zeile\nLokale Zeile\n');
   });
 });
