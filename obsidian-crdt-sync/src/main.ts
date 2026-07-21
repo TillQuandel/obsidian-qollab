@@ -52,7 +52,8 @@ export default class CrdtSyncPlugin extends Plugin {
     this.fileWatcher = new FileWatcher(this.app.vault, this.settings.clientId, async (notePath) => {
       await this.pathQueue.run(notePath, () => this.onRemoteYjsUpdate(notePath));
     });
-    this.registerEvent(this.fileWatcher.start());
+    // start() liefert je einen Ref für 'modify' und 'create' — beide registrieren.
+    for (const ref of this.fileWatcher.start()) this.registerEvent(ref);
 
     // Wenn Nutzer eine .md-Note bearbeitet → CRDT-State aktualisieren + speichern.
     // Read UND applyLocalContent laufen über dieselbe Queue wie der Remote-Merge:
