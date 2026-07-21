@@ -1,6 +1,7 @@
-import { SyncHandler } from '../src/sync-handler';
+import { SyncHandler, TombstoneStore } from '../src/sync-handler';
 import { CrdtManager } from '../src/crdt-manager';
 import { PathQueue } from '../src/path-queue';
+import { encodeStateFile, generateGuid } from '../src/state-file';
 
 // Task 4, Abschnitt D: Regressions-Test „paralleles modify verliert kein Update".
 //
@@ -42,6 +43,9 @@ function makeVaultMock() {
     },
     modifyBinary: async (file: { path: string }, data: ArrayBuffer | Uint8Array) => {
       files.set(file.path, toAB(data));
+    },
+    delete: async (file: { path: string }) => {
+      files.delete(file.path);
     },
     createFolder: async (_path: string) => {},
     listYjsFiles: (notePath: string) =>
@@ -148,5 +152,111 @@ describe('Nebenläufigkeit: paralleles modify verliert kein Update (Task 4 D)', 
 
     expect(manager.getContent(NOTE)).toBe('Zeile 1\nZeile 2 LOCAL\n');
     expect(manager.getContent(NOTE)).not.toBe(MERGED); // Remote-Änderung verloren
+  });
+});
+
+// Task 4 (Review-Nachtrag): rename/delete-Handler laufen jetzt ebenfalls über die
+// PathQueue. Ohne das Routing kann ein geparkter Task auf demselben Pfad nach dem
+// Delete resumen und via saveState die gelöschte .yjs wieder anlegen — die Note
+// „un-deletet" sich cross-device. Test auf SyncHandler/PathQueue-Ebene.
+
+const OWN_YJS = '.qollab/note.md.local000.yjs';
+
+// Baut die Ausgangslage für das Delete-Szenario: eigene .yjs (mit GUID-Header)
+// liegt vor, Doc ist NICHT geladen. Der erste `readBinary` der eigenen .yjs wird
+// verzögert (Buffer VOR dem await gecaptured, überlebt also ein zwischenzeitliches
+// Delete — modelliert einen bereits laufenden Read).
+function setupDelete() {
+  const vault = makeVaultMock();
+
+  const guid = generateGuid();
+  const seed = new CrdtManager();
+  seed.setContent(NOTE, 'Basis\n');
+  vault._files.set(OWN_YJS, toAB(encodeStateFile(guid, seed.encodeState(NOTE))));
+  vault._textFiles.set(NOTE, 'Basis\n');
+
+  let releaseOwn!: () => void;
+  const ownGate = new Promise<void>((r) => {
+    releaseOwn = r;
+  });
+  let gated = false;
+  vault.readBinary = async (file: { path: string }) => {
+    const buf = vault._files.get(file.path)!;
+    if (file.path === OWN_YJS && !gated) {
+      gated = true;
+      await ownGate;
+    }
+    return buf;
+  };
+
+  const manager = new CrdtManager();
+  const handler = new SyncHandler(vault as any, manager, 'local000');
+  return { vault, handler, releaseOwn: () => releaseOwn() };
+}
+
+const NOOP_TOMBSTONES: TombstoneStore = {
+  has: () => false,
+  add: async () => {},
+};
+
+// Delete-Handler-Arbeit (main.ts delete-Body) auf Handler-Ebene: GUID tombstonen,
+// eigene/fremde Siblings aus dem Mock löschen, Doc + Map-Eintrag vergessen.
+async function deleteWork(
+  vault: ReturnType<typeof makeVaultMock>,
+  handler: SyncHandler,
+  tombstones: TombstoneStore
+) {
+  const guid = await handler.currentGuid(NOTE);
+  if (guid) await tombstones.add(guid);
+  const siblings = Array.from(vault._files.keys()).filter(
+    (p) => p.startsWith(`.qollab/${NOTE}.`) && p.endsWith('.yjs')
+  );
+  for (const p of siblings) {
+    await vault.delete({ path: p });
+  }
+  handler.disposeNote(NOTE);
+}
+
+describe('Nebenläufigkeit: Delete resurrectet keine .yjs (Task 4 Review-Nachtrag)', () => {
+  it('MIT Queue: Delete nach in-flight applyLocalContent → keine Resurrection', async () => {
+    const { vault, handler, releaseOwn } = setupDelete();
+    const queue = new PathQueue();
+
+    // Task 1: applyLocalContent hängt im verzögerten readBinary der eigenen .yjs.
+    const p1 = queue.run(NOTE, () => handler.applyLocalContent(NOTE, 'Basis geändert\n'));
+    await tick();
+
+    // Task 2: Delete-Arbeit über DIESELBE Queue → wartet strikt auf Task 1.
+    let deleteStarted = false;
+    const p2 = queue.run(NOTE, async () => {
+      deleteStarted = true;
+      await deleteWork(vault, handler, NOOP_TOMBSTONES);
+    });
+    expect(deleteStarted).toBe(false);
+
+    releaseOwn();
+    await Promise.all([p1, p2]);
+
+    // Delete lief NACH applyLocalContent → keine .yjs bleibt/entsteht wieder.
+    expect(vault.listYjsFiles(NOTE)).toEqual([]);
+    expect(vault._files.has(OWN_YJS)).toBe(false);
+  });
+
+  it('OHNE Queue-Routing (alter Stand): geparktes applyLocalContent resurrectet die .yjs', async () => {
+    const { vault, handler, releaseOwn } = setupDelete();
+
+    // applyLocalContent NICHT über die Queue → hängt im readBinary.
+    const p1 = handler.applyLocalContent(NOTE, 'Basis geändert\n');
+    await tick();
+
+    // Delete-Arbeit direkt (nicht enqueued), während p1 geparkt ist.
+    await deleteWork(vault, handler, NOOP_TOMBSTONES);
+    expect(vault._files.has(OWN_YJS)).toBe(false); // erst mal gelöscht
+
+    // p1 resumt → ensureDoc + saveState → createBinary → Resurrection.
+    releaseOwn();
+    await p1;
+
+    expect(vault._files.has(OWN_YJS)).toBe(true); // wieder da (Race-Beleg)
   });
 });

@@ -75,36 +75,46 @@ export default class CrdtSyncPlugin extends Plugin {
     );
 
     // Rename: .yjs-Dateien mitumbenennen. Gleiche Inkarnation → GUID bleibt,
-    // Map-Eintrag zieht auf den neuen Pfad um.
+    // Map-Eintrag zieht auf den neuen Pfad um. Über die Queue auf oldPath, damit
+    // ein geparkter Task auf oldPath (loadAndMerge/applyLocalContent) nicht
+    // parallel zum renameNote den GUID-Map-Eintrag mutiert (Orphan-.yjs +
+    // GUID-Divergenz). Keine verschachtelten run-Aufrufe mit gleichem Key hier.
     this.registerEvent(
       this.app.vault.on('rename', async (file, oldPath) => {
         if (!(file instanceof TFile)) return;
         if (!file.path.endsWith('.md')) return;
-        const yjsFiles = this.app.vault.getFiles()
-          .filter((f: TFile) => f.path.startsWith(`.qollab/${oldPath}.`) && f.path.endsWith('.yjs'));
-        for (const yjsFile of yjsFiles) {
-          const suffix = yjsFile.path.slice(`.qollab/${oldPath}`.length);
-          await this.app.fileManager.renameFile(yjsFile, `.qollab/${file.path}${suffix}`);
-        }
-        this.syncHandler.renameNote(oldPath, file.path);
+        await this.pathQueue.run(oldPath, async () => {
+          const yjsFiles = this.app.vault.getFiles()
+            .filter((f: TFile) => f.path.startsWith(`.qollab/${oldPath}.`) && f.path.endsWith('.yjs'));
+          for (const yjsFile of yjsFiles) {
+            const suffix = yjsFile.path.slice(`.qollab/${oldPath}`.length);
+            await this.app.fileManager.renameFile(yjsFile, `.qollab/${file.path}${suffix}`);
+          }
+          this.syncHandler.renameNote(oldPath, file.path);
+        });
       })
     );
 
     // Delete: .yjs-Dateien mitlöschen. VOR dem Löschen die GUID dieser
     // Inkarnation tombstonen — so kann eine stale fremde .yjs derselben GUID die
-    // gleichnamig neu angelegte Note später nicht wiederauferstehen lassen.
+    // gleichnamig neu angelegte Note später nicht wiederauferstehen lassen. Über
+    // die Queue, damit ein geparkter Task auf demselben Pfad nicht nach dem
+    // Delete resumed und via saveState die gelöschte .yjs wieder anlegt
+    // (Resurrection). Keine verschachtelten run-Aufrufe mit gleichem Key hier.
     this.registerEvent(
       this.app.vault.on('delete', async (file) => {
         if (!(file instanceof TFile)) return;
         if (!file.path.endsWith('.md')) return;
-        const guid = await this.syncHandler.currentGuid(file.path);
-        if (guid) await this.tombstoneStore.add(guid);
-        const yjsFiles = this.app.vault.getFiles()
-          .filter((f: TFile) => f.path.startsWith(`.qollab/${file.path}.`) && f.path.endsWith('.yjs'));
-        for (const yjsFile of yjsFiles) {
-          await this.app.vault.delete(yjsFile);
-        }
-        this.syncHandler.disposeNote(file.path);
+        await this.pathQueue.run(file.path, async () => {
+          const guid = await this.syncHandler.currentGuid(file.path);
+          if (guid) await this.tombstoneStore.add(guid);
+          const yjsFiles = this.app.vault.getFiles()
+            .filter((f: TFile) => f.path.startsWith(`.qollab/${file.path}.`) && f.path.endsWith('.yjs'));
+          for (const yjsFile of yjsFiles) {
+            await this.app.vault.delete(yjsFile);
+          }
+          this.syncHandler.disposeNote(file.path);
+        });
       })
     );
 
