@@ -33,10 +33,15 @@ function tfile(path: string): TFile {
   return f;
 }
 
+// Eigene clientId des Watchers in diesen Tests. Verschieden von den in den
+// Pfaden genutzten Fremd-clientIds (a1b2c3d4, deadbeef), damit die als "fremd"
+// gelten und den Callback triggern.
+const SELF = '00000000';
+
 describe('FileWatcher', () => {
   it('start() registriert einen modify-Handler', () => {
     const vault = makeVaultMock();
-    const watcher = new FileWatcher(vault as any, async () => {});
+    const watcher = new FileWatcher(vault as any, SELF, async () => {});
     watcher.start();
     expect(vault._hasHandler()).toBe(true);
   });
@@ -44,7 +49,7 @@ describe('FileWatcher', () => {
   it('triggert Callback und extrahiert notePath für per-Client .yjs', async () => {
     const vault = makeVaultMock();
     const onChanged = jest.fn(async () => {});
-    new FileWatcher(vault as any, onChanged).start();
+    new FileWatcher(vault as any, SELF, onChanged).start();
 
     await vault._emit(tfile('.qollab/note.md.a1b2c3d4.yjs'));
 
@@ -54,11 +59,33 @@ describe('FileWatcher', () => {
   it('extrahiert notePath inklusive Unterverzeichnis', async () => {
     const vault = makeVaultMock();
     const onChanged = jest.fn(async () => {});
-    new FileWatcher(vault as any, onChanged).start();
+    new FileWatcher(vault as any, SELF, onChanged).start();
 
     await vault._emit(tfile('.qollab/folder/note.md.deadbeef.yjs'));
 
     expect(onChanged).toHaveBeenCalledWith('folder/note.md');
+  });
+
+  it('ignoriert die eigene clientId-Datei (Loop-Schutz)', async () => {
+    // saveState schreibt die eigene .yjs selbst; würde der Watcher darauf
+    // triggern, entstünde eine Endlos-Schleife.
+    const vault = makeVaultMock();
+    const onChanged = jest.fn(async () => {});
+    new FileWatcher(vault as any, 'a1b2c3d4', onChanged).start();
+
+    await vault._emit(tfile('.qollab/note.md.a1b2c3d4.yjs'));
+
+    expect(onChanged).not.toHaveBeenCalled();
+  });
+
+  it('triggert weiterhin für fremde clientId', async () => {
+    const vault = makeVaultMock();
+    const onChanged = jest.fn(async () => {});
+    new FileWatcher(vault as any, 'a1b2c3d4', onChanged).start();
+
+    await vault._emit(tfile('.qollab/note.md.deadbeef.yjs'));
+
+    expect(onChanged).toHaveBeenCalledWith('note.md');
   });
 
   it('ignoriert Legacy .qollab/note.md.yjs ohne clientId', async () => {
@@ -67,7 +94,7 @@ describe('FileWatcher', () => {
     // sie sehr wohl matcht — bekannt, hier nicht gefixt.)
     const vault = makeVaultMock();
     const onChanged = jest.fn(async () => {});
-    new FileWatcher(vault as any, onChanged).start();
+    new FileWatcher(vault as any, SELF, onChanged).start();
 
     await vault._emit(tfile('.qollab/note.md.yjs'));
 
@@ -77,7 +104,7 @@ describe('FileWatcher', () => {
   it('ignoriert Nicht-.yjs- und Nicht-.qollab-Pfade', async () => {
     const vault = makeVaultMock();
     const onChanged = jest.fn(async () => {});
-    new FileWatcher(vault as any, onChanged).start();
+    new FileWatcher(vault as any, SELF, onChanged).start();
 
     await vault._emit(tfile('note.md'));
     await vault._emit(tfile('.qollab/note.md.a1b2c3d4.txt'));
@@ -89,7 +116,7 @@ describe('FileWatcher', () => {
   it('ignoriert Nicht-TFile-Objekte (instanceof-Check)', async () => {
     const vault = makeVaultMock();
     const onChanged = jest.fn(async () => {});
-    new FileWatcher(vault as any, onChanged).start();
+    new FileWatcher(vault as any, SELF, onChanged).start();
 
     // Plain object mit passendem Pfad, aber kein TFile.
     await vault._emit({ path: '.qollab/note.md.a1b2c3d4.yjs' });
@@ -99,7 +126,7 @@ describe('FileWatcher', () => {
 
   it('stop() deregistriert den Handler', () => {
     const vault = makeVaultMock();
-    const watcher = new FileWatcher(vault as any, async () => {});
+    const watcher = new FileWatcher(vault as any, SELF, async () => {});
     watcher.start();
     watcher.stop();
     expect(vault._hasHandler()).toBe(false);

@@ -59,13 +59,18 @@ describe('SyncHandler', () => {
     expect(merged).toContain('Lokal-Inhalt');
   });
 
-  it('loadAndMerge behält lokalen .md-Inhalt bei Cold-Start (kein vorheriges setContent)', async () => {
+  it('loadAndMerge übernimmt persistierten State und spielt stale .md NICHT ein (Task 2, D.3)', async () => {
+    // Neue Semantik: loadAndMerge bootstrappt den Doc aus persistiertem State
+    // (hier die vorhandene .yjs) und injiziert den lokalen .md-Text NICHT mehr.
+    // Eine ggf. veraltete .md wird ignoriert — sonst würde sie ankommende
+    // Remote-Edits rückgängig machen. Frühere Fassung dieses Tests pinnte genau
+    // die entfernte .md-Injektion; sie ist durch D.3 obsolet.
     const vault = makeVaultMock() as any;
 
-    // Alice hat eine Note aber hat sie seit Plugin-Start nie bearbeitet (kein setContent)
-    vault._textFiles.set('note.md', 'Alices lokaler Text');
+    // Stale lokaler Text, seit Plugin-Start nie in den CRDT gebracht.
+    vault._textFiles.set('note.md', 'Alices stale lokaler Text');
 
-    // Bob hat Änderungen in .yjs gespeichert
+    // Persistierter Stand liegt in der .yjs.
     const remote = new CrdtManager();
     remote.setContent('note.md', 'Bobs Remote-Text');
     vault._files.set('.qollab/note.md.a1b2c3d4.yjs', remote.encodeState('note.md').buffer);
@@ -74,8 +79,32 @@ describe('SyncHandler', () => {
     const handler = new SyncHandler(vault, manager, 'a1b2c3d4');
 
     const merged = await handler.loadAndMerge('note.md');
-    expect(merged).toContain('Alices lokaler Text');
-    expect(merged).toContain('Bobs Remote-Text');
+    expect(merged).toBe('Bobs Remote-Text');
+  });
+
+  it('loadAndMerge persistiert die übernommene Fremd-Historie (Neustart-fest)', async () => {
+    const vault = makeVaultMock() as any;
+
+    // Fremde Sibling-.yjs mit dem gemergten Stand.
+    const remote = new CrdtManager();
+    remote.setContent('note.md', 'Gemergter Stand\n');
+    vault._files.set('.qollab/note.md.remote01.yjs', remote.encodeState('note.md').buffer);
+
+    const manager = new CrdtManager();
+    const handler = new SyncHandler(vault, manager, 'local000');
+
+    const merged = await handler.loadAndMerge('note.md');
+    expect(merged).toBe('Gemergter Stand\n');
+    // Eigene .yjs wurde geschrieben.
+    expect(vault._files.has('.qollab/note.md.local000.yjs')).toBe(true);
+
+    // Neustart: fremde .yjs verschwindet, nur die eigene bleibt sichtbar.
+    vault._files.delete('.qollab/note.md.remote01.yjs');
+    const freshManager = new CrdtManager();
+    const freshHandler = new SyncHandler(vault, freshManager, 'local000');
+
+    const reloaded = await freshHandler.loadAndMerge('note.md');
+    expect(reloaded).toBe('Gemergter Stand\n');
   });
 
   it('loadAndMerge gibt null zurück wenn keine .yjs-Datei existiert', async () => {
