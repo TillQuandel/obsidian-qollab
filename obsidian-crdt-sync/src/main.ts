@@ -4,6 +4,7 @@ import { SyncHandler, filterYjsFiles, TombstoneStore } from './sync-handler';
 import { FileWatcher } from './file-watcher';
 import { CrdtSyncSettings, CrdtSyncSettingTab, DEFAULT_SETTINGS, generateClientId } from './settings';
 import { pruneTombstones } from './tombstones';
+import { PathQueue } from './path-queue';
 
 export default class CrdtSyncPlugin extends Plugin {
   settings: CrdtSyncSettings;
@@ -20,8 +21,10 @@ export default class CrdtSyncPlugin extends Plugin {
   };
   // Guard: verhindert Endlos-Loop wenn wir selbst eine .md-Datei schreiben
   private writingPaths = new Set<string>();
-  // Serialisiert Merge-Operationen pro Dateipfad (verhindert Race Condition bei schnellem Sync)
-  private mergeQueue = new Map<string, Promise<void>>();
+  // Serialisiert ALLE Doc-Mutationen pro Note-Pfad (Remote-Merge, lokale
+  // Änderung, Startup-Sweep) — verhindert verschränkte Mutationen desselben
+  // Y.Doc und damit verlorene Updates.
+  private pathQueue = new PathQueue();
   private unloaded = false;
 
   async onload() {
@@ -47,18 +50,14 @@ export default class CrdtSyncPlugin extends Plugin {
     this.syncHandler = new SyncHandler(vaultWithList as any, this.crdtManager, this.settings.clientId, this.tombstoneStore);
 
     this.fileWatcher = new FileWatcher(this.app.vault, this.settings.clientId, async (notePath) => {
-      // Merge-Aufrufe für denselben Pfad sequenziell abarbeiten
-      const prev = this.mergeQueue.get(notePath) ?? Promise.resolve();
-      const next = prev.then(() => this.onRemoteYjsUpdate(notePath));
-      const queued = next.catch(() => {}).then(() => {
-        if (this.mergeQueue.get(notePath) === queued) this.mergeQueue.delete(notePath);
-      });
-      this.mergeQueue.set(notePath, queued);
-      await next;
+      await this.pathQueue.run(notePath, () => this.onRemoteYjsUpdate(notePath));
     });
     this.registerEvent(this.fileWatcher.start());
 
-    // Wenn Nutzer eine .md-Note bearbeitet → CRDT-State aktualisieren + speichern
+    // Wenn Nutzer eine .md-Note bearbeitet → CRDT-State aktualisieren + speichern.
+    // Read UND applyLocalContent laufen über dieselbe Queue wie der Remote-Merge:
+    // so liest die Task die .md erst, nachdem ein evtl. laufender Merge sein
+    // Write-Back abgeschlossen hat, statt einen stale-Text hereinzuspielen.
     this.registerEvent(
       this.app.vault.on('modify', async (file) => {
         if (!this.settings.enabled) return;
@@ -66,8 +65,12 @@ export default class CrdtSyncPlugin extends Plugin {
         if (!file.path.endsWith('.md')) return;
         if (this.writingPaths.has(file.path)) return;
 
-        const content = await this.app.vault.read(file);
-        await this.syncHandler.applyLocalContent(file.path, content);
+        await this.pathQueue.run(file.path, async () => {
+          if (this.unloaded) return;
+          const content = await this.app.vault.read(file);
+          if (this.unloaded) return;
+          await this.syncHandler.applyLocalContent(file.path, content);
+        });
       })
     );
 
@@ -132,9 +135,15 @@ export default class CrdtSyncPlugin extends Plugin {
         continue;
       }
 
+      // Pro-Datei-Arbeit über dieselbe Queue wie modify/Remote-Merge — der Sweep
+      // darf nicht parallel zu einem laufenden Merge denselben Doc mutieren.
       try {
-        const content = await this.app.vault.read(file);
-        await this.syncHandler.applyLocalContent(file.path, content);
+        await this.pathQueue.run(file.path, async () => {
+          if (this.unloaded) return;
+          const content = await this.app.vault.read(file);
+          if (this.unloaded) return;
+          await this.syncHandler.applyLocalContent(file.path, content);
+        });
       } catch {
         // Einzelne Datei darf den Sweep nicht abbrechen
       }
@@ -146,22 +155,29 @@ export default class CrdtSyncPlugin extends Plugin {
     if (!this.settings.enabled) return;
 
     const merged = await this.syncHandler.loadAndMerge(notePath);
+    if (this.unloaded) return;
     if (merged === null) return;
 
     const file = this.app.vault.getAbstractFileByPath(notePath);
     if (!(file instanceof TFile)) return;
 
-    const current = await this.app.vault.read(file);
-    if (current === merged) return;
-
+    // Atomarer Read-Modify-Write: der Vergleich „aktueller Inhalt === merged"
+    // liegt in der process-Funktion. Bei Gleichheit denselben String
+    // zurückgeben (kein inhaltlicher Merge, keine Notice). Der writingPaths-Guard
+    // bleibt, da auch process ein modify-Event feuert.
     this.writingPaths.add(notePath);
+    let changed = false;
     try {
-      await this.app.vault.modify(file, merged);
+      await this.app.vault.process(file, (data) => {
+        if (data === merged) return data;
+        changed = true;
+        return merged;
+      });
     } finally {
       this.writingPaths.delete(notePath);
     }
 
-    if (this.settings.statusNotice) {
+    if (changed && this.settings.statusNotice) {
       new Notice(`CRDT Sync: ${file.name} automatisch gemergt.`);
     }
   }
