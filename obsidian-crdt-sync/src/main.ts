@@ -125,8 +125,10 @@ export default class CrdtSyncPlugin extends Plugin {
     // neuer ist als die zugehoerige .yjs (oder die noch keine .yjs hat),
     // die lokale Aenderung via applyLocalContent in den CRDT bringen.
     // applyLocalContent bootstrappt den Doc aus dem persistierten eigenen State
-    // (nicht aus dem Text) und diff-merged nur die lokale Aenderung ein. KEIN
-    // loadAndMerge — fremde .yjs-Staende werden hier weiterhin NICHT hereingezogen.
+    // (nicht aus dem Text) und diff-merged nur die lokale Aenderung ein. Hat
+    // dieses Geraet noch keinen eigenen State, werden fremde Sibling-.yjs-Files
+    // als Basis adoptiert (Sibling-Adoption). KEIN loadAndMerge — ein explizites
+    // Hereinholen fremder .yjs-Staende findet im Sweep nicht statt.
     this.app.workspace.onLayoutReady(() => {
       void this.snapshotStaleMarkdownFiles();
     });
