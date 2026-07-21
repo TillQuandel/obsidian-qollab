@@ -53,6 +53,9 @@ class Setting {
   setDesc() {
     return this;
   }
+  setHeading() {
+    return this;
+  }
   addToggle(cb) {
     const toggle = {
       setValue() {

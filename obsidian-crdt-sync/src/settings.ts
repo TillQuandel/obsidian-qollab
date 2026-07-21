@@ -31,7 +31,7 @@ export class CrdtSyncSettingTab extends PluginSettingTab {
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl('h2', { text: 'CRDT Sync' });
+    new Setting(containerEl).setName('Qollab').setHeading();
 
     new Setting(containerEl)
       .setName('Sync aktiviert')
