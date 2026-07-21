@@ -2,6 +2,11 @@
 
 > Ergebnis eines Multi-Agent-Reviews (6 Dimensionen, adversariale Verifikation) + empirischer
 > CRDT-Tests gegen die echte yjs-Lib. Stand: v0.3.0.
+>
+> **Re-Review 2026-07-21:** Repo seit Plan-Commit unverändert, alle Befunde erneut verifiziert
+> (tsconfig, Versions-Drift, setContent). Roadmap bestätigt; P1 um den zweiten
+> Konkatenations-Pfad in `loadAndMerge` präzisiert, Simultan-Erstkontakt als dokumentierte
+> Grenze festgeschrieben, Realismus-Abschnitt aktualisiert.
 
 ## Verdict
 
@@ -90,8 +95,21 @@ diese Korrektheit.
 ### P1 — Merge-Kern reparieren (der eigentliche Fix; nicht trivial)
 - [ ] `setContent` (delete+insert) ersetzen durch positionsgenauen Diff in den geteilten `YText`
       (z.B. `diff-match-patch` → Y.Text-Delta). Keine Änderung, die nicht real passiert ist.
+      (= Issue #2, löst zusammen mit den weiteren Punkten Issue #10.)
+- [ ] **Zweiten Konkatenations-Pfad in `loadAndMerge` schließen** (`sync-handler.ts`): aktuell
+      wird bei fehlendem Doc **erst** der lokale `.md`-Text als eigene Insert-Historie injiziert
+      und **danach** werden die Sibling-`.yjs` gemerged → Konkatenation selbst mit Diff-basiertem
+      `setContent`. Richtige Reihenfolge: Siblings zuerst laden (geteilte Historie übernehmen),
+      lokalen Text danach als Diff gegen den gemergten Stand einspielen.
 - [ ] Y.Doc-State (nicht der `.md`-Text) als Source-of-Truth persistieren; `.md` daraus rendern.
+      Präzisierung: „SoT" heißt, der Doc wird nie aus dem Text neu aufgebaut — externe
+      `.md`-Edits (User, andere Tools) fließen als Diff in den bestehenden Doc ein.
 - [ ] Recreate-Tombstone gegen Zombie-Resurrection bei gelöscht+neu-erstellt (Doc-GUID).
+- [ ] **Dokumentierte Grenze (bewusst nicht in P1 gelöst):** Simultan-Erstkontakt — zwei Clients
+      initialisieren dieselbe Note unabhängig, bevor einer die `.yjs` des anderen sieht →
+      weiterhin Konkatenation (keine gemeinsamen Item-IDs möglich). In README §Grenzen ehrlich
+      beschreiben; Lösungsideen (deterministische Genesis, Erstkontakt-Alignment) als eigenes
+      Issue, nicht als P1-Scope.
 - *Akzeptanz:* P0.5-Tests werden grün — kein verdoppelter Inhalt, A==B, Cold-Start == Original.
 
 ### P2 — Nebenläufigkeit
@@ -109,5 +127,9 @@ diese Korrektheit.
 
 ## Realismus
 
-Single-Entwickler parallel zur Bachelorarbeit (bis 2026-07-27). Jetzt machbar: P0 (erledigt) + P0.5.
-P1 ist ein fokussierter Rewrite-Block — eigene Sitzung, nicht nebenbei. P2/P3 danach.
+Ursprünglich (2026-05-28): Single-Entwickler parallel zur Bachelorarbeit; nur P0 + P0.5 machbar,
+P1 als eigene fokussierte Sitzung verschoben.
+
+Aktualisiert 2026-07-21: Umsetzung P0.5 → P1 → P2 → P3 in einer orchestrierten Session
+(Subagent-getrieben, TDD pro Task, Verifikation durch Orchestrator nach jedem Schritt).
+Deployment ins Live-Vault-Plugin-Verzeichnis erst nach komplett grünem `npx jest` + `tsc --noEmit`.
