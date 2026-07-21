@@ -12,5 +12,5 @@
     "strictNullChecks": true,
     "lib": ["ES2018", "DOM"]
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts"]
+  "include": ["obsidian-crdt-sync/src/**/*.ts", "obsidian-crdt-sync/tests/**/*.ts"]
 }
