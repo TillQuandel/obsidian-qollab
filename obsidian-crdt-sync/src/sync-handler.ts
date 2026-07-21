@@ -128,6 +128,9 @@ export class SyncHandler {
 
   // Dekodiert Sibling-Pfade und wendet die Tombstone-Regel (C.3) an: eine
   // getombstonte GUID → Datei als stale Leiche löschen und aus der Liste nehmen.
+  // Die eigene Datei kann hier nie fälschlich gelöscht werden: die eigene GUID
+  // landet nie im gerätelokalen Tombstone-Set (der delete-Handler tombstont nur
+  // beim Löschen der Note und entfernt dabei die eigene Datei ohnehin mit).
   private async decodeSiblings(paths: string[]): Promise<DecodedSibling[]> {
     const result: DecodedSibling[] = [];
     for (const path of paths) {
@@ -210,8 +213,15 @@ export class SyncHandler {
     winner: string,
     siblings: DecodedSibling[]
   ): Promise<void> {
+    // Fehlt die .md (z.B. extern gelöscht bei geschlossener App, danach triggert
+    // eine kleinere fremde GUID den Tie-Break), dürfen wir die eigene Historie
+    // NICHT verwerfen: disposeDoc + setContent('') würde den Doc leeren und
+    // dieser leere Stand als delete-all auf andere Geräte propagieren
+    // (Cross-Device-Datenverlust). Ohne aktuellen Text keine Konvergenz erzwingen
+    // — eigene Inkarnation behalten und verschieben, bis die .md wieder da ist.
     const file = this.vault.getAbstractFileByPath(notePath);
-    const mdText = file ? await this.vault.read(file) : '';
+    if (!file) return;
+    const mdText = await this.vault.read(file);
     this.crdtManager.disposeDoc(notePath);
     this.guids.set(notePath, winner);
     for (const s of siblings) {

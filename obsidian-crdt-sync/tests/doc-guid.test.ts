@@ -1,6 +1,6 @@
 import { SyncHandler, TombstoneStore } from '../src/sync-handler';
 import { CrdtManager } from '../src/crdt-manager';
-import { encodeStateFile } from '../src/state-file';
+import { encodeStateFile, decodeStateFile } from '../src/state-file';
 
 // Tests 1-4 (Task 3): Doc-GUID + Recreate-Tombstone.
 // Deckt Zombie-Resurrection, Simultan-Erstkontakt-Konvergenz (identisch +
@@ -188,7 +188,9 @@ describe('Doc-GUID + Tombstone', () => {
 
     expect(resA).toBe(resB); // Kern: deterministische Konvergenz, kein Konflikt-Copy
     expect(resA).toBe(expected);
-    expect(resA).toContain('Alice war hier'); // Gewinner-Basis erhalten
+    // "Alice war hier" steht in beiden Ausgangstexten (geteilte, unveränderte
+    // Zeile) — belegt nur, dass gemeinsamer Inhalt nicht zerstört wird.
+    expect(resA).toContain('Alice war hier');
     expect(resA).toContain('Bob war hier'); // Verlierer-Änderung erhalten
     expect(await A.currentGuid('note.md')).toBe(G_SMALL);
     expect(await B.currentGuid('note.md')).toBe(G_SMALL);
@@ -217,5 +219,51 @@ describe('Doc-GUID + Tombstone', () => {
     expect(String.fromCharCode(...Array.from(ownBytes.subarray(0, 4)))).toBe(
       'QLB1'
     );
+  });
+
+  // Regression (Review-Finding): Tie-Break bei fehlender .md darf die eigene
+  // Historie NICHT verwerfen. Sonst leert setContent('') den Doc und der leere
+  // Stand propagiert als delete-all → Cross-Device-Datenverlust.
+  it('Tie-Break ohne .md: eigene Inkarnation bleibt unverändert, kein leerer State', async () => {
+    const vault = makeVaultMock() as any;
+    const OWN_GUID = 'ffffffffffffffffffffffffffffffff'; // größer → würde verlieren
+    const FOREIGN_GUID = '00000000000000000000000000000000'; // kleiner → gewänne
+    const ownContent = 'Wichtiger Inhalt\n';
+
+    // Eigener persistierter Stand (größere GUID).
+    const ownDoc = new CrdtManager();
+    ownDoc.setContent('note.md', ownContent);
+    const ownPath = '.qollab/note.md.local000.yjs';
+    const ownBytesBefore = toAB(
+      encodeStateFile(OWN_GUID, ownDoc.encodeState('note.md'))
+    );
+    vault._files.set(ownPath, ownBytesBefore);
+
+    // Fremde Inkarnation mit kleinerer GUID + anderem Inhalt.
+    const foreignDoc = new CrdtManager();
+    foreignDoc.setContent('note.md', 'Fremder Inhalt\n');
+    vault._files.set(
+      '.qollab/note.md.remote01.yjs',
+      toAB(encodeStateFile(FOREIGN_GUID, foreignDoc.encodeState('note.md')))
+    );
+
+    // KEINE .md im Vault (extern gelöscht bei geschlossener App).
+    const handler = new SyncHandler(vault, new CrdtManager(), 'local000');
+    const merged = await handler.loadAndMerge('note.md');
+
+    // Eigener Inhalt bleibt erhalten, kein Wechsel auf die Gewinner-GUID.
+    expect(merged).toBe(ownContent);
+    expect(merged).not.toContain('Fremder Inhalt');
+    expect(await handler.currentGuid('note.md')).toBe(OWN_GUID);
+
+    // Eigene .yjs trägt weiterhin die eigene GUID und den eigenen (nicht-leeren)
+    // Inhalt — es wurde kein leerer State geschrieben.
+    const persisted = decodeStateFile(
+      new Uint8Array(vault._files.get(ownPath)!)
+    );
+    expect(persisted.guid).toBe(OWN_GUID);
+    const check = new CrdtManager();
+    check.applyUpdate('note.md', persisted.update);
+    expect(check.getContent('note.md')).toBe(ownContent);
   });
 });
