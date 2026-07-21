@@ -5,6 +5,9 @@ export interface CrdtSyncSettings {
   enabled: boolean;
   statusNotice: boolean;
   clientId: string;
+  // GUIDs gelöschter Note-Inkarnationen → deletedAt (epoch ms). Gerätelokal;
+  // verhindert Zombie-Resurrection stale fremder .yjs (siehe tombstones.ts).
+  tombstones: Record<string, number>;
 }
 
 export function generateClientId(): string {
@@ -17,6 +20,7 @@ export const DEFAULT_SETTINGS: CrdtSyncSettings = {
   enabled: true,
   statusNotice: true,
   clientId: '',
+  tombstones: {},
 };
 
 export class CrdtSyncSettingTab extends PluginSettingTab {

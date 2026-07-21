@@ -1,14 +1,23 @@
 import { Notice, Plugin, TFile } from 'obsidian';
 import { CrdtManager } from './crdt-manager';
-import { SyncHandler, filterYjsFiles } from './sync-handler';
+import { SyncHandler, filterYjsFiles, TombstoneStore } from './sync-handler';
 import { FileWatcher } from './file-watcher';
 import { CrdtSyncSettings, CrdtSyncSettingTab, DEFAULT_SETTINGS, generateClientId } from './settings';
+import { pruneTombstones } from './tombstones';
 
 export default class CrdtSyncPlugin extends Plugin {
   settings: CrdtSyncSettings;
   private crdtManager: CrdtManager;
   private syncHandler: SyncHandler;
   private fileWatcher: FileWatcher;
+  // Gerätelokaler Tombstone-Store (Teil der Plugin-Data).
+  private tombstoneStore: TombstoneStore = {
+    has: (guid: string) => guid in this.settings.tombstones,
+    add: async (guid: string) => {
+      this.settings.tombstones[guid] = Date.now();
+      await this.saveSettings();
+    },
+  };
   // Guard: verhindert Endlos-Loop wenn wir selbst eine .md-Datei schreiben
   private writingPaths = new Set<string>();
   // Serialisiert Merge-Operationen pro Dateipfad (verhindert Race Condition bei schnellem Sync)
@@ -35,7 +44,7 @@ export default class CrdtSyncPlugin extends Plugin {
         return (target as any)[prop];
       }
     });
-    this.syncHandler = new SyncHandler(vaultWithList as any, this.crdtManager, this.settings.clientId);
+    this.syncHandler = new SyncHandler(vaultWithList as any, this.crdtManager, this.settings.clientId, this.tombstoneStore);
 
     this.fileWatcher = new FileWatcher(this.app.vault, this.settings.clientId, async (notePath) => {
       // Merge-Aufrufe für denselben Pfad sequenziell abarbeiten
@@ -62,7 +71,8 @@ export default class CrdtSyncPlugin extends Plugin {
       })
     );
 
-    // Rename: .yjs-Dateien mitumbenennen
+    // Rename: .yjs-Dateien mitumbenennen. Gleiche Inkarnation → GUID bleibt,
+    // Map-Eintrag zieht auf den neuen Pfad um.
     this.registerEvent(
       this.app.vault.on('rename', async (file, oldPath) => {
         if (!(file instanceof TFile)) return;
@@ -73,21 +83,25 @@ export default class CrdtSyncPlugin extends Plugin {
           const suffix = yjsFile.path.slice(`.qollab/${oldPath}`.length);
           await this.app.fileManager.renameFile(yjsFile, `.qollab/${file.path}${suffix}`);
         }
-        this.crdtManager.disposeDoc(oldPath);
+        this.syncHandler.renameNote(oldPath, file.path);
       })
     );
 
-    // Delete: .yjs-Dateien mitlöschen
+    // Delete: .yjs-Dateien mitlöschen. VOR dem Löschen die GUID dieser
+    // Inkarnation tombstonen — so kann eine stale fremde .yjs derselben GUID die
+    // gleichnamig neu angelegte Note später nicht wiederauferstehen lassen.
     this.registerEvent(
       this.app.vault.on('delete', async (file) => {
         if (!(file instanceof TFile)) return;
         if (!file.path.endsWith('.md')) return;
+        const guid = await this.syncHandler.currentGuid(file.path);
+        if (guid) await this.tombstoneStore.add(guid);
         const yjsFiles = this.app.vault.getFiles()
           .filter((f: TFile) => f.path.startsWith(`.qollab/${file.path}.`) && f.path.endsWith('.yjs'));
         for (const yjsFile of yjsFiles) {
           await this.app.vault.delete(yjsFile);
         }
-        this.crdtManager.disposeDoc(file.path);
+        this.syncHandler.disposeNote(file.path);
       })
     );
 
@@ -160,6 +174,8 @@ export default class CrdtSyncPlugin extends Plugin {
 
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    // Tombstones > 90 Tage beim Laden entfernen (hält die Data-Datei klein).
+    this.settings.tombstones = pruneTombstones(this.settings.tombstones ?? {});
   }
 
   async saveSettings() {
