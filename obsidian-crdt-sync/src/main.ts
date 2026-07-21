@@ -1,6 +1,6 @@
 import { Notice, Plugin, TFile } from 'obsidian';
 import { CrdtManager } from './crdt-manager';
-import { SyncHandler } from './sync-handler';
+import { SyncHandler, filterYjsFiles } from './sync-handler';
 import { FileWatcher } from './file-watcher';
 import { CrdtSyncSettings, CrdtSyncSettingTab, DEFAULT_SETTINGS, generateClientId } from './settings';
 
@@ -28,11 +28,10 @@ export default class CrdtSyncPlugin extends Plugin {
     const vaultWithList = new Proxy(vault, {
       get(target, prop) {
         if (prop === 'listYjsFiles') return (notePath: string) =>
-          target.getFiles()
-            .map((f: { path: string }) => f.path)
-            .filter((p: string) =>
-              p.startsWith(`.qollab/${notePath}.`) && p.endsWith('.yjs')
-            );
+          filterYjsFiles(
+            target.getFiles().map((f: { path: string }) => f.path),
+            notePath
+          );
         return (target as any)[prop];
       }
     });

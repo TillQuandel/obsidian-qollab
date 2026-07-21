@@ -2,6 +2,15 @@ import { CrdtManager } from './crdt-manager';
 
 export const QOLLAB_DIR = '.qollab';
 
+// Filtert alle Pfade auf die .yjs-Sibling-Dateien einer Note.
+// Reines Refactoring des vormaligen Inline-Filters aus main.ts —
+// verhaltensgleich (Prefix `.qollab/<notePath>.` + Suffix `.yjs`).
+export function filterYjsFiles(allPaths: string[], notePath: string): string[] {
+  return allPaths.filter(
+    (p) => p.startsWith(`${QOLLAB_DIR}/${notePath}.`) && p.endsWith('.yjs')
+  );
+}
+
 interface VaultLike {
   getAbstractFileByPath(path: string): { path: string } | null;
   read(file: { path: string }): Promise<string>;
