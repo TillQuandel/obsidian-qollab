@@ -12,7 +12,7 @@ Jetzt müsst ihr manuell schauen was die andere geschrieben hat und die Änderun
 **Qollab versucht das automatisch zusammenzuführen.** Beide Texte sollen erhalten bleiben — ohne dass ihr Konflikt-Kopien von Hand mergen müsst.
 
 > [!WARNING]
-> **Experimentell — noch nicht für wichtige Daten.** Im häufigen Fall (zwei Geräte mit demselben Ausgangsstand einer Note) kann der erste Merge den Note-Inhalt **verdoppeln** — der ganze Text erscheint dann zweimal in der Note. Lasst die Konflikt-Kopie-Sicherung eures Sync-Dienstes vorerst **aktiv** und verlasst euch nicht allein auf Qollab. Details unter [Grenzen](#grenzen).
+> **Experimentell — noch nicht für wichtige Daten.** Der frühere Verdopplungs-Fehler beim ersten Merge ist behoben (positionsgenaue Diff-Updates + Basis-Adoption). Bis zum finalen Review vor dem ersten Release bleibt Qollab dennoch experimentell: Lasst die Konflikt-Kopie-Sicherung eures Sync-Dienstes vorerst **aktiv** und verlasst euch nicht allein auf Qollab. Details unter [Grenzen](#grenzen).
 
 ## Installation
 
@@ -54,9 +54,15 @@ Die `.yjs`-Dateien siehst du im Vault-Explorer nicht — Obsidian blendet sie au
 
 ## Grenzen
 
-**Inhalts-Verdopplung beim ersten Merge (bekannter Fehler).** Qollab baut seinen Merge-Zustand aktuell, indem es bei jeder Änderung den kompletten Note-Text neu setzt. Zwei Geräte, die unabhängig vom selben Ausgangsstand starten, erzeugen dadurch getrennte Änderungs-Historien — beim Zusammenführen wird der gemeinsame Text **aneinandergehängt statt erkannt**. Aus `Hallo Welt` wird dann `Hallo Welt\nHallo Welt`. Das betrifft den typischen Einstiegsfall (zwei Personen, geteilter Vault, dieselbe Note). Fix in Arbeit (Umstellung auf positionsgenaue Diffs).
+**Inhalts-Verdopplung beim ersten Merge — behoben.** Qollab setzt Änderungen jetzt über positionsgenaue Diffs (unveränderte Zeichen behalten ihre Identität) und baut den Merge-Zustand aus dem persistierten State auf statt aus dem Volltext. Zwei Geräte, die unabhängig vom selben Ausgangsstand starten, verdoppeln den Inhalt dadurch nicht mehr.
+
+**Simultan-Erstkontakt — gelöst.** Wenn zwei Geräte dieselbe Note unabhängig anlegen, *bevor* sie die Hilfsdatei des anderen sehen, bekam früher jede Seite eine eigene Historie und der Sync spaltete sich dauerhaft. Jede Note-Inkarnation trägt jetzt eine Doc-GUID; beim Erstkontakt gewinnt deterministisch die (bytewise) kleinere GUID, das unterlegene Gerät wechselt auf dieselbe Basis. Beide Seiten konvergieren ohne Konflikt-Kopie.
+
+**Zombie-Resurrection — behoben.** Eine gelöschte und gleichnamig neu angelegte Note wird nicht mehr durch eine verspätet ankommende alte Hilfsdatei „wiederbelebt": Beim Löschen wird die GUID der alten Inkarnation lokal getombstoned; stale Hilfsdateien dieser GUID werden erkannt, ignoriert und aufgeräumt.
 
 Wenn zwei Personen **gleichzeitig dieselbe Zeile** ändern, entscheidet Qollab automatisch welche Version vorne steht — beide Texte bleiben erhalten, aber die Reihenfolge kann überraschend sein.
+
+**Gerätelokale Tombstones (bewusste Grenze).** Die Lösch-Markierungen liegen nur auf dem Gerät, das die Löschung durchführt. Ein anderes Gerät, das während Löschung + Neuanlage geschlossen/offline war, kann mit seiner alten Historie weiterlaufen und nimmt am CRDT-Merge der neuen Inkarnation nicht mehr teil (sein Tie-Break bevorzugt womöglich die alte GUID). Sein `.md`-Inhalt bleibt über den normalen Datei-Sync trotzdem aktuell — es droht kein Datenverlust, aber der CRDT-Sync ist auf diesem Gerät bis zum Neuaufsetzen des Trackings degradiert. Gesyncte Tombstone-Dateien wären die Ausbaustufe (derzeit nicht umgesetzt).
 
 Echtzeit-Cursor-Sync (wie in Google Docs) ist angedacht, aber mit der server-losen File-Sync-Architektur nicht ohne Weiteres umsetzbar — kein fester Termin.
 
