@@ -79,6 +79,9 @@ diese Korrektheit.
 
 ## Roadmap
 
+> Umsetzung erledigt auf `fix/merge-core-roadmap`. Ausführungsdetails pro Schritt (Task-Briefs,
+> Reports, Reviews) liegen in `.superpowers/sdd/progress.md`.
+
 ### P0 — Schaden begrenzen (erledigt am 2026-05-28)
 - [x] README-Top: unbedingte Zusage entfernt, `[!WARNING]`-Block ergänzt.
 - [x] README-Grenzen: Voll-Duplizierung konkret beschrieben; Cursor-Sync entschärft.
@@ -86,43 +89,45 @@ diese Korrektheit.
 - *Akzeptanz:* README ohne unbedingte Zusage; zwei getrennte Issues. ✅
 
 ### P0.5 — Rotes Regressions-Netz (vor dem Umbau)
-- [ ] obsidian-Mock durch echte Stub-Klassen ersetzen (App/Plugin/Setting), damit main.ts importierbar wird.
-- [ ] `listYjsFiles` aus dem Proxy in main.ts in eine testbare, exportierte Funktion ziehen.
-- [ ] Drei `toBe`-Tests (nicht `toContain`): Zwei-Geräte-Erstmerge, A==B-Konvergenz, Idempotenz.
-- [ ] `file-watcher.test.ts` für QOLLAB_RE.
+- [x] obsidian-Mock durch echte Stub-Klassen ersetzen (App/Plugin/Setting), damit main.ts importierbar wird.
+- [x] `listYjsFiles` aus dem Proxy in main.ts in eine testbare, exportierte Funktion ziehen.
+- [x] Drei `toBe`-Tests (nicht `toContain`): Zwei-Geräte-Erstmerge, A==B-Konvergenz, Idempotenz.
+- [x] `file-watcher.test.ts` für QOLLAB_RE.
 - *Akzeptanz:* drei **rote** Tests, die die Duplizierung reproduzieren (= Akzeptanzkriterium für P1).
 
 ### P1 — Merge-Kern reparieren (der eigentliche Fix; nicht trivial)
-- [ ] `setContent` (delete+insert) ersetzen durch positionsgenauen Diff in den geteilten `YText`
+- [x] `setContent` (delete+insert) ersetzen durch positionsgenauen Diff in den geteilten `YText`
       (z.B. `diff-match-patch` → Y.Text-Delta). Keine Änderung, die nicht real passiert ist.
       (= Issue #2, löst zusammen mit den weiteren Punkten Issue #10.)
-- [ ] **Zweiten Konkatenations-Pfad in `loadAndMerge` schließen** (`sync-handler.ts`): aktuell
+- [x] **Zweiten Konkatenations-Pfad in `loadAndMerge` schließen** (`sync-handler.ts`): aktuell
       wird bei fehlendem Doc **erst** der lokale `.md`-Text als eigene Insert-Historie injiziert
       und **danach** werden die Sibling-`.yjs` gemerged → Konkatenation selbst mit Diff-basiertem
       `setContent`. Richtige Reihenfolge: Siblings zuerst laden (geteilte Historie übernehmen),
       lokalen Text danach als Diff gegen den gemergten Stand einspielen.
-- [ ] Y.Doc-State (nicht der `.md`-Text) als Source-of-Truth persistieren; `.md` daraus rendern.
+- [x] Y.Doc-State (nicht der `.md`-Text) als Source-of-Truth persistieren; `.md` daraus rendern.
       Präzisierung: „SoT" heißt, der Doc wird nie aus dem Text neu aufgebaut — externe
       `.md`-Edits (User, andere Tools) fließen als Diff in den bestehenden Doc ein.
-- [ ] Recreate-Tombstone gegen Zombie-Resurrection bei gelöscht+neu-erstellt (Doc-GUID).
-- [ ] **Dokumentierte Grenze (bewusst nicht in P1 gelöst):** Simultan-Erstkontakt — zwei Clients
-      initialisieren dieselbe Note unabhängig, bevor einer die `.yjs` des anderen sieht →
-      weiterhin Konkatenation (keine gemeinsamen Item-IDs möglich). In README §Grenzen ehrlich
-      beschreiben; Lösungsideen (deterministische Genesis, Erstkontakt-Alignment) als eigenes
-      Issue, nicht als P1-Scope.
+- [x] Recreate-Tombstone gegen Zombie-Resurrection bei gelöscht+neu-erstellt (Doc-GUID).
+- [x] **Simultan-Erstkontakt — GELÖST (über den ursprünglichen P1-Scope hinaus):** Statt der
+      zunächst nur dokumentierten Grenze löst der Doc-GUID-Tie-Break den Simultan-Erstkontakt jetzt
+      deterministisch — die (bytewise) kleinere GUID gewinnt, die unterlegene Seite wechselt auf
+      dieselbe Basis. Identischer Text konvergiert verlustfrei; bei divergentem Text setzt sich
+      deterministisch der Volltext einer Seite durch (kein zeilenweiser 3-Wege-Merge). Verbleibende
+      bewusste Grenze ist nur noch der gerätelokale Tombstone-Edge (Gerät offline während
+      Delete + gleichnamiger Neuanlage) — siehe README §Grenzen.
 - *Akzeptanz:* P0.5-Tests werden grün — kein verdoppelter Inhalt, A==B, Cold-Start == Original.
 
 ### P2 — Nebenläufigkeit
-- [ ] Alle Y.Doc-Mutationen (modify-Handler, Sweep, onRemoteYjsUpdate) durch **eine** Queue.
-- [ ] `vault.modify` → `vault.process` (atomares Read-Modify-Write).
-- [ ] `unloaded` nach jedem `await` prüfen (TOCTOU).
+- [x] Alle Y.Doc-Mutationen (modify-Handler, Sweep, onRemoteYjsUpdate) durch **eine** Queue.
+- [x] `vault.modify` → `vault.process` (atomares Read-Modify-Write).
+- [x] `unloaded` nach jedem `await` prüfen (TOCTOU).
 - *Akzeptanz:* paralleles modify während Merge verliert kein Update.
 
 ### P3 — Hygiene / Release
-- [ ] `tsconfig.json` `include` auf `obsidian-crdt-sync/**` fixen → funktionierender `tsc --noEmit`.
-- [ ] Versions-Drift angleichen (package 0.1.0 vs manifest/CHANGELOG 0.3.0); package-Name + private-Flag.
-- [ ] `versions.json` + `LICENSE` ergänzen; CI/Release-Workflow (GitHub Action) für main.js-Asset.
-- [ ] Stale `obsidian-crdt-sync/main.js` + Orphan-node_modules löschen; `setHeading()` statt `h2`;
+- [x] `tsconfig.json` `include` auf `obsidian-crdt-sync/**` fixen → funktionierender `tsc --noEmit`.
+- [x] Versions-Drift angleichen (package 0.1.0 vs manifest/CHANGELOG 0.3.0); package-Name + private-Flag.
+- [x] `versions.json` + `LICENSE` ergänzen; CI/Release-Workflow (GitHub Action) für main.js-Asset.
+- [x] Stale `obsidian-crdt-sync/main.js` + Orphan-node_modules löschen; `setHeading()` statt `h2`;
       `isDesktopOnly` entfernen; Settings-Heading auf „Qollab".
 
 ## Realismus

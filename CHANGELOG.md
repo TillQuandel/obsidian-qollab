@@ -14,6 +14,8 @@ Alle nennenswerten Aenderungen an Qollab. Format orientiert sich an [Keep a Chan
 - `PathQueue`: Serialisierung aller Doc-Mutationen (Remote-Merge, lokale Änderung, Startup-Sweep) pro Note-Pfad — verhindert verschränkte Mutationen desselben `Y.Doc`.
 - Atomarer Write-Back via `vault.process` (verhindert TOCTOU-Race beim Merge-Ergebnis).
 - `rename`- und `delete`-Events werden ebenfalls über die `PathQueue` geleitet (verhindert Orphan-.yjs und GUID-Divergenz).
+- `FileWatcher` reagiert jetzt auch auf `create`-Events: ein fremdes `.yjs`, das erstmals erscheint (z.B. nach `git pull`/erstem Sync), löst sofort einen Merge aus statt erst bei einem späteren `modify` (Erstkontakt-Konvergenz).
+- Adopt-Pfad erfasst den lokalen `.md`-Text: fehlt eigener State, wird beim Adoptieren einer fremden Sibling-`.yjs` die lokale Note als Diff eingespielt — verhindert lokalen Datenverlust, wenn der Merge-Write-Back sonst die nie erfasste `.md` überschrieben hätte.
 
 ## [0.3.0] - 2026-05-25
 
@@ -23,7 +25,7 @@ Alle nennenswerten Aenderungen an Qollab. Format orientiert sich an [Keep a Chan
 
 ### Known Issues
 
-- Mirror-Sidecar-Architektur (1 `.yjs` pro `.md` im gespiegelten `.qollab/`-Tree) skaliert nicht fuer grosse Vaults. Refactor auf Yjs-Subdocuments + SQLite-Single-Store geplant. Bis dahin: bei Vaults mit 500+ Notes besser deaktiviert lassen. Siehe #9.
+- Mirror-Sidecar-Architektur (1 `.yjs` pro `.md` im gespiegelten `.qollab/`-Tree) skaliert nicht fuer grosse Vaults. Refactor auf Yjs-Subdocuments + SQLite-Single-Store geplant. Bis dahin: bei grossen Vaults (1000+ Notes) besser deaktiviert lassen. Siehe #9.
 
 ## [0.2.0] - 2026-05-19
 
