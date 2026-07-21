@@ -1,6 +1,6 @@
 {
-  "name": "obsidian-crdt-sync",
-  "version": "0.1.0",
+  "name": "obsidian-qollab",
+  "version": "0.4.0",
   "private": true,
   "scripts": {
     "build": "node esbuild.config.mjs",

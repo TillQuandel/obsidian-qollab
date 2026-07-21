@@ -2,6 +2,19 @@
 
 Alle nennenswerten Aenderungen an Qollab. Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/), Versionierung folgt [SemVer](https://semver.org/).
 
+## [0.4.0] - 2026-07-21
+
+### Added
+
+- Diff-basierter Merge-Kern (`CrdtManager.setContent`): Volltext-Replace-Duplizierung behoben; granulare Yjs-Item-IDs bleiben erhalten. (#10)
+- State-basierter Doc-Bootstrap: `applyLocalContent` lädt den persistierten eigenen State als Basis und diff-merged nur die lokale Änderung hinein — kein Volltext-Replace mehr. Bei fehlendem eigenen State werden fremde Sibling-.yjs-Files adoptiert (Sibling-Adoption).
+- Neues `.yjs`-State-Format QLB1 mit eingebettetem Doc-GUID (legacy-kompatibel; alte v0-Dateien werden nahtlos eingelesen).
+- GUID-Lifecycle und Tombstone-Store: Gelöschte Note-Inkarnationen werden tombstoned — verhindert Zombie-Resurrection durch stale fremde `.yjs`-Dateien.
+- Deterministischer GUID-Tie-Break bei gleichzeitiger Erstanlage auf verschiedenen Geräten.
+- `PathQueue`: Serialisierung aller Doc-Mutationen (Remote-Merge, lokale Änderung, Startup-Sweep) pro Note-Pfad — verhindert verschränkte Mutationen desselben `Y.Doc`.
+- Atomarer Write-Back via `vault.process` (verhindert TOCTOU-Race beim Merge-Ergebnis).
+- `rename`- und `delete`-Events werden ebenfalls über die `PathQueue` geleitet (verhindert Orphan-.yjs und GUID-Divergenz).
+
 ## [0.3.0] - 2026-05-25
 
 ### Fixed
