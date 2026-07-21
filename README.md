@@ -62,6 +62,8 @@ Die `.yjs`-Dateien siehst du im Vault-Explorer nicht — Obsidian blendet sie au
 
 Wenn zwei Personen **gleichzeitig dieselbe Zeile** ändern, entscheidet Qollab automatisch welche Version vorne steht — beide Texte bleiben erhalten, aber die Reihenfolge kann überraschend sein.
 
+**Transienter Erstkontakt-Flip bei ungeordnetem Datei-Sync.** Trackt ein Gerät eine Note zum ersten Mal und kommt die fremde Hilfsdatei *vor* der neueren `.md` an, spielt Qollab kurzzeitig den älteren lokalen `.md`-Stand ein — sichtbar als vorübergehendes Zurückspringen einer frischen Remote-Änderung. Sobald die neuere `.md` nachsynct, heilt sich das automatisch. Kein Duplikat, kein dauerhafter Verlust; die Konflikt-Kopie-Sicherung des Sync-Dienstes deckt den Randfall ab.
+
 **Gerätelokale Tombstones (bewusste Grenze).** Die Lösch-Markierungen liegen nur auf dem Gerät, das die Löschung durchführt. Ein anderes Gerät, das während Löschung + Neuanlage geschlossen/offline war, kann mit seiner alten Historie weiterlaufen und nimmt am CRDT-Merge der neuen Inkarnation nicht mehr teil (sein Tie-Break bevorzugt womöglich die alte GUID). Sein `.md`-Inhalt bleibt über den normalen Datei-Sync trotzdem aktuell — es droht kein Datenverlust, aber der CRDT-Sync ist auf diesem Gerät bis zum Neuaufsetzen des Trackings degradiert. Gesyncte Tombstone-Dateien wären die Ausbaustufe (derzeit nicht umgesetzt).
 
 Echtzeit-Cursor-Sync (wie in Google Docs) ist angedacht, aber mit der server-losen File-Sync-Architektur nicht ohne Weiteres umsetzbar — kein fester Termin.
