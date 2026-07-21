@@ -1,6 +1,8 @@
 import * as Y from 'yjs';
+import { diff_match_patch, DIFF_DELETE, DIFF_INSERT, DIFF_EQUAL } from 'diff-match-patch';
 
 export class CrdtManager {
+  private dmp = new diff_match_patch();
   private docs = new Map<string, Y.Doc>();
   private disposed = false;
 
@@ -12,15 +14,30 @@ export class CrdtManager {
     return this.docs.get(filePath)!;
   }
 
-  // Bekannte Limitierung (Phase 1): delete+insert zerstört granulare Yjs-History.
-  // Bei gleichzeitigen Edits in derselben Zeile entscheidet Yjs-Tie-Breaking.
-  // Für Phase 2: durch Diff-basiertes Update ersetzen (z.B. via y-codemirror).
+  // Diff-basiertes Update: berechnet die minimalen Positions-Ops zwischen dem
+  // aktuellen Doc-Text und content und wendet sie in EINER Transaktion an.
+  // Unveränderte Zeichen behalten ihre Yjs-Item-IDs — dadurch dedupliziert der
+  // Merge zweier Replikate statt zu konkatenieren. Rohe Diffs (kein
+  // diff_cleanupSemantic): Positionsgenauigkeit vor Lesbarkeit.
   setContent(filePath: string, content: string): void {
     const doc = this.getOrCreate(filePath);
     const text = doc.getText('content');
+    const current = text.toString();
+    if (current === content) return;
+
+    const diffs = this.dmp.diff_main(current, content);
     doc.transact(() => {
-      text.delete(0, text.length);
-      text.insert(0, content);
+      let pos = 0;
+      for (const [op, data] of diffs) {
+        if (op === DIFF_EQUAL) {
+          pos += data.length;
+        } else if (op === DIFF_INSERT) {
+          text.insert(pos, data);
+          pos += data.length;
+        } else if (op === DIFF_DELETE) {
+          text.delete(pos, data.length);
+        }
+      }
     });
   }
 
