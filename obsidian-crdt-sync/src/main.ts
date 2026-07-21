@@ -37,7 +37,7 @@ export default class CrdtSyncPlugin extends Plugin {
     });
     this.syncHandler = new SyncHandler(vaultWithList as any, this.crdtManager, this.settings.clientId);
 
-    this.fileWatcher = new FileWatcher(this.app.vault, async (notePath) => {
+    this.fileWatcher = new FileWatcher(this.app.vault, this.settings.clientId, async (notePath) => {
       // Merge-Aufrufe für denselben Pfad sequenziell abarbeiten
       const prev = this.mergeQueue.get(notePath) ?? Promise.resolve();
       const next = prev.then(() => this.onRemoteYjsUpdate(notePath));
@@ -58,8 +58,7 @@ export default class CrdtSyncPlugin extends Plugin {
         if (this.writingPaths.has(file.path)) return;
 
         const content = await this.app.vault.read(file);
-        this.crdtManager.setContent(file.path, content);
-        await this.syncHandler.saveState(file.path);
+        await this.syncHandler.applyLocalContent(file.path, content);
       })
     );
 
@@ -97,8 +96,10 @@ export default class CrdtSyncPlugin extends Plugin {
     // Externe FS-Edits (z.B. CLI/LLM bei geschlossener App) erzeugen kein
     // 'modify'-Event. Beim Start nachziehen: fuer jede .md, deren mtime
     // neuer ist als die zugehoerige .yjs (oder die noch keine .yjs hat),
-    // einen frischen Snapshot schreiben. KEIN loadAndMerge — sonst wuerden
-    // stale .yjs-Stati in den aktuellen .md-Inhalt zurueckgemergt.
+    // die lokale Aenderung via applyLocalContent in den CRDT bringen.
+    // applyLocalContent bootstrappt den Doc aus dem persistierten eigenen State
+    // (nicht aus dem Text) und diff-merged nur die lokale Aenderung ein. KEIN
+    // loadAndMerge — fremde .yjs-Staende werden hier weiterhin NICHT hereingezogen.
     this.app.workspace.onLayoutReady(() => {
       void this.snapshotStaleMarkdownFiles();
     });
@@ -119,8 +120,7 @@ export default class CrdtSyncPlugin extends Plugin {
 
       try {
         const content = await this.app.vault.read(file);
-        this.crdtManager.setContent(file.path, content);
-        await this.syncHandler.saveState(file.path);
+        await this.syncHandler.applyLocalContent(file.path, content);
       } catch {
         // Einzelne Datei darf den Sweep nicht abbrechen
       }

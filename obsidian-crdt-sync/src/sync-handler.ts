@@ -58,24 +58,59 @@ export class SyncHandler {
     }
   }
 
+  private async applyYjsFile(notePath: string, yjsPath: string): Promise<void> {
+    const file = this.vault.getAbstractFileByPath(yjsPath);
+    if (!file) return;
+    const buffer = await this.vault.readBinary(file);
+    this.crdtManager.applyUpdate(notePath, new Uint8Array(buffer));
+  }
+
+  // Bootstrappt den Doc NIE aus dem .md-Text, immer aus persistiertem State.
+  // Reihenfolge: eigener State (enthält alle früher gemergten Historien) →
+  // fremde Sibling-.yjs adoptieren (neuer Client übernimmt vorhandene Historie
+  // als Basis statt eine eigene zu erzeugen; löst den Zwei-Geräte-Erstmerge) →
+  // sonst leerer Doc.
+  private async ensureDoc(notePath: string): Promise<void> {
+    if (this.crdtManager.hasDoc(notePath)) return;
+
+    const ownPath = this.stateFilePath(notePath);
+    if (this.vault.getAbstractFileByPath(ownPath)) {
+      await this.applyYjsFile(notePath, ownPath);
+      return;
+    }
+
+    const foreign = this.vault.listYjsFiles(notePath).filter((p) => p !== ownPath);
+    for (const yjsPath of foreign) {
+      await this.applyYjsFile(notePath, yjsPath);
+    }
+    // Kein State vorhanden: leerer Doc — wird lazy von setContent/applyUpdate erzeugt.
+  }
+
+  // Bringt eine lokale .md-Änderung in den CRDT. Diff-basiertes setContent
+  // erzeugt keine Ops, wenn der Doc-Text bereits identisch ist.
+  async applyLocalContent(notePath: string, content: string): Promise<void> {
+    await this.ensureDoc(notePath);
+    this.crdtManager.setContent(notePath, content);
+    await this.saveState(notePath);
+  }
+
   async loadAndMerge(notePath: string): Promise<string | null> {
     const yjsFiles = this.vault.listYjsFiles(notePath);
     if (yjsFiles.length === 0) return null;
 
-    if (!this.crdtManager.hasDoc(notePath)) {
-      const noteFile = this.vault.getAbstractFileByPath(notePath);
-      if (noteFile) {
-        const localContent = await this.vault.read(noteFile);
-        this.crdtManager.setContent(notePath, localContent);
-      }
+    await this.ensureDoc(notePath);
+
+    // Alle Sibling-.yjs mergen (inkl. Legacy-Dateien ohne clientId und der
+    // eigenen — idempotent). KEIN Einspielen des lokalen .md-Texts: das würde
+    // ankommende Remote-Edits rückgängig machen, sobald die lokale .md älter ist
+    // als die Fremd-Historie. Lokale Edits kommen ausschließlich über
+    // applyLocalContent (modify-Handler/Sweep) herein.
+    for (const yjsPath of yjsFiles) {
+      await this.applyYjsFile(notePath, yjsPath);
     }
 
-    for (const yjsPath of yjsFiles) {
-      const file = this.vault.getAbstractFileByPath(yjsPath);
-      if (!file) continue;
-      const buffer = await this.vault.readBinary(file);
-      this.crdtManager.applyUpdate(notePath, new Uint8Array(buffer));
-    }
+    // Übernommene Fremd-Historie persistieren, sonst geht sie beim Neustart verloren.
+    await this.saveState(notePath);
 
     return this.crdtManager.getContent(notePath);
   }
