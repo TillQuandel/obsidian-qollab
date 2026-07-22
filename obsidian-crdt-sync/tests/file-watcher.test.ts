@@ -5,11 +5,12 @@ import { CrdtManager } from '../src/crdt-manager';
 import { PathQueue } from '../src/path-queue';
 
 // Testet das Ist-Verhalten des FileWatchers. Er lauscht auf 'modify' UND 'create'
-// und triggert den Callback nur für .qollab/<note>.<8-hex-clientId>.yjs-Pfade,
-// wobei der eingeklammerte notePath extrahiert wird (QOLLAB_RE in
-// src/file-watcher.ts). Das create-Handling schließt die Erstkontakt-Lücke: ein
-// fremdes .yjs, das erstmals ERSCHEINT (create-Event), löst bereits beim
-// Erstkontakt einen Merge aus — nicht erst bei einem späteren modify.
+// und triggert den Callback für .qollab/<note>.<8-hex-clientId>.yjs-Pfade
+// (per-Client, mit Self-Ignore) sowie — seit Fix C — für die clientId-lose
+// Legacy-Form .qollab/<note>.yjs, wobei jeweils der notePath extrahiert wird.
+// Das create-Handling schließt die Erstkontakt-Lücke: ein fremdes .yjs, das
+// erstmals ERSCHEINT (create-Event), löst bereits beim Erstkontakt einen Merge
+// aus — nicht erst bei einem späteren modify.
 
 function makeVaultMock() {
   const handlers = new Map<string, (file: unknown) => unknown>();
@@ -102,27 +103,65 @@ describe('FileWatcher', () => {
     expect(onChanged).toHaveBeenCalledWith('note.md');
   });
 
-  it('ignoriert Legacy .qollab/note.md.yjs ohne clientId', async () => {
-    // QOLLAB_RE verlangt eine 8-stellige Hex-clientId — die clientId-lose
-    // Legacy-Datei triggert daher NICHT. (Divergenz zu filterYjsFiles, das
-    // sie sehr wohl matcht — bekannt, hier nicht gefixt.)
+  it('triggert bei Legacy .qollab/note.md.yjs ohne clientId (Fix C)', async () => {
+    // Fix C: der Watcher matcht jetzt auch die clientId-lose Legacy-Form
+    // (v0.1-Ära) und extrahiert den notePath — deckt sich mit filterYjsFiles.
+    // Legacy-Dateien haben keine eigene clientId → nie self, kein Loop-Risiko.
     const vault = makeVaultMock();
     const onChanged = jest.fn(async () => {});
     new FileWatcher(vault as any, SELF, onChanged).start();
 
     await vault._emit(tfile('.qollab/note.md.yjs'));
 
-    expect(onChanged).not.toHaveBeenCalled();
+    expect(onChanged).toHaveBeenCalledWith('note.md');
+  });
+
+  it('extrahiert bei Legacy den vollen notePath inkl. Punkte (Greedy-Falle)', async () => {
+    // note.md.archive.md ist eine eigenständige Note; ihre Legacy-.yjs muss den
+    // vollen notePath liefern, nicht abgeschnitten werden.
+    const vault = makeVaultMock();
+    const onChanged = jest.fn(async () => {});
+    new FileWatcher(vault as any, SELF, onChanged).start();
+
+    await vault._emit(tfile('.qollab/note.md.archive.md.yjs'));
+
+    expect(onChanged).toHaveBeenCalledWith('note.md.archive.md');
+  });
+
+  it('per-Client-Match hat Vorrang: clientId wird NICHT in den notePath geschluckt', async () => {
+    // Greedy-Falle: eine kombinierte optionale-clientId-Regex würde bei
+    // per-Client-Dateien den notePath um die clientId zu lang extrahieren. Die
+    // strikte Form muss zuerst greifen → notePath OHNE clientId.
+    const vault = makeVaultMock();
+    const onChanged = jest.fn(async () => {});
+    new FileWatcher(vault as any, SELF, onChanged).start();
+
+    await vault._emit(tfile('.qollab/note.md.a1b2c3d4.yjs'));
+
+    expect(onChanged).toHaveBeenCalledWith('note.md');
+    expect(onChanged).not.toHaveBeenCalledWith('note.md.a1b2c3d4');
+  });
+
+  it('ignoriert Legacy-Form bei create ebenfalls nicht (Erstkontakt Legacy)', async () => {
+    const vault = makeVaultMock();
+    const onChanged = jest.fn(async () => {});
+    new FileWatcher(vault as any, SELF, onChanged).start();
+
+    await vault._emitEvent('create', tfile('.qollab/note.md.yjs'));
+
+    expect(onChanged).toHaveBeenCalledWith('note.md');
   });
 
   it('ignoriert Nicht-.yjs- und Nicht-.qollab-Pfade', async () => {
+    // Hinweis: .qollab/note.md.xyz.yjs wird seit Fix C NICHT mehr ignoriert,
+    // sondern als Legacy-Sidecar der Note "note.md.xyz" gematcht (siehe eigene
+    // Legacy-Tests) — hier daher nicht mehr gelistet.
     const vault = makeVaultMock();
     const onChanged = jest.fn(async () => {});
     new FileWatcher(vault as any, SELF, onChanged).start();
 
     await vault._emit(tfile('note.md'));
     await vault._emit(tfile('.qollab/note.md.a1b2c3d4.txt'));
-    await vault._emit(tfile('.qollab/note.md.xyz.yjs'));
 
     expect(onChanged).not.toHaveBeenCalled();
   });

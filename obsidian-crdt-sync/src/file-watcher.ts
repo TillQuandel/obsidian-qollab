@@ -2,23 +2,41 @@ import { TFile, Vault } from 'obsidian';
 
 export type OnYjsChanged = (notePath: string) => Promise<void>;
 
+// Strikte per-Client-Form: .qollab/<notePath>.<8-hex-clientId>.yjs
 const QOLLAB_RE = /^\.qollab\/(.+)\.([0-9a-f]{8})\.yjs$/;
+// Legacy-Form ohne clientId (v0.1-Ära): .qollab/<notePath>.yjs
+const QOLLAB_LEGACY_RE = /^\.qollab\/(.+)\.yjs$/;
 
 export class FileWatcher {
   private eventRefs: ReturnType<Vault['on']>[] = [];
 
   constructor(private vault: Vault, private clientId: string, private onChanged: OnYjsChanged) {}
 
-  // Gemeinsamer Handler für 'modify' UND 'create'. Identische Filterung: nur
-  // per-Client-.yjs (QOLLAB_RE), eigene clientId ignorieren, nur TFile.
+  // Gemeinsamer Handler für 'modify' UND 'create'.
+  //
+  // Zwei getrennte Prüfungen statt einer kombinierten Regex mit optionaler
+  // clientId-Gruppe (`(.+)\.(?:[0-9a-f]{8}\.)?yjs$`): die würde bei per-Client-
+  // Dateien den greedy `(.+)` die clientId mitverschlucken und einen falschen
+  // notePath extrahieren. Erst strikt (mit clientId + Self-Ignore), dann Legacy.
   private handle = async (file: unknown): Promise<void> => {
     if (!(file instanceof TFile)) return;
+
+    // 1. Per-Client-Form: notePath + 8-hex-clientId.
     const match = QOLLAB_RE.exec(file.path);
-    if (!match) return;
-    // Eigene clientId-Datei ignorieren: saveState schreibt sie selbst, sonst
-    // entsteht eine Endlos-Schleife (modify → loadAndMerge → saveState → …).
-    if (match[2] === this.clientId) return;
-    await this.onChanged(match[1]);
+    if (match) {
+      // Eigene clientId-Datei ignorieren: saveState schreibt sie selbst, sonst
+      // entsteht eine Endlos-Schleife (modify → loadAndMerge → saveState → …).
+      if (match[2] === this.clientId) return;
+      await this.onChanged(match[1]);
+      return;
+    }
+
+    // 2. Legacy-Form ohne clientId (Fix C): live per Sync ankommende v0.1-Datei.
+    // Nie self (die eigene .yjs trägt immer eine clientId), daher kein Loop-Risiko.
+    const legacy = QOLLAB_LEGACY_RE.exec(file.path);
+    if (legacy) {
+      await this.onChanged(legacy[1]);
+    }
   };
 
   // Auf 'modify' UND 'create' lauschen. Ohne 'create' triggert ein fremdes .yjs,
