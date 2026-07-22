@@ -45,6 +45,17 @@ export class CrdtManager {
     return this.docs.has(filePath);
   }
 
+  // Prüft ob der Doc tatsächlich Ops enthält (State-Vector nicht leer).
+  // Ein frischer Y.Doc ohne jegliche Edits hat store.clients.size === 0.
+  // Nach setContent (Insert-Ops) oder Delete-Ops ist clients.size > 0.
+  // Wird von Guard 2 (onRemoteYjsUpdate) genutzt, um einen historienlosen
+  // Frisch-Doc von einer echten Leerung (User hat allen Text gelöscht) zu
+  // unterscheiden.
+  hasOps(filePath: string): boolean {
+    if (!this.docs.has(filePath)) return false;
+    return (this.docs.get(filePath)!.store as any).clients.size > 0;
+  }
+
   getContent(filePath: string): string {
     if (!this.docs.has(filePath)) return '';
     return this.docs.get(filePath)!.getText('content').toString();

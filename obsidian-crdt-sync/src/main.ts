@@ -197,9 +197,26 @@ export default class CrdtSyncPlugin extends Plugin {
       if (this.unloaded) return;
     }
 
+    // Guard 1: ohne .md gibt es nichts zu mergen. Ein loadAndMerge-Aufruf ohne
+    // existierende .md würde ensureDoc und saveState auslösen — das persistiert
+    // einen leeren eigenen Sidecar mit frischer GUID. Kehrt die .md später via
+    // Sync zurück (Sync-Konfliktauflösung Delete-vs-Edit behält die Datei),
+    // überschreibt dieser leere Stand beim nächsten Write-Back die Note mit ''.
+    // Kommt die .md an, greift der reguläre Adopt-Zweig (ensureDoc) mit
+    // .md-Injektion — kein eigener Aufruf hier nötig.
+    const noteFile = this.app.vault.getAbstractFileByPath(notePath);
+    if (!noteFile) return;
+
     const merged = await this.syncHandler.loadAndMerge(notePath);
     if (this.unloaded) return;
     if (merged === null) return;
+
+    // Guard 2: ein leerer, historienloser Merge-Stand darf eine vorhandene .md
+    // nie überschreiben. Historienlos = Y.Doc hat keinerlei Ops (State-Vector leer,
+    // store.clients.size === 0) — das passiert bei einem Frisch-Doc ohne Edits.
+    // Abgrenzung: eine echte Leerung (User löscht allen Text) hinterlässt
+    // Delete-Ops → hasOps() gibt true → dieser Guard greift NICHT.
+    if (merged === '' && !this.crdtManager.hasOps(notePath)) return;
 
     const file = this.app.vault.getAbstractFileByPath(notePath);
     if (!(file instanceof TFile)) return;
