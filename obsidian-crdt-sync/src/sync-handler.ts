@@ -3,13 +3,23 @@ import { encodeStateFile, decodeStateFile, generateGuid } from './state-file';
 
 export const QOLLAB_DIR = '.qollab';
 
-// Filtert alle Pfade auf die .yjs-Sibling-Dateien einer Note.
-// Reines Refactoring des vormaligen Inline-Filters aus main.ts —
-// verhaltensgleich (Prefix `.qollab/<notePath>.` + Suffix `.yjs`).
+// Filtert alle Pfade auf die .yjs-Sibling-Dateien EXAKT dieser Note. Ein Pfad ist
+// ein Sibling, wenn er entweder die Legacy-Form `.qollab/<notePath>.yjs` hat ODER
+// die per-Client-Form `.qollab/<notePath>.<8-hex-clientId>.yjs`. String-basiert
+// statt Regex, damit Sonderzeichen im notePath kein Escaping-Problem erzeugen.
+//
+// Fix B: der vormalige Prefix-Match (`startsWith('.qollab/<notePath>.')`) fasste
+// die Sidecars einer eigenständigen Note `note.md.archive.md` fälschlich als
+// Siblings von `note.md` auf (Cross-Note-Merge / Mit-Löschen fremder Sidecars).
 export function filterYjsFiles(allPaths: string[], notePath: string): string[] {
-  return allPaths.filter(
-    (p) => p.startsWith(`${QOLLAB_DIR}/${notePath}.`) && p.endsWith('.yjs')
-  );
+  const legacy = `${QOLLAB_DIR}/${notePath}.yjs`;
+  const prefix = `${QOLLAB_DIR}/${notePath}.`;
+  return allPaths.filter((p) => {
+    if (p === legacy) return true;
+    if (!p.startsWith(prefix)) return false;
+    // Rest muss exakt `<8-hex-clientId>.yjs` sein — keine weiteren Punkt-Segmente.
+    return /^[0-9a-f]{8}\.yjs$/.test(p.slice(prefix.length));
+  });
 }
 
 // Gerätelokaler Tombstone-Store, von main.ts injiziert. Merkt sich GUIDs

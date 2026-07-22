@@ -100,11 +100,12 @@ export default class CrdtSyncPlugin extends Plugin {
         if (!(file instanceof TFile)) return;
         if (!file.path.endsWith('.md')) return;
         await this.pathQueue.run(oldPath, async () => {
-          const yjsFiles = this.app.vault.getFiles()
-            .filter((f: TFile) => f.path.startsWith(`.qollab/${oldPath}.`) && f.path.endsWith('.yjs'));
-          for (const yjsFile of yjsFiles) {
-            const suffix = yjsFile.path.slice(`.qollab/${oldPath}`.length);
-            await this.app.fileManager.renameFile(yjsFile, `.qollab/${file.path}${suffix}`);
+          const files = this.app.vault.getFiles();
+          const yjsPaths = new Set(filterYjsFiles(files.map((f: TFile) => f.path), oldPath));
+          for (const yjsFile of files) {
+            if (!yjsPaths.has(yjsFile.path)) continue;
+            const suffix = yjsFile.path.slice(`${QOLLAB_DIR}/${oldPath}`.length);
+            await this.app.fileManager.renameFile(yjsFile, `${QOLLAB_DIR}/${file.path}${suffix}`);
           }
           this.syncHandler.renameNote(oldPath, file.path);
         });
@@ -124,10 +125,10 @@ export default class CrdtSyncPlugin extends Plugin {
         await this.pathQueue.run(file.path, async () => {
           const guid = await this.syncHandler.currentGuid(file.path);
           if (guid) await this.tombstoneStore.add(guid);
-          const yjsFiles = this.app.vault.getFiles()
-            .filter((f: TFile) => f.path.startsWith(`.qollab/${file.path}.`) && f.path.endsWith('.yjs'));
-          for (const yjsFile of yjsFiles) {
-            await this.app.vault.delete(yjsFile);
+          const files = this.app.vault.getFiles();
+          const yjsPaths = new Set(filterYjsFiles(files.map((f: TFile) => f.path), file.path));
+          for (const yjsFile of files) {
+            if (yjsPaths.has(yjsFile.path)) await this.app.vault.delete(yjsFile);
           }
           this.syncHandler.disposeNote(file.path);
         });
