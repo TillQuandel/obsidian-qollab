@@ -137,7 +137,7 @@ durch die Guards in v0.4.x nur abgemildert werden.
 
 - **Löschen als CRDT-Operation.** Ein Archive-/isPresent-Flag im Yjs-Doc (oder ein
   Vault-Manifest-Doc) ersetzt die gerätelokale Sidecar-Löschung. Add-wins/Edit-wins-
-  Semantik nach OR-Set-Standard (Shapiro et al. 2018; Automerge-Merge-Rules „update
+  Semantik nach OR-Set-Standard (Shapiro et al. (SSS 2011; Springer-Fassung 2018); Automerge-Merge-Rules „update
   wins"; Weidner-Survey-Empfehlung für Notes-Apps: Archive/Restore statt permanentem
   Delete). Delete-vs-Edit konvergiert dann ohne Datenverlust und ohne Sync-Dienst-
   Abhängigkeit für die Konfliktauflösung.
