@@ -2,6 +2,17 @@
 // Klassen/Werte — nicht die ganze Obsidian-API. Wird via
 // moduleNameMapper (^obsidian$) in package.json eingehängt.
 
+// Obsidian läuft in Electron, wo window === globalThis. In der node-Test-Umgebung
+// gibt es kein window; main.ts nutzt window.setInterval für den Poll-Timer. Ein
+// No-op-Shim (setInterval → 0) verhindert echte Timer-Handles, die den Jest-Lauf
+// offenhalten würden — die Watcher-Tests rufen poll()/scanNote() ohnehin direkt.
+if (typeof globalThis.window === 'undefined') {
+  globalThis.window = {
+    setInterval: () => 0,
+    clearInterval: () => {},
+  };
+}
+
 class TFile {
   constructor(path = '', name = '') {
     this.path = path;
@@ -18,6 +29,9 @@ class Plugin {
   }
   registerEvent(eventRef) {
     return eventRef;
+  }
+  registerInterval(id) {
+    return id;
   }
   addSettingTab(_tab) {}
   async loadData() {

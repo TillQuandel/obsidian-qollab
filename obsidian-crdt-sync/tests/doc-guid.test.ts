@@ -1,43 +1,11 @@
 import { SyncHandler, TombstoneStore } from '../src/sync-handler';
 import { CrdtManager } from '../src/crdt-manager';
 import { encodeStateFile, decodeStateFile } from '../src/state-file';
+import { makeVaultMock, toArrayBuffer as toAB } from './helpers/vault-mock';
 
 // Tests 1-4 (Task 3): Doc-GUID + Recreate-Tombstone.
 // Deckt Zombie-Resurrection, Simultan-Erstkontakt-Konvergenz (identisch +
 // divergent) und Legacy-Kompatibilität ab.
-
-function toAB(data: ArrayBuffer | Uint8Array): ArrayBuffer {
-  return (data instanceof Uint8Array
-    ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
-    : data) as ArrayBuffer;
-}
-
-function makeVaultMock() {
-  const files = new Map<string, ArrayBuffer>();
-  const textFiles = new Map<string, string>();
-  return {
-    getAbstractFileByPath: (path: string) =>
-      files.has(path) || textFiles.has(path) ? { path } : null,
-    read: async (file: { path: string }) => textFiles.get(file.path) ?? '',
-    readBinary: async (file: { path: string }) => files.get(file.path)!,
-    createBinary: async (path: string, data: ArrayBuffer | Uint8Array) => {
-      files.set(path, toAB(data));
-    },
-    modifyBinary: async (file: { path: string }, data: ArrayBuffer | Uint8Array) => {
-      files.set(file.path, toAB(data));
-    },
-    delete: async (file: { path: string }) => {
-      files.delete(file.path);
-    },
-    createFolder: async (_path: string) => {},
-    listYjsFiles: (notePath: string) =>
-      Array.from(files.keys()).filter(
-        (p) => p.startsWith(`.qollab/${notePath}.`) && p.endsWith('.yjs')
-      ),
-    _files: files,
-    _textFiles: textFiles,
-  };
-}
 
 function makeTombstoneStore(): TombstoneStore & { _set: Set<string> } {
   const set = new Set<string>();
@@ -73,7 +41,7 @@ describe('Doc-GUID + Tombstone', () => {
   it('Zombie-Resurrection: stale fremde .yjs mit getombsteter GUID wird ignoriert und gelöscht', async () => {
     const vault = makeVaultMock() as any;
     const tomb = makeTombstoneStore();
-    const handler = new SyncHandler(vault, new CrdtManager(), 'local000', tomb);
+    const handler = new SyncHandler(vault, new CrdtManager(), '10ca1000', tomb);
 
     // 1) Note mit Historie anlegen.
     vault._textFiles.set('note.md', 'Alter Inhalt\n');
@@ -82,14 +50,14 @@ describe('Doc-GUID + Tombstone', () => {
     expect(oldGuid).not.toBeNull();
 
     // Stale fremde .yjs derselben (alten) Inkarnation für später bauen.
-    const stalePath = '.qollab/note.md.remote99.yjs';
+    const stalePath = '.qollab/note.md.5e307e99.yjs';
     const staleManager = new CrdtManager();
     staleManager.setContent('note.md', 'Alter Inhalt\n');
     const staleBytes = encodeStateFile(oldGuid!, staleManager.encodeState('note.md'));
 
     // 2) Delete simulieren: Tombstone + Siblings weg + dispose.
     await tomb.add(oldGuid!);
-    for (const p of vault.listYjsFiles('note.md')) vault._files.delete(p);
+    for (const p of await vault.listYjsFiles('note.md')) vault._files.delete(p);
     handler.disposeNote('note.md');
 
     // 3) Gleichnamige Note neu anlegen mit neuem Inhalt.
@@ -199,13 +167,13 @@ describe('Doc-GUID + Tombstone', () => {
   // Test 4
   it('Legacy-.yjs ohne Header wird weiter gemergt; eigene Datei ist danach neues Format', async () => {
     const vault = makeVaultMock() as any;
-    const handler = new SyncHandler(vault, new CrdtManager(), 'local000');
+    const handler = new SyncHandler(vault, new CrdtManager(), '10ca1000');
 
     // Legacy: rohes Yjs-Update ohne QLB1-Header.
     const legacy = new CrdtManager();
     legacy.setContent('note.md', 'Legacy-Inhalt\n');
     vault._files.set(
-      '.qollab/note.md.legacy01.yjs',
+      '.qollab/note.md.1e6ac001.yjs',
       toAB(legacy.encodeState('note.md'))
     );
 
@@ -214,7 +182,7 @@ describe('Doc-GUID + Tombstone', () => {
 
     // Eigene Datei existiert jetzt im neuen Format (QLB1-Magic).
     const ownBytes = new Uint8Array(
-      vault._files.get('.qollab/note.md.local000.yjs')!
+      vault._files.get('.qollab/note.md.10ca1000.yjs')!
     );
     expect(String.fromCharCode(...Array.from(ownBytes.subarray(0, 4)))).toBe(
       'QLB1'
@@ -233,7 +201,7 @@ describe('Doc-GUID + Tombstone', () => {
     // Eigener persistierter Stand (größere GUID).
     const ownDoc = new CrdtManager();
     ownDoc.setContent('note.md', ownContent);
-    const ownPath = '.qollab/note.md.local000.yjs';
+    const ownPath = '.qollab/note.md.10ca1000.yjs';
     const ownBytesBefore = toAB(
       encodeStateFile(OWN_GUID, ownDoc.encodeState('note.md'))
     );
@@ -243,12 +211,12 @@ describe('Doc-GUID + Tombstone', () => {
     const foreignDoc = new CrdtManager();
     foreignDoc.setContent('note.md', 'Fremder Inhalt\n');
     vault._files.set(
-      '.qollab/note.md.remote01.yjs',
+      '.qollab/note.md.5e307e01.yjs',
       toAB(encodeStateFile(FOREIGN_GUID, foreignDoc.encodeState('note.md')))
     );
 
     // KEINE .md im Vault (extern gelöscht bei geschlossener App).
-    const handler = new SyncHandler(vault, new CrdtManager(), 'local000');
+    const handler = new SyncHandler(vault, new CrdtManager(), '10ca1000');
     const merged = await handler.loadAndMerge('note.md');
 
     // Eigener Inhalt bleibt erhalten, kein Wechsel auf die Gewinner-GUID.

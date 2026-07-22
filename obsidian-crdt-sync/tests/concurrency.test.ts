@@ -2,6 +2,7 @@ import { SyncHandler, TombstoneStore } from '../src/sync-handler';
 import { CrdtManager } from '../src/crdt-manager';
 import { PathQueue } from '../src/path-queue';
 import { encodeStateFile, generateGuid } from '../src/state-file';
+import { makeVaultMock, toArrayBuffer as toAB } from './helpers/vault-mock';
 
 // Task 4, Abschnitt D: Regressions-Test „paralleles modify verliert kein Update".
 //
@@ -14,48 +15,13 @@ import { encodeStateFile, generateGuid } from '../src/state-file';
 // Remote-Stand auf, statt ihn per Volltext-setContent zu überschreiben.
 
 const NOTE = 'note.md';
-const REMOTE_YJS = '.qollab/note.md.remote01.yjs';
+const REMOTE_YJS = '.qollab/note.md.5e307e01.yjs';
 
 const BASE = 'Zeile 1\nZeile 2\n';
 const REMOTE = 'Zeile 1 REMOTE\nZeile 2\n'; // Remote ändert Zeile 1
 const MERGED = 'Zeile 1 REMOTE\nZeile 2 LOCAL\n'; // + lokal Zeile 2
 
 const tick = () => new Promise<void>((r) => setTimeout(r, 0));
-
-function toAB(data: ArrayBuffer | Uint8Array): ArrayBuffer {
-  return (
-    data instanceof Uint8Array
-      ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
-      : data
-  ) as ArrayBuffer;
-}
-
-function makeVaultMock() {
-  const files = new Map<string, ArrayBuffer>();
-  const textFiles = new Map<string, string>();
-  return {
-    getAbstractFileByPath: (path: string) =>
-      files.has(path) || textFiles.has(path) ? { path } : null,
-    read: async (file: { path: string }) => textFiles.get(file.path) ?? '',
-    readBinary: async (file: { path: string }) => files.get(file.path)!,
-    createBinary: async (path: string, data: ArrayBuffer | Uint8Array) => {
-      files.set(path, toAB(data));
-    },
-    modifyBinary: async (file: { path: string }, data: ArrayBuffer | Uint8Array) => {
-      files.set(file.path, toAB(data));
-    },
-    delete: async (file: { path: string }) => {
-      files.delete(file.path);
-    },
-    createFolder: async (_path: string) => {},
-    listYjsFiles: (notePath: string) =>
-      Array.from(files.keys()).filter(
-        (p) => p.startsWith(`.qollab/${notePath}.`) && p.endsWith('.yjs')
-      ),
-    _files: files,
-    _textFiles: textFiles,
-  };
-}
 
 // Baut die Ausgangslage: gemeinsame Basis-Historie, eine fremde Remote-.yjs mit
 // einer Änderung auf Zeile 1, lokale .md steht noch auf der Basis. `readBinary`
@@ -73,7 +39,7 @@ function setup() {
   // eigenem State greift der own-Branch von ensureDoc (keine .md-Injektion), der
   // Remote-Edit überlebt — was auch der Realität entspricht (ein laufendes Gerät
   // hat eigenen State). Die zu testende Serialisierung bleibt davon unberührt.
-  vault._files.set('.qollab/note.md.local000.yjs', baseState.buffer as ArrayBuffer);
+  vault._files.set('.qollab/note.md.10ca1000.yjs', baseState.buffer as ArrayBuffer);
 
   const remote = new CrdtManager();
   remote.applyUpdate(NOTE, baseState);
@@ -87,17 +53,17 @@ function setup() {
     releaseRemote = r;
   });
   let gated = false;
-  const rawReadBinary = vault.readBinary;
-  vault.readBinary = async (file: { path: string }) => {
-    if (file.path === REMOTE_YJS && !gated) {
+  const rawReadBinary = vault.adapter.readBinary;
+  vault.adapter.readBinary = async (path: string) => {
+    if (path === REMOTE_YJS && !gated) {
       gated = true;
       await remoteGate;
     }
-    return rawReadBinary(file);
+    return rawReadBinary(path);
   };
 
   const manager = new CrdtManager();
-  const handler = new SyncHandler(vault as any, manager, 'local000');
+  const handler = new SyncHandler(vault as any, manager, '10ca1000');
   return { vault, manager, handler, releaseRemote: () => releaseRemote() };
 }
 
@@ -135,7 +101,7 @@ describe('Nebenläufigkeit: paralleles modify verliert kein Update (Task 4 D)', 
 
     // Eigene .yjs enthält beide Historien: frischer Handler rekonstruiert exakt.
     const freshManager = new CrdtManager();
-    const freshHandler = new SyncHandler(vault as any, freshManager, 'local000');
+    const freshHandler = new SyncHandler(vault as any, freshManager, '10ca1000');
     const reloaded = await freshHandler.loadAndMerge(NOTE);
     expect(reloaded).toBe(MERGED);
   });
@@ -168,7 +134,7 @@ describe('Nebenläufigkeit: paralleles modify verliert kein Update (Task 4 D)', 
 // Delete resumen und via saveState die gelöschte .yjs wieder anlegen — die Note
 // „un-deletet" sich cross-device. Test auf SyncHandler/PathQueue-Ebene.
 
-const OWN_YJS = '.qollab/note.md.local000.yjs';
+const OWN_YJS = '.qollab/note.md.10ca1000.yjs';
 
 // Baut die Ausgangslage für das Delete-Szenario: eigene .yjs (mit GUID-Header)
 // liegt vor, Doc ist NICHT geladen. Der erste `readBinary` der eigenen .yjs wird
@@ -188,9 +154,9 @@ function setupDelete() {
     releaseOwn = r;
   });
   let gated = false;
-  vault.readBinary = async (file: { path: string }) => {
-    const buf = vault._files.get(file.path)!;
-    if (file.path === OWN_YJS && !gated) {
+  vault.adapter.readBinary = async (path: string) => {
+    const buf = vault._files.get(path)!;
+    if (path === OWN_YJS && !gated) {
       gated = true;
       await ownGate;
     }
@@ -198,7 +164,7 @@ function setupDelete() {
   };
 
   const manager = new CrdtManager();
-  const handler = new SyncHandler(vault as any, manager, 'local000');
+  const handler = new SyncHandler(vault as any, manager, '10ca1000');
   return { vault, handler, releaseOwn: () => releaseOwn() };
 }
 
@@ -216,11 +182,9 @@ async function deleteWork(
 ) {
   const guid = await handler.currentGuid(NOTE);
   if (guid) await tombstones.add(guid);
-  const siblings = Array.from(vault._files.keys()).filter(
-    (p) => p.startsWith(`.qollab/${NOTE}.`) && p.endsWith('.yjs')
-  );
+  const siblings = await vault.listYjsFiles(NOTE);
   for (const p of siblings) {
-    await vault.delete({ path: p });
+    await vault.adapter.remove(p);
   }
   handler.disposeNote(NOTE);
 }
@@ -246,7 +210,7 @@ describe('Nebenläufigkeit: Delete resurrectet keine .yjs (Task 4 Review-Nachtra
     await Promise.all([p1, p2]);
 
     // Delete lief NACH applyLocalContent → keine .yjs bleibt/entsteht wieder.
-    expect(vault.listYjsFiles(NOTE)).toEqual([]);
+    expect(await vault.listYjsFiles(NOTE)).toEqual([]);
     expect(vault._files.has(OWN_YJS)).toBe(false);
   });
 

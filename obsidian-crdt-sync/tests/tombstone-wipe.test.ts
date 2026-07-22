@@ -14,11 +14,11 @@
 // Guard 2 (onRemoteYjsUpdate): block wenn merged==='' UND keine Ops im Doc
 // (historienloser Frisch-Doc). Echte Leerung (Delete-Ops im Doc) darf nicht geblockt werden.
 
-import { TFile } from 'obsidian';
 import CrdtSyncPlugin from '../src/main';
-import { SyncHandler, filterYjsFiles } from '../src/sync-handler';
+import { SyncHandler } from '../src/sync-handler';
 import { CrdtManager } from '../src/crdt-manager';
 import { encodeStateFile } from '../src/state-file';
+import { makeVaultMock, toArrayBuffer as toAB } from './helpers/vault-mock';
 
 const NOTE = 'note.md';
 // Codex-LOW: gültige 8-lowercase-hex clientIds (filterYjsFiles-konform)
@@ -26,52 +26,6 @@ const B_YJS = '.qollab/note.md.deadbeef.yjs';
 const OWN_YJS = '.qollab/note.md.a1b2c3d4.yjs';
 const G = 'ff'.repeat(16); // GUID der gelöschten Inkarnation
 const FULL = 'Wichtiger Inhalt\nZeile 2\nZeile 3\n';
-
-function toAB(data: ArrayBuffer | Uint8Array): ArrayBuffer {
-  return (
-    data instanceof Uint8Array
-      ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
-      : data
-  ) as ArrayBuffer;
-}
-
-function makeVaultMock() {
-  const files = new Map<string, ArrayBuffer>();
-  const textFiles = new Map<string, string>();
-  return {
-    getAbstractFileByPath: (path: string) => {
-      if (!files.has(path) && !textFiles.has(path)) return null;
-      const f = new TFile();
-      f.path = path;
-      f.name = path.split('/').pop() ?? path;
-      return f;
-    },
-    read: async (file: { path: string }) => textFiles.get(file.path) ?? '',
-    readBinary: async (file: { path: string }) => files.get(file.path)!,
-    createBinary: async (path: string, data: ArrayBuffer | Uint8Array) => {
-      files.set(path, toAB(data));
-    },
-    modifyBinary: async (file: { path: string }, data: ArrayBuffer | Uint8Array) => {
-      files.set(file.path, toAB(data));
-    },
-    delete: async (file: { path: string }) => {
-      files.delete(file.path);
-    },
-    createFolder: async (_path: string) => {},
-    process: async (file: { path: string }, fn: (data: string) => string) => {
-      const cur = textFiles.get(file.path) ?? '';
-      const next = fn(cur);
-      if (next !== cur) textFiles.set(file.path, next);
-      return next;
-    },
-    // Codex-LOW: echte filterYjsFiles-Logik statt injiziertem Mock — damit
-    // die Regression den Produktions-Filterpfad durchläuft.
-    listYjsFiles: (notePath: string) =>
-      filterYjsFiles(Array.from(files.keys()), notePath),
-    _files: files,
-    _textFiles: textFiles,
-  };
-}
 
 // Baut einen Sidecar mit GUID G und dem angegebenen Textinhalt.
 function bSidecar(text: string): ArrayBuffer {

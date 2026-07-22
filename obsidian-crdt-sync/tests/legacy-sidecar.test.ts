@@ -7,44 +7,7 @@
 import { SyncHandler } from '../src/sync-handler';
 import { CrdtManager } from '../src/crdt-manager';
 import { encodeStateFile } from '../src/state-file';
-
-function toAB(data: ArrayBuffer | Uint8Array): ArrayBuffer {
-  return data instanceof Uint8Array
-    ? (data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer)
-    : data;
-}
-
-function makeVaultMock() {
-  const files = new Map<string, ArrayBuffer>();
-  const textFiles = new Map<string, string>();
-  return {
-    getAbstractFileByPath: (path: string) =>
-      files.has(path) || textFiles.has(path) ? { path } : null,
-    read: async (file: { path: string }) => textFiles.get(file.path) ?? '',
-    readBinary: async (file: { path: string }) => files.get(file.path)!,
-    createBinary: async (path: string, data: ArrayBuffer | Uint8Array) => {
-      files.set(path, toAB(data));
-    },
-    modifyBinary: async (file: { path: string }, data: ArrayBuffer | Uint8Array) => {
-      files.set(file.path, toAB(data));
-    },
-    delete: async (file: { path: string }) => {
-      files.delete(file.path);
-      textFiles.delete(file.path);
-    },
-    createFolder: async (_path: string) => {},
-    listYjsFiles: (notePath: string) =>
-      Array.from(files.keys()).filter(
-        (p) =>
-          p === `.qollab/${notePath}.yjs` ||
-          (p.startsWith(`.qollab/${notePath}.`) &&
-            p.endsWith('.yjs') &&
-            /^[0-9a-f]{8}\.yjs$/.test(p.slice(`.qollab/${notePath}.`.length)))
-      ),
-    _files: files,
-    _textFiles: textFiles,
-  };
-}
+import { makeVaultMock, toArrayBuffer as toAB } from './helpers/vault-mock';
 
 // Baut einen Legacy-Sidecar (kein Header, raw Yjs-Update).
 function makeLegacySidecar(notePath: string, text: string): ArrayBuffer {

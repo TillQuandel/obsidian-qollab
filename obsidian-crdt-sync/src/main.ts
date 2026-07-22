@@ -1,11 +1,25 @@
 import { Notice, Plugin, TFile } from 'obsidian';
 import { diff_match_patch } from 'diff-match-patch';
 import { CrdtManager } from './crdt-manager';
-import { SyncHandler, filterYjsFiles, TombstoneStore, QOLLAB_DIR } from './sync-handler';
-import { FileWatcher } from './file-watcher';
+import { SyncHandler, TombstoneStore, QOLLAB_DIR } from './sync-handler';
+import {
+  SidecarAdapter,
+  listYjsInDir,
+  ensureSidecarFolder,
+  dirname,
+} from './sidecar-io';
+import { SidecarWatcher } from './sidecar-watcher';
 import { CrdtSyncSettings, CrdtSyncSettingTab, DEFAULT_SETTINGS, generateClientId } from './settings';
 import { pruneTombstones } from './tombstones';
 import { PathQueue } from './path-queue';
+
+// Uint8Array → ArrayBuffer für Obsidians adapter.writeBinary (das nur ArrayBuffer
+// akzeptiert). encodeStateFile liefert Uint8Array.
+function toArrayBuffer(data: ArrayBuffer | Uint8Array): ArrayBuffer {
+  return (data instanceof Uint8Array
+    ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
+    : data) as ArrayBuffer;
+}
 
 // 3-Wege-Text-Merge: die lokale Änderung (Diff base → local) wird als Patch auf
 // den bereits gemergten other-Stand angewandt. diff-match-patch wendet Patches
@@ -28,7 +42,9 @@ export default class CrdtSyncPlugin extends Plugin {
   settings: CrdtSyncSettings;
   private crdtManager: CrdtManager;
   private syncHandler: SyncHandler;
-  private fileWatcher: FileWatcher;
+  private sidecarWatcher: SidecarWatcher;
+  // Adapter-gestützte Sidecar-IO (.qollab/ ist für den Vault-Index unsichtbar).
+  private sidecarAdapter: SidecarAdapter;
   // Gerätelokaler Tombstone-Store (Teil der Plugin-Data).
   private tombstoneStore: TombstoneStore = {
     has: (guid: string) => guid in this.settings.tombstones,
@@ -57,18 +73,33 @@ export default class CrdtSyncPlugin extends Plugin {
 
     this.crdtManager = new CrdtManager();
     const vault = this.app.vault;
-    const vaultWithList = new Proxy(vault, {
-      get(target, prop) {
-        if (prop === 'listYjsFiles') return (notePath: string) =>
-          filterYjsFiles(
-            target.getFiles().map((f: { path: string }) => f.path),
-            notePath
-          );
-        return (target as any)[prop];
-      }
-    });
+
+    // Sidecars laufen ausschließlich über den Adapter — der Vault-Index ist blind
+    // für den Dot-Ordner .qollab/. Die .md-Note dagegen ist indiziert und bleibt
+    // auf der Vault-API (getAbstractFileByPath/read/process).
+    const rawAdapter = vault.adapter;
+    this.sidecarAdapter = {
+      exists: (p) => rawAdapter.exists(p),
+      readBinary: (p) => rawAdapter.readBinary(p),
+      writeBinary: (p, data) => rawAdapter.writeBinary(p, toArrayBuffer(data)),
+      remove: (p) => rawAdapter.remove(p),
+      mkdir: (p) => rawAdapter.mkdir(p),
+      stat: (p) => rawAdapter.stat(p),
+      list: (p) => rawAdapter.list(p),
+      rename: (from, to) => rawAdapter.rename(from, to),
+    };
+    const adapter = this.sidecarAdapter;
+
+    // Schlankes VaultLike: Vault-API für die indizierte .md, Adapter für Sidecars.
+    const vaultLike = {
+      getAbstractFileByPath: (p: string) => vault.getAbstractFileByPath(p),
+      read: (file: { path: string }) => vault.read(file as TFile),
+      adapter,
+      listYjsFiles: (notePath: string) => listYjsInDir(adapter, notePath),
+    };
+
     this.syncHandler = new SyncHandler(
-      vaultWithList as any,
+      vaultLike as any,
       this.crdtManager,
       this.settings.clientId,
       this.tombstoneStore,
@@ -81,11 +112,25 @@ export default class CrdtSyncPlugin extends Plugin {
       }
     );
 
-    this.fileWatcher = new FileWatcher(this.app.vault, this.settings.clientId, async (notePath) => {
+    // Eigener Wächter statt Vault-Events: Obsidian feuert für .qollab nie. Poll-Scan
+    // per Intervall + Sofort-Trigger beim Öffnen einer Note.
+    this.sidecarWatcher = new SidecarWatcher(adapter, this.settings.clientId, async (notePath) => {
       await this.pathQueue.run(notePath, () => this.onRemoteYjsUpdate(notePath));
     });
-    // start() liefert je einen Ref für 'modify' und 'create' — beide registrieren.
-    for (const ref of this.fileWatcher.start()) this.registerEvent(ref);
+    this.sidecarWatcher.start({
+      registerInterval: (fn, ms) => {
+        const id = window.setInterval(fn, ms);
+        this.registerInterval(id);
+        return () => window.clearInterval(id);
+      },
+      onFileOpen: (cb) => {
+        const ref = this.app.workspace.on('file-open', (file) =>
+          cb(file instanceof TFile ? file.path : null)
+        );
+        this.registerEvent(ref);
+        return () => this.app.workspace.offref(ref);
+      },
+    });
 
     // Wenn Nutzer eine .md-Note bearbeitet → CRDT-State aktualisieren + speichern.
     // Read UND applyLocalContent laufen über dieselbe Queue wie der Remote-Merge:
@@ -117,12 +162,14 @@ export default class CrdtSyncPlugin extends Plugin {
         if (!(file instanceof TFile)) return;
         if (!file.path.endsWith('.md')) return;
         await this.pathQueue.run(oldPath, async () => {
-          const files = this.app.vault.getFiles();
-          const yjsPaths = new Set(filterYjsFiles(files.map((f: TFile) => f.path), oldPath));
-          for (const yjsFile of files) {
-            if (!yjsPaths.has(yjsFile.path)) continue;
-            const suffix = yjsFile.path.slice(`${QOLLAB_DIR}/${oldPath}`.length);
-            await this.app.fileManager.renameFile(yjsFile, `${QOLLAB_DIR}/${file.path}${suffix}`);
+          // Sidecars sind für den Index unsichtbar → über den Adapter listen und
+          // umziehen. Zielordner ggf. anlegen (Rename in einen anderen Ordner).
+          const sidecars = await listYjsInDir(this.sidecarAdapter, oldPath);
+          for (const sc of sidecars) {
+            const suffix = sc.slice(`${QOLLAB_DIR}/${oldPath}`.length);
+            const newPath = `${QOLLAB_DIR}/${file.path}${suffix}`;
+            await ensureSidecarFolder(this.sidecarAdapter, dirname(newPath));
+            await this.sidecarAdapter.rename(sc, newPath);
           }
           this.syncHandler.renameNote(oldPath, file.path);
         });
@@ -142,11 +189,9 @@ export default class CrdtSyncPlugin extends Plugin {
         await this.pathQueue.run(file.path, async () => {
           const guid = await this.syncHandler.currentGuid(file.path);
           if (guid) await this.tombstoneStore.add(guid);
-          const files = this.app.vault.getFiles();
-          const yjsPaths = new Set(filterYjsFiles(files.map((f: TFile) => f.path), file.path));
-          for (const yjsFile of files) {
-            if (yjsPaths.has(yjsFile.path)) await this.app.vault.delete(yjsFile);
-          }
+          // Sidecars über den Adapter listen und entfernen (Index-blind).
+          const sidecars = await listYjsInDir(this.sidecarAdapter, file.path);
+          for (const sc of sidecars) await this.sidecarAdapter.remove(sc);
           this.syncHandler.disposeNote(file.path);
         });
       })
@@ -163,8 +208,19 @@ export default class CrdtSyncPlugin extends Plugin {
     // dieses Geraet noch keinen eigenen State, werden fremde Sibling-.yjs-Files
     // als Basis adoptiert (Sibling-Adoption). KEIN loadAndMerge — ein explizites
     // Hereinholen fremder .yjs-Staende findet im Sweep nicht statt.
+    //
+    // Reihenfolge zwingend: ERST der Sweep (aktualisiert die lokalen Snapshots
+    // aller stale .md via applyLocalContent), DANN der Initial-Scan des
+    // Watchers (merged alle beim Start vorhandenen fremden Sidecars). Andernfalls
+    // würde man mergen, bevor die lokalen Snapshots aktuell sind — der Initial-
+    // Scan schließt die Lücke, dass bei geschlossener App angekommene Remote-
+    // Stände sonst nie gemergt wurden.
     this.app.workspace.onLayoutReady(() => {
-      void this.snapshotStaleMarkdownFiles();
+      void (async () => {
+        await this.snapshotStaleMarkdownFiles();
+        if (this.unloaded) return;
+        await this.sidecarWatcher.poll();
+      })();
     });
   }
 
@@ -175,9 +231,11 @@ export default class CrdtSyncPlugin extends Plugin {
     for (const file of files) {
       if (this.unloaded) return;
 
+      // Sidecar-mtime über den Adapter (Index-blind für .qollab/). Ist der eigene
+      // Sidecar mindestens so neu wie die .md, ist der Snapshot aktuell.
       const statePath = this.syncHandler.stateFilePath(file.path);
-      const stateFile = this.app.vault.getAbstractFileByPath(statePath);
-      if (stateFile instanceof TFile && stateFile.stat.mtime >= file.stat.mtime) {
+      const stat = await this.sidecarAdapter.stat(statePath);
+      if (stat && stat.mtime >= file.stat.mtime) {
         continue;
       }
 
@@ -290,7 +348,7 @@ export default class CrdtSyncPlugin extends Plugin {
 
   onunload() {
     this.unloaded = true;
-    this.fileWatcher.stop();
+    this.sidecarWatcher.stop();
     this.crdtManager.disposeAll();
   }
 

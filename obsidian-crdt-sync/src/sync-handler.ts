@@ -1,5 +1,7 @@
 import { CrdtManager } from './crdt-manager';
 import { encodeStateFile, decodeStateFile, generateGuid } from './state-file';
+import type { SidecarAdapter } from './sidecar-io';
+import { ensureSidecarFolder, dirname } from './sidecar-io';
 
 export const QOLLAB_DIR = '.qollab';
 
@@ -35,15 +37,19 @@ const NO_TOMBSTONES: TombstoneStore = {
   add: async () => {},
 };
 
+// Kombiniertes IO-Interface: die indizierte .md-Note läuft über die Vault-API
+// (getAbstractFileByPath/read), sämtliche Sidecars (.qollab/…) über den Adapter.
+// Grund: Obsidians Vault-Index ist blind für Dot-Ordner — die .md ist indiziert,
+// die .yjs-Sidecars sind es nie (siehe sidecar-io.ts).
 interface VaultLike {
+  // .md-Note (indiziert).
   getAbstractFileByPath(path: string): { path: string } | null;
   read(file: { path: string }): Promise<string>;
-  readBinary(file: { path: string }): Promise<ArrayBuffer>;
-  createBinary(path: string, data: ArrayBuffer | Uint8Array): Promise<unknown>;
-  modifyBinary(file: { path: string }, data: ArrayBuffer | Uint8Array): Promise<unknown>;
-  delete(file: { path: string }): Promise<unknown>;
-  createFolder(path: string): Promise<unknown>;
-  listYjsFiles(notePath: string): string[];
+  // Sidecars (.qollab/…) — nur über den Adapter erreichbar.
+  adapter: SidecarAdapter;
+  // Adapter-gestütztes Listen der .yjs-Siblings dieser Note (async, weil
+  // adapter.list async ist).
+  listYjsFiles(notePath: string): Promise<string[]>;
 }
 
 interface DecodedSibling {
@@ -94,15 +100,10 @@ export class SyncHandler {
     this.crdtManager.disposeDoc(oldPath);
   }
 
-  private async ensureFolder(folderPath: string): Promise<void> {
-    if (!folderPath || this.vault.getAbstractFileByPath(folderPath)) return;
-    const parent = folderPath.split('/').slice(0, -1).join('/');
-    if (parent) await this.ensureFolder(parent);
-    try {
-      await this.vault.createFolder(folderPath);
-    } catch {
-      // Ordner wurde zwischen Check und Create von anderem Prozess angelegt — ok
-    }
+  // Löscht eine Sidecar, falls vorhanden (Ersatz für das frühere
+  // getAbstractFileByPath-if(file)-delete-Muster über den Adapter).
+  private async removeSidecar(path: string): Promise<void> {
+    if (await this.vault.adapter.exists(path)) await this.vault.adapter.remove(path);
   }
 
   async saveState(notePath: string): Promise<void> {
@@ -114,28 +115,20 @@ export class SyncHandler {
     const update = this.crdtManager.encodeState(notePath);
     const state = encodeStateFile(guid, update);
     const stateFile = this.stateFilePath(notePath);
-    const folderPath = stateFile.split('/').slice(0, -1).join('/');
-    await this.ensureFolder(folderPath);
-    const existing = this.vault.getAbstractFileByPath(stateFile);
-    if (existing) {
-      await this.vault.modifyBinary(existing, state);
-    } else {
-      try {
-        await this.vault.createBinary(stateFile, state);
-      } catch {
-        // Datei wurde zwischen Check und Create von anderem Prozess angelegt — modify als Fallback
-        const created = this.vault.getAbstractFileByPath(stateFile);
-        if (created) await this.vault.modifyBinary(created, state);
-      }
-    }
+    await ensureSidecarFolder(this.vault.adapter, dirname(stateFile));
+    // adapter.writeBinary legt an ODER überschreibt in einem Aufruf — kein
+    // create/modify-Split und kein Race-Fallback mehr nötig (der frühere,
+    // index-basierte Split war in echten Vaults ein Silent-No-Op).
+    await this.vault.adapter.writeBinary(stateFile, state);
   }
 
   private async readStateFile(path: string): Promise<DecodedSibling | null> {
-    const file = this.vault.getAbstractFileByPath(path);
-    if (!file) return null;
+    // exists-Check trennt „nicht vorhanden" (null, keine Notice) von „vorhanden
+    // aber korrupt" (Notice) — readBinary würde bei fehlender Datei werfen.
+    if (!(await this.vault.adapter.exists(path))) return null;
     // R2: read-/decode-Fehler (z.B. leere oder trunkierte Datei) abfangen.
     try {
-      const buffer = await this.vault.readBinary(file);
+      const buffer = await this.vault.adapter.readBinary(path);
       const { guid, update } = decodeStateFile(new Uint8Array(buffer));
       return { path, guid, update };
     } catch {
@@ -169,15 +162,13 @@ export class SyncHandler {
 
       // Tombstone-Prüfung (C.3)
       if (d.guid !== null && this.tombstones.has(d.guid)) {
-        const file = this.vault.getAbstractFileByPath(paths[i]);
-        if (file) await this.vault.delete(file);
+        await this.removeSidecar(paths[i]);
         continue;
       }
 
       // R1: Legacy ignorieren und löschen, sobald GUID-State existiert.
       if (d.guid === null && hasGuidState) {
-        const file = this.vault.getAbstractFileByPath(paths[i]);
-        if (file) await this.vault.delete(file);
+        await this.removeSidecar(paths[i]);
         continue;
       }
 
@@ -233,7 +224,7 @@ export class SyncHandler {
 
     const ownPath = this.stateFilePath(notePath);
     const foreign = await this.decodeSiblings(
-      this.vault.listYjsFiles(notePath).filter((p) => p !== ownPath)
+      (await this.vault.listYjsFiles(notePath)).filter((p) => p !== ownPath)
     );
     const winner = this.pickWinnerGuid(foreign, undefined);
     this.guids.set(notePath, winner ?? generateGuid());
@@ -314,8 +305,7 @@ export class SyncHandler {
   // GUID-tragender State, sodass die Legacy-Datei nicht mehr gebraucht wird.
   private async cleanupLegacyFile(notePath: string): Promise<void> {
     const legacyPath = `${QOLLAB_DIR}/${notePath}.yjs`;
-    const file = this.vault.getAbstractFileByPath(legacyPath);
-    if (file) await this.vault.delete(file);
+    await this.removeSidecar(legacyPath);
   }
 
   // Bringt eine lokale .md-Änderung in den CRDT. Diff-basiertes setContent
@@ -329,7 +319,7 @@ export class SyncHandler {
   }
 
   async loadAndMerge(notePath: string): Promise<string | null> {
-    const yjsFiles = this.vault.listYjsFiles(notePath);
+    const yjsFiles = await this.vault.listYjsFiles(notePath);
     if (yjsFiles.length === 0) return null;
 
     await this.ensureDoc(notePath);

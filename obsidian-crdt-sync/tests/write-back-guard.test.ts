@@ -1,7 +1,7 @@
-import { TFile } from 'obsidian';
 import CrdtSyncPlugin from '../src/main';
 import { SyncHandler } from '../src/sync-handler';
 import { CrdtManager } from '../src/crdt-manager';
+import { makeVaultMock } from './helpers/vault-mock';
 
 // Fix A (HIGH) — Write-Back-Guard in onRemoteYjsUpdate.
 //
@@ -16,8 +16,8 @@ import { CrdtManager } from '../src/crdt-manager';
 // den aktuellen `_textFiles`-Stand und schreibt die Rückgabe zurück.
 
 const NOTE = 'note.md';
-const REMOTE_YJS = '.qollab/note.md.remote01.yjs';
-const OWN_YJS = '.qollab/note.md.local000.yjs';
+const REMOTE_YJS = '.qollab/note.md.5e307e01.yjs';
+const OWN_YJS = '.qollab/note.md.10ca1000.yjs';
 
 const BASE = 'Zeile 1\nZeile 2\n';
 const REMOTE = 'Zeile 1 REMOTE\nZeile 2\n'; // Remote ändert Zeile 1
@@ -26,55 +26,8 @@ const MERGED = 'Zeile 1 REMOTE\nZeile 2 LOCAL\n'; // beide Änderungen
 
 const tick = () => new Promise<void>((r) => setTimeout(r, 0));
 
-function toAB(data: ArrayBuffer | Uint8Array): ArrayBuffer {
-  return (
-    data instanceof Uint8Array
-      ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
-      : data
-  ) as ArrayBuffer;
-}
-
-function makeVaultMock() {
-  const files = new Map<string, ArrayBuffer>();
-  const textFiles = new Map<string, string>();
-  return {
-    getAbstractFileByPath: (path: string) => {
-      if (!files.has(path) && !textFiles.has(path)) return null;
-      const f = new TFile();
-      f.path = path;
-      f.name = path.split('/').pop() ?? path;
-      return f;
-    },
-    read: async (file: { path: string }) => textFiles.get(file.path) ?? '',
-    readBinary: async (file: { path: string }) => files.get(file.path)!,
-    createBinary: async (path: string, data: ArrayBuffer | Uint8Array) => {
-      files.set(path, toAB(data));
-    },
-    modifyBinary: async (file: { path: string }, data: ArrayBuffer | Uint8Array) => {
-      files.set(file.path, toAB(data));
-    },
-    delete: async (file: { path: string }) => {
-      files.delete(file.path);
-    },
-    createFolder: async (_path: string) => {},
-    // process: Read-Modify-Write auf _textFiles (Obsidian-vault.process-Analogon).
-    process: async (file: { path: string }, fn: (data: string) => string) => {
-      const cur = textFiles.get(file.path) ?? '';
-      const next = fn(cur);
-      if (next !== cur) textFiles.set(file.path, next);
-      return next;
-    },
-    listYjsFiles: (notePath: string) =>
-      Array.from(files.keys()).filter(
-        (p) => p.startsWith(`.qollab/${notePath}.`) && p.endsWith('.yjs')
-      ),
-    _files: files,
-    _textFiles: textFiles,
-  };
-}
-
 // Baut ein Plugin mit direkt gesetzten Privatfeldern (kein onload).
-function makePlugin(vault: ReturnType<typeof makeVaultMock>, clientId = 'local000') {
+function makePlugin(vault: ReturnType<typeof makeVaultMock>, clientId = '10ca1000') {
   const plugin = new (CrdtSyncPlugin as any)({ vault }, {});
   plugin.settings = { enabled: true, statusNotice: false, clientId, tombstones: {} };
   plugin.crdtManager = new CrdtManager();
@@ -105,13 +58,13 @@ function setup() {
     releaseRemote = r;
   });
   let gated = false;
-  const rawReadBinary = vault.readBinary;
-  vault.readBinary = async (file: { path: string }) => {
-    if (file.path === REMOTE_YJS && !gated) {
+  const rawReadBinary = vault.adapter.readBinary;
+  vault.adapter.readBinary = async (path: string) => {
+    if (path === REMOTE_YJS && !gated) {
       gated = true;
       await remoteGate;
     }
-    return rawReadBinary(file);
+    return rawReadBinary(path);
   };
 
   const plugin = makePlugin(vault);

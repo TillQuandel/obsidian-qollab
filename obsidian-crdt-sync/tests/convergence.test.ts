@@ -1,5 +1,6 @@
 import { CrdtManager } from '../src/crdt-manager';
 import { SyncHandler } from '../src/sync-handler';
+import { makeVaultMock } from './helpers/vault-mock';
 
 // Konvergenz-Netz für den Merge-Kern.
 //
@@ -16,38 +17,6 @@ import { SyncHandler } from '../src/sync-handler';
 // reale Pfad (SyncHandler.loadAndMerge mit Basis-Adoption) ist Test 1 unten.
 //
 // Assertions ausschliesslich mit `toBe` (exakte Gleichheit), nie `toContain`.
-
-function makeVaultMock() {
-  const files = new Map<string, ArrayBuffer>();
-  const textFiles = new Map<string, string>();
-  return {
-    getAbstractFileByPath: (path: string) =>
-      files.has(path) || textFiles.has(path) ? { path } : null,
-    read: async (file: { path: string }) => textFiles.get(file.path) ?? '',
-    readBinary: async (file: { path: string }) => files.get(file.path)!,
-    createBinary: async (path: string, data: ArrayBuffer | Uint8Array) => {
-      files.set(path, toArrayBuffer(data));
-    },
-    modifyBinary: async (file: { path: string }, data: ArrayBuffer | Uint8Array) => {
-      files.set(file.path, toArrayBuffer(data));
-    },
-    createFolder: async (_path: string) => {},
-    listYjsFiles: (notePath: string) =>
-      Array.from(files.keys()).filter(
-        (p) => p.startsWith(`.qollab/${notePath}.`) && p.endsWith('.yjs')
-      ),
-    _files: files,
-    _textFiles: textFiles,
-  };
-}
-
-function toArrayBuffer(data: ArrayBuffer | Uint8Array): ArrayBuffer {
-  return (
-    data instanceof Uint8Array
-      ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
-      : data
-  ) as ArrayBuffer;
-}
 
 describe('Merge-Kern-Konvergenz', () => {
   it('Zwei-Geräte-Erstmerge über SyncHandler dedupliziert (Basis-Adoption)', async () => {
@@ -113,7 +82,7 @@ describe('Merge-Kern-Konvergenz', () => {
     // Frischer Manager — Doc nicht geladen → ensureDoc adoptiert die vorhandene
     // .yjs als Basis (statt die .md als frische Historie einzuspielen).
     const manager = new CrdtManager();
-    const handler = new SyncHandler(vault as any, manager, 'local000');
+    const handler = new SyncHandler(vault as any, manager, '10ca1000');
 
     const merged = await handler.loadAndMerge('note.md');
     expect(merged).toBe(text);
@@ -142,7 +111,7 @@ describe('Merge-Kern-Konvergenz', () => {
 
     // Lokaler eigener State = Basis-Historie (legacy → kompatibel mit dem Remote).
     vault._files.set(
-      '.qollab/note.md.local000.yjs',
+      '.qollab/note.md.10ca1000.yjs',
       baseState.buffer as ArrayBuffer
     );
 
@@ -151,7 +120,7 @@ describe('Merge-Kern-Konvergenz', () => {
     remote.applyUpdate('note.md', baseState);
     remote.setContent('note.md', NEW);
     vault._files.set(
-      '.qollab/note.md.remote01.yjs',
+      '.qollab/note.md.5e307e01.yjs',
       remote.encodeState('note.md').buffer as ArrayBuffer
     );
 
@@ -159,7 +128,7 @@ describe('Merge-Kern-Konvergenz', () => {
     // da eigener State existiert (own-Branch spielt die .md nicht ein).
     vault._textFiles.set('note.md', OLD);
     const manager = new CrdtManager();
-    const handler = new SyncHandler(vault as any, manager, 'local000');
+    const handler = new SyncHandler(vault as any, manager, '10ca1000');
 
     const merged = await handler.loadAndMerge('note.md');
     expect(merged).toBe(NEW);
@@ -187,7 +156,7 @@ describe('Merge-Kern-Konvergenz', () => {
     remote.setContent('note.md', base);
     remote.setContent('note.md', 'Gemeinsame Zeile\nRemote-Zeile\n');
     vault._files.set(
-      '.qollab/note.md.remote01.yjs',
+      '.qollab/note.md.5e307e01.yjs',
       remote.encodeState('note.md').buffer as ArrayBuffer
     );
 
@@ -199,7 +168,7 @@ describe('Merge-Kern-Konvergenz', () => {
     );
 
     const manager = new CrdtManager();
-    const handler = new SyncHandler(vault as any, manager, 'local000');
+    const handler = new SyncHandler(vault as any, manager, '10ca1000');
 
     const merged = await handler.loadAndMerge('note.md');
     // Beide überleben: Remote-Edit UND die lokale Zeile.
