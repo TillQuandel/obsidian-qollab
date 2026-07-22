@@ -217,6 +217,44 @@ describe('FileWatcher', () => {
     expect(vault._hasHandler('modify')).toBe(false);
     expect(vault._hasHandler('create')).toBe(false);
   });
+
+  // --- F6: Sync-Konfliktkopien dürfen nicht als echte Sidecars gematcht werden ---
+
+  it('F6: ignoriert Legacy-Konfliktkopie mit Leerzeichen (Dropbox-Stil)', async () => {
+    // .qollab/note.md.deadbeef (1).yjs ist eine Konflikt-Kopie des Sync-Dienstes,
+    // kein echter Legacy-Sidecar. Der extrahierte "notePath" wäre note.md.deadbeef (1)
+    // — eine nichtexistente Note. Muss ignoriert werden.
+    const vault = makeVaultMock();
+    const onChanged = jest.fn(async () => {});
+    new FileWatcher(vault as any, SELF, onChanged).start();
+
+    await vault._emit(tfile('.qollab/note.md.deadbeef (1).yjs'));
+
+    expect(onChanged).not.toHaveBeenCalled();
+  });
+
+  it('F6: ignoriert Legacy-Konfliktkopie mit sync-conflict-Suffix (Syncthing-Stil)', async () => {
+    // .qollab/note.md.sync-conflict-20260722.yjs ist eine Syncthing-Konflikt-Kopie.
+    const vault = makeVaultMock();
+    const onChanged = jest.fn(async () => {});
+    new FileWatcher(vault as any, SELF, onChanged).start();
+
+    await vault._emit(tfile('.qollab/note.md.sync-conflict-20260722.yjs'));
+
+    expect(onChanged).not.toHaveBeenCalled();
+  });
+
+  it('F6: ignoriert Legacy-Konfliktkopie mit Gerätenamen-Suffix (Syncthing-Stil)', async () => {
+    // .qollab/note.md.a1b2c3d4-DESKTOP.yjs hat ein ungültiges suffix nach .md —
+    // kein echter Sidecar, sondern eine Gerätekopie.
+    const vault = makeVaultMock();
+    const onChanged = jest.fn(async () => {});
+    new FileWatcher(vault as any, SELF, onChanged).start();
+
+    await vault._emit(tfile('.qollab/note.md.a1b2c3d4-DESKTOP.yjs'));
+
+    expect(onChanged).not.toHaveBeenCalled();
+  });
 });
 
 function toArrayBuffer(data: ArrayBuffer | Uint8Array): ArrayBuffer {

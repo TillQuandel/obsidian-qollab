@@ -3,9 +3,13 @@ import { TFile, Vault } from 'obsidian';
 export type OnYjsChanged = (notePath: string) => Promise<void>;
 
 // Strikte per-Client-Form: .qollab/<notePath>.<8-hex-clientId>.yjs
-const QOLLAB_RE = /^\.qollab\/(.+)\.([0-9a-f]{8})\.yjs$/;
+// Der notePath muss auf .md enden — Sync-Konfliktkopien (z.B. note.md.a1b2c3d4-DESKTOP.yjs)
+// werden so herausgefiltert, da ihr Suffix nach dem letzten .md nicht [0-9a-f]{8} ist.
+const QOLLAB_RE = /^\.qollab\/(.+\.md)\.([0-9a-f]{8})\.yjs$/;
 // Legacy-Form ohne clientId (v0.1-Ära): .qollab/<notePath>.yjs
-const QOLLAB_LEGACY_RE = /^\.qollab\/(.+)\.yjs$/;
+// Der notePath muss auf .md enden — Sync-Konfliktkopien (z.B. note.md.sync-conflict-….yjs)
+// haben einen Suffix nach dem letzten .md und matchen daher nicht.
+const QOLLAB_LEGACY_RE = /^\.qollab\/(.+\.md)\.yjs$/;
 
 export class FileWatcher {
   private eventRefs: ReturnType<Vault['on']>[] = [];
