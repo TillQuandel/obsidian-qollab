@@ -10,6 +10,12 @@ export interface CrdtSyncSettings {
   tombstones: Record<string, number>;
 }
 
+// 4 Zufallsbytes = 32 bit Entropie (8 Hex-Zeichen). Bei realistischen
+// Gerätezahlen pro Vault (< 100) ist das Kollisionsrisiko vernachlässigbar
+// (Geburtstagsschranke ~ 2^16 Geräte für 50 %). Bewusst NICHT verlängert: die
+// 8-Hex-Länge ist Teil des Sidecar-Dateinamens-Formats
+// (`<note>.<clientId>.yjs`, gematcht von filterYjsFiles/QOLLAB_RE) — eine
+// Änderung wäre ein Format-Bruch, kein reiner Settings-Tweak.
 export function generateClientId(): string {
   return Array.from(crypto.getRandomValues(new Uint8Array(4)))
     .map(b => b.toString(16).padStart(2, '0'))

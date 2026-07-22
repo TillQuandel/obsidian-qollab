@@ -17,6 +17,12 @@ Alle nennenswerten Aenderungen an Qollab. Format orientiert sich an [Keep a Chan
 - `FileWatcher` reagiert jetzt auch auf `create`-Events: ein fremdes `.yjs`, das erstmals erscheint (z.B. nach `git pull`/erstem Sync), löst sofort einen Merge aus statt erst bei einem späteren `modify` (Erstkontakt-Konvergenz).
 - Adopt-Pfad erfasst den lokalen `.md`-Text: fehlt eigener State, wird beim Adoptieren einer fremden Sibling-`.yjs` die lokale Note als Diff eingespielt — verhindert lokalen Datenverlust, wenn der Merge-Write-Back sonst die nie erfasste `.md` überschrieben hätte.
 
+### Fixed
+
+- Write-Back-Guard gegen Verlust lokaler Edits (Cross-Model-Review, HIGH): Landet ein lokaler `.md`-Edit zwischen Merge-Berechnung und Write-Back, überschrieb `vault.process` ihn bisher blind mit dem gemergten Remote-Stand. Der Write-Back hält jetzt den Vor-Merge-Inhalt fest, erkennt den Edit und bringt ihn per 3-Wege-Merge auf den Remote-Stand — beide Änderungen überleben in Datei und CRDT.
+- Exakter Sidecar-Match statt Prefix-Match (Cross-Model-Review): `filterYjsFiles` sowie die `rename`/`delete`-Handler matchten `.yjs`-Siblings per `startsWith('.qollab/<note>.')`. Eine eigenständige Note `note.md.archive.md` galt dadurch als Sibling von `note.md` → Cross-Note-Merge bzw. Mit-Löschen/-Umbenennen fremder Sidecars. Der Match ist jetzt exakt (Legacy-Form oder `<note>.<8-hex-clientId>.yjs`); die Handler nutzen `filterYjsFiles` wieder statt eigener Filter.
+- `FileWatcher` erkennt zusätzlich die clientId-lose Legacy-Form `.qollab/<note>.yjs` (v0.1-Ära): eine live per Sync ankommende Legacy-Datei löst jetzt ebenfalls einen Merge aus (getrennte strikte/Legacy-Prüfung, damit die greedy Regex bei per-Client-Dateien nicht die clientId in den notePath schluckt).
+
 ## [0.3.0] - 2026-05-25
 
 ### Fixed
