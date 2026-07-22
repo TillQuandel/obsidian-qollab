@@ -2,6 +2,7 @@ import { CrdtManager } from './crdt-manager';
 import { encodeStateFile, decodeStateFile, generateGuid } from './state-file';
 import type { SidecarAdapter } from './sidecar-io';
 import { ensureSidecarFolder, dirname } from './sidecar-io';
+import { threeWayMerge } from './text-merge';
 
 export const QOLLAB_DIR = '.qollab';
 
@@ -330,10 +331,11 @@ export class SyncHandler {
     await this.removeSidecar(legacyPath);
   }
 
-  // Zieht ausstehende KOMPATIBLE Fremd-Sidecars (gleiche/legacy GUID) in den
-  // bereits geladenen Doc ein — reine mergeCompatible-Semantik, KEIN Tie-Break.
-  // Split-Brain (fremde Gewinner-GUID, switchToGuid) bleibt ausschließlich Sache
-  // von loadAndMerge; hier werden Verlierer-/Fremd-GUIDs bewusst ignoriert.
+  // Zieht ausstehende KOMPATIBLE Fremd-Sidecars (gleiche/legacy GUID) in den Doc
+  // ein — reine mergeCompatible-Semantik, KEIN Tie-Break. Split-Brain (fremde
+  // Gewinner-GUID, switchToGuid) bleibt ausschließlich Sache von loadAndMerge; hier
+  // werden Verlierer-/Fremd-GUIDs bewusst ignoriert. Idempotent: bereits gemergte
+  // Siblings (z.B. im Adopt-Zweig von ensureDoc) werden nach Item-ID dedupliziert.
   private async mergePendingForeign(notePath: string): Promise<void> {
     const yjsFiles = await this.vault.listYjsFiles(notePath);
     if (yjsFiles.length === 0) return;
@@ -341,22 +343,34 @@ export class SyncHandler {
     this.mergeCompatible(notePath, siblings);
   }
 
-  // Bringt eine lokale .md-Änderung in den CRDT. Diff-basiertes setContent
-  // erzeugt keine Ops, wenn der Doc-Text bereits identisch ist.
+  // Bringt eine lokale .md-Änderung in den CRDT.
   async applyLocalContent(notePath: string, content: string): Promise<void> {
-    // War der Doc schon geladen, hat ensureDoc KEINE Fremd-Sidecars eingezogen.
-    // Eine per Datei-Sync (robocopy) überschriebene .md kann aber bereits fremde
-    // Edits enthalten, deren Original noch in einer ungemergten Fremd-Sidecar liegt.
-    // Ohne vorheriges Einmergen würde setContent den Diff der gemergten .md gegen
-    // den Doc bilden (der die Fremd-Ops noch nicht hat) und die Fremd-Einfügung als
-    // NEUE lokale Op unter eigener Client-ID erfinden → beim späteren Sidecar-Merge
-    // dupliziert (Yjs dedupliziert nach Item-ID, nicht Inhalt). Deshalb erst
-    // kompatible Fremd-Sidecars einmergen, dann diffen. Der Bootstrap-/Adopt-Pfad
-    // (Doc frisch, ensureDoc hat gerade selbst gemergt) braucht das nicht.
-    const docExisted = this.crdtManager.hasDoc(notePath);
     await this.ensureDoc(notePath);
-    if (docExisted) await this.mergePendingForeign(notePath);
-    this.crdtManager.setContent(notePath, content);
+
+    // Fremd-Sidecars, die ensureDoc nicht schon selbst eingezogen hat (Doc bereits
+    // in-memory ODER Bootstrap aus eigenem State), VOR dem lokalen Diff einmergen.
+    // Sonst difft ein per Datei-Sync (robocopy) überschriebenes .md gegen den Doc,
+    // der die Fremd-Ops noch nicht hat, und ERFINDET die Fremd-Einfügung als neue
+    // lokale Op unter eigener Client-ID → beim späteren Sidecar-Merge permanent
+    // dupliziert (Yjs dedupliziert nach Item-ID, nicht Inhalt). Trifft Laufzeit-
+    // (modify) UND Restart-/Sweep-Pfad (Sync bei geschlossener App, Eigen-State-
+    // Bootstrap). Im Adopt-Zweig hat ensureDoc bereits gemergt+gediffed; der Merge
+    // ist dann idempotent und der 3-Wege-Merge unten ein No-Op (content == mergedText).
+    const base = this.crdtManager.getContent(notePath);
+    await this.mergePendingForeign(notePath);
+    const mergedText = this.crdtManager.getContent(notePath);
+
+    // 3-Wege-Merge (wie onRemoteYjsUpdate): die lokale Änderung (Delta base→content)
+    // wird auf den fremd-gemergten Stand angewandt. So überlebt ein Fremd-Edit, den
+    // die .md noch NICHT enthält (kein 2-Wege-setContent-Delete → kein Cross-Device-
+    // Datenverlust) UND ein echter lokaler Edit. Enthält die .md den Fremd-Stand
+    // bereits (content === mergedText, häufigster Restart-/Sync-Overwrite-Fall), KEIN
+    // 3-Wege-Patch: threeWayMerge würde die schon vorhandene Fremd-Einfügung erneut
+    // einfügen (patch_apply dedupliziert nicht) — direkt der gemergte Stand.
+    const finalText =
+      content === mergedText ? mergedText : threeWayMerge(base, content, mergedText);
+    this.crdtManager.setContent(notePath, finalText);
+
     await this.saveState(notePath);
     // R1: Eigener GUID-State ist jetzt geschrieben — Legacy-Datei aufräumen.
     await this.cleanupLegacyFile(notePath);

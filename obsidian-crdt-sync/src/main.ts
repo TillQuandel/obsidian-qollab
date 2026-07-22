@@ -1,5 +1,4 @@
 import { Notice, Plugin, TFile } from 'obsidian';
-import { diff_match_patch } from 'diff-match-patch';
 import { CrdtManager } from './crdt-manager';
 import { SyncHandler, TombstoneStore, QOLLAB_DIR } from './sync-handler';
 import {
@@ -12,6 +11,7 @@ import { SidecarWatcher } from './sidecar-watcher';
 import { CrdtSyncSettings, CrdtSyncSettingTab, DEFAULT_SETTINGS, generateClientId } from './settings';
 import { pruneTombstones } from './tombstones';
 import { PathQueue } from './path-queue';
+import { threeWayMerge } from './text-merge';
 
 // Uint8Array → ArrayBuffer für Obsidians adapter.writeBinary (das nur ArrayBuffer
 // akzeptiert). encodeStateFile liefert Uint8Array.
@@ -19,23 +19,6 @@ function toArrayBuffer(data: ArrayBuffer | Uint8Array): ArrayBuffer {
   return (data instanceof Uint8Array
     ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
     : data) as ArrayBuffer;
-}
-
-// 3-Wege-Text-Merge: die lokale Änderung (Diff base → local) wird als Patch auf
-// den bereits gemergten other-Stand angewandt. diff-match-patch wendet Patches
-// fuzzy an: bei direkt überlappenden Edits setzt sich die lokale Änderung durch
-// (die Remote-Änderung dieser Stelle geht verloren); verschiebt der Remote-Edit
-// den Kontext stark (Heuristik: ≥ ~500 Zeichen, Match_Distance 1000 / Threshold
-// 0.5), wird der lokale Hunk still verworfen (dann überlebt der Remote-Stand an
-// dieser Stelle, der nächste modify-Task konvergiert). Nötig, weil
-// applyLocalContent(local) ein Volltext-Diff gegen den (bereits Remote-gemergten)
-// Doc bildet und damit die Remote-Änderung zurückrollen würde; base=preMerge
-// macht daraus die reine lokale Delta-Anwendung.
-const dmp = new diff_match_patch();
-function threeWayMerge(base: string, local: string, other: string): string {
-  const patches = dmp.patch_make(base, local);
-  const [merged] = dmp.patch_apply(patches, other);
-  return merged;
 }
 
 export default class CrdtSyncPlugin extends Plugin {
