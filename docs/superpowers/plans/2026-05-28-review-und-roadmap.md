@@ -130,6 +130,30 @@ diese Korrektheit.
 - [x] Stale `obsidian-crdt-sync/main.js` + Orphan-node_modules löschen; `setHeading()` statt `h2`;
       `isDesktopOnly` entfernen; Settings-Heading auf „Qollab".
 
+## v0.5 (geplant) — Soft-Delete + Architektur-Refactor
+
+Beseitigt die Tombstone-Grenzen strukturell (F1, F4, gerätelokale Tombstones), die
+durch die Guards in v0.4.x nur abgemildert werden.
+
+- **Löschen als CRDT-Operation.** Ein Archive-/isPresent-Flag im Yjs-Doc (oder ein
+  Vault-Manifest-Doc) ersetzt die gerätelokale Sidecar-Löschung. Add-wins/Edit-wins-
+  Semantik nach OR-Set-Standard (Shapiro et al. 2018; Automerge-Merge-Rules „update
+  wins"; Weidner-Survey-Empfehlung für Notes-Apps: Archive/Restore statt permanentem
+  Delete). Delete-vs-Edit konvergiert dann ohne Datenverlust und ohne Sync-Dienst-
+  Abhängigkeit für die Konfliktauflösung.
+- **Zusammenlegung mit Issue #9** (Subdocuments + SQLite-Single-Store): Beide
+  betreffen das Sidecar-Lifecycle-Modell. Ein gemeinsamer Refactor vermeidet
+  doppelten Umbau.
+- **Referenz-Erkenntnisse (2026-07-22):**
+  - Syncthing 2.0 behandelt Deletes als normale Versionen im Versionsvektor (PR #10207)
+    mit endlicher Tombstone-Retention — Vorbild für kaskadierende Tombstone-Bereinigung.
+  - Yjs-State darf nie partiell verworfen werden, solange Offline-Peers Edits halten
+    können (Yjs Docs: „never discard state you might need to sync later").
+  - Alternative als leichtgewichtiger Zwischenschritt (falls v0.5 sich verzögert):
+    „Tombstone mit kausaler Schranke" — State-Vector im Tombstone via
+    `Y.encodeStateVectorFromUpdate`, sodass ein Tombstone nur greift, wenn das Gerät
+    alle Edits bis zu diesem Vector-Stand integriert hat.
+
 ## Realismus
 
 Ursprünglich (2026-05-28): Single-Entwickler parallel zur Bachelorarbeit; nur P0 + P0.5 machbar,
