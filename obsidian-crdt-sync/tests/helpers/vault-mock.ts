@@ -35,6 +35,7 @@ export interface VaultMock {
   _mtimes: Map<string, number>;
   _mdMtimes: Map<string, number>;
   _folders: Set<string>;
+  _writeCount: Map<string, number>; // adapter.writeBinary-Aufrufe pro Pfad
 }
 
 export function makeVaultMock(): VaultMock {
@@ -43,6 +44,7 @@ export function makeVaultMock(): VaultMock {
   const mtimes = new Map<string, number>(); // Sidecar-mtimes
   const mdMtimes = new Map<string, number>(); // .md-mtimes
   const folders = new Set<string>(); // explizit angelegte (ggf. leere) Ordner
+  const writeCount = new Map<string, number>(); // writeBinary-Aufrufe pro Pfad
   let clock = 0;
 
   const tfile = (p: string): TFile => {
@@ -81,6 +83,7 @@ export function makeVaultMock(): VaultMock {
     writeBinary: async (p: string, data: ArrayBuffer | Uint8Array) => {
       files.set(p, toArrayBuffer(data));
       mtimes.set(p, ++clock);
+      writeCount.set(p, (writeCount.get(p) ?? 0) + 1);
     },
     remove: async (p: string) => {
       files.delete(p);
@@ -129,5 +132,6 @@ export function makeVaultMock(): VaultMock {
     _mtimes: mtimes,
     _mdMtimes: mdMtimes,
     _folders: folders,
+    _writeCount: writeCount,
   };
 }

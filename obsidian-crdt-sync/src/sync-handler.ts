@@ -115,11 +115,33 @@ export class SyncHandler {
     const update = this.crdtManager.encodeState(notePath);
     const state = encodeStateFile(guid, update);
     const stateFile = this.stateFilePath(notePath);
+    // Resave-Loop-Schutz: writeBinary bumpt die mtime auch bei byte-identischem
+    // State. Schreibt loadAndMerge/saveState nach einer Konvergenz unbedingt, sieht
+    // der Peer-Poll den mtime-Bump → merge → resave → … (endloser 30s-Zyklus
+    // zwischen konvergierten Peers, Sync-Churn, .yjs-Konfliktkopien). Deshalb: nur
+    // schreiben, wenn sich die encodierten Bytes vom Disk-Stand unterscheiden.
+    if (await this.sidecarBytesEqual(stateFile, state)) return;
     await ensureSidecarFolder(this.vault.adapter, dirname(stateFile));
     // adapter.writeBinary legt an ODER überschreibt in einem Aufruf — kein
     // create/modify-Split und kein Race-Fallback mehr nötig (der frühere,
     // index-basierte Split war in echten Vaults ein Silent-No-Op).
     await this.vault.adapter.writeBinary(stateFile, state);
+  }
+
+  // True, wenn die Sidecar existiert und byteweise identisch mit bytes ist.
+  // Lese-/Decode-Fehler oder Nichtexistenz → false (dann normal schreiben).
+  private async sidecarBytesEqual(path: string, bytes: Uint8Array): Promise<boolean> {
+    if (!(await this.vault.adapter.exists(path))) return false;
+    try {
+      const disk = new Uint8Array(await this.vault.adapter.readBinary(path));
+      if (disk.length !== bytes.length) return false;
+      for (let i = 0; i < bytes.length; i++) {
+        if (disk[i] !== bytes[i]) return false;
+      }
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private async readStateFile(path: string): Promise<DecodedSibling | null> {

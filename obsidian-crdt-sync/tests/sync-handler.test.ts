@@ -1,6 +1,6 @@
 import { SyncHandler } from '../src/sync-handler';
 import { CrdtManager } from '../src/crdt-manager';
-import { makeVaultMock } from './helpers/vault-mock';
+import { makeVaultMock, toArrayBuffer } from './helpers/vault-mock';
 
 describe('SyncHandler', () => {
   it('stateFilePath gibt per-User .yjs-Pfad zurück', () => {
@@ -178,5 +178,51 @@ describe('SyncHandler', () => {
       expect.arrayContaining(['.qollab/note.md.a1b2c3d4.yjs', '.qollab/note.md.b5c6d7e8.yjs'])
     );
     expect(await vault.listYjsFiles('note.md')).not.toContain('.qollab/other.md.a1b2c3d4.yjs');
+  });
+
+  // Resave-Loop-Schutz: writeBinary bumpt die mtime auch bei byte-identischem
+  // State. Ohne Skip erkennt der Peer-Poll den Bump → merge → resave → … (endloser
+  // 30s-Zyklus zwischen konvergierten Peers). saveState darf nicht schreiben, wenn
+  // die encodierten Bytes bereits auf der Platte stehen.
+  it('loadAndMerge schreibt die eigene Sidecar nicht neu, wenn sich nichts ändert', async () => {
+    const vault = makeVaultMock() as any;
+    const remote = new CrdtManager();
+    remote.setContent('note.md', 'Gemeinsamer Stand\n');
+    vault._files.set(
+      '.qollab/note.md.a1b2c3d4.yjs',
+      toArrayBuffer(remote.encodeState('note.md'))
+    );
+    vault._textFiles.set('note.md', 'Gemeinsamer Stand\n');
+
+    const handler = new SyncHandler(vault, new CrdtManager(), '10ca1000');
+    const own = '.qollab/note.md.10ca1000.yjs';
+
+    await handler.loadAndMerge('note.md'); // konvergiert + schreibt eigene Sidecar
+    const writes1 = vault._writeCount.get(own) ?? 0;
+    expect(writes1).toBeGreaterThanOrEqual(1);
+
+    await handler.loadAndMerge('note.md'); // nichts geändert → KEIN erneuter Write
+    expect(vault._writeCount.get(own) ?? 0).toBe(writes1);
+  });
+
+  it('saveState schreibt weiterhin, wenn sich der State tatsächlich geändert hat', async () => {
+    const vault = makeVaultMock() as any;
+    const manager = new CrdtManager();
+    const handler = new SyncHandler(vault, manager, 'a1b2c3d4');
+    const own = '.qollab/note.md.a1b2c3d4.yjs';
+
+    manager.setContent('note.md', 'A');
+    await handler.saveState('note.md');
+    const writes1 = vault._writeCount.get(own) ?? 0;
+    expect(writes1).toBe(1);
+
+    // Identischer State → kein Write.
+    await handler.saveState('note.md');
+    expect(vault._writeCount.get(own) ?? 0).toBe(1);
+
+    // Echte Änderung → Write.
+    manager.setContent('note.md', 'AB');
+    await handler.saveState('note.md');
+    expect(vault._writeCount.get(own) ?? 0).toBe(2);
   });
 });

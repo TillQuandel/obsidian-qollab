@@ -14,7 +14,7 @@ export interface SidecarAdapter {
   writeBinary(path: string, data: ArrayBuffer | Uint8Array): Promise<void>;
   remove(path: string): Promise<void>;
   mkdir(path: string): Promise<void>;
-  stat(path: string): Promise<{ mtime: number } | null>;
+  stat(path: string): Promise<{ mtime: number; size: number } | null>;
   list(path: string): Promise<{ files: string[]; folders: string[] }>;
   rename(oldPath: string, newPath: string): Promise<void>;
 }

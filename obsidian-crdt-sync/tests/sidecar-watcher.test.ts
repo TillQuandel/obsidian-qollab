@@ -91,6 +91,35 @@ describe('SidecarWatcher.poll', () => {
     expect(onChanged).toHaveBeenCalledWith('note.md');
   });
 
+  it('gleiche mtime, andere size → triggert (grobe FS-Granularität / mtime-Klemme)', async () => {
+    const vault = makeVaultMock();
+    const p = '.qollab/note.md.a1b2c3d4.yjs';
+    vault._files.set(p, new ArrayBuffer(10));
+    vault._mtimes.set(p, 100);
+    const onChanged = jest.fn(async () => {});
+    const w = new SidecarWatcher(vault.adapter, SELF, onChanged);
+    await w.poll();
+    onChanged.mockClear();
+    vault._files.set(p, new ArrayBuffer(20)); // gleiche mtime, andere Größe
+    vault._mtimes.set(p, 100);
+    await w.poll();
+    expect(onChanged).toHaveBeenCalledWith('note.md');
+  });
+
+  it('rückwärts springende mtime (Clock-Skew) triggert (Recovery)', async () => {
+    const vault = makeVaultMock();
+    const p = '.qollab/note.md.a1b2c3d4.yjs';
+    vault._files.set(p, new ArrayBuffer(10));
+    vault._mtimes.set(p, 200);
+    const onChanged = jest.fn(async () => {});
+    const w = new SidecarWatcher(vault.adapter, SELF, onChanged);
+    await w.poll();
+    onChanged.mockClear();
+    vault._mtimes.set(p, 150); // Zeitstempel springt zurück (Clock-Skew)
+    await w.poll();
+    expect(onChanged).toHaveBeenCalledWith('note.md');
+  });
+
   it('gelöschte Datei: kein Trigger, Map-Eintrag wird vergessen (Re-Add triggert wieder)', async () => {
     const vault = makeVaultMock();
     const p = '.qollab/note.md.a1b2c3d4.yjs';

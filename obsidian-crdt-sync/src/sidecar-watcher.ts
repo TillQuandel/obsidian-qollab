@@ -26,8 +26,11 @@ export interface SidecarWatcherHost {
 // Filter-/Extraktions-Logik (QOLLAB_RE/Legacy, .md-Anker, Self-Ignore) des
 // früheren, event-basierten FileWatcher.
 export class SidecarWatcher {
-  // Sidecar-Pfad → zuletzt gesehene mtime.
-  private lastMtimes = new Map<string, number>();
+  // Sidecar-Pfad → zuletzt gesehene (mtime, size). size ergänzt mtime, weil
+  // mtime allein nicht reicht: grobe FS-Granularität bzw. mtime-klemmende
+  // Sync-Tools erzeugen Overwrites mit gleicher mtime, Clock-Skew lässt mtime
+  // rückwärts springen. Yjs-States wachsen mit dem Inhalt → size fängt beides.
+  private lastSeen = new Map<string, { mtime: number; size: number }>();
   private disposers: Array<() => void> = [];
 
   constructor(
@@ -80,17 +83,27 @@ export class SidecarWatcher {
     for (const path of paths) {
       seen.add(path);
       const stat = await this.adapter.stat(path);
-      const mtime = stat?.mtime ?? 0;
-      const prev = this.lastMtimes.get(path);
-      this.lastMtimes.set(path, mtime);
+      const cur = { mtime: stat?.mtime ?? 0, size: stat?.size ?? 0 };
+      const prev = this.lastSeen.get(path);
+      this.lastSeen.set(path, cur);
       const notePath = this.extractForeign(path);
-      if (notePath === null) continue; // eigene/ungültige — nur mtime tracken
-      if (prev === undefined || mtime > prev) await this.onChanged(notePath);
+      if (notePath === null) continue; // eigene/ungültige — nur Zustand tracken
+      if (this.hasChanged(prev, cur)) await this.onChanged(notePath);
     }
     // Verschwundene Dateien vergessen (kein Trigger).
-    for (const key of [...this.lastMtimes.keys()]) {
-      if (!seen.has(key)) this.lastMtimes.delete(key);
+    for (const key of [...this.lastSeen.keys()]) {
+      if (!seen.has(key)) this.lastSeen.delete(key);
     }
+  }
+
+  // Neu (prev undefined) oder mtime ODER size verschieden. `!==` statt `>`, damit
+  // auch rückwärts springende mtime (Clock-Skew) und gleich bleibende mtime bei
+  // geänderter size erkannt werden — sonst still übersprungen bis zum Neustart.
+  private hasChanged(
+    prev: { mtime: number; size: number } | undefined,
+    cur: { mtime: number; size: number }
+  ): boolean {
+    return prev === undefined || prev.mtime !== cur.mtime || prev.size !== cur.size;
   }
 
   // Sofort-Trigger beim Öffnen einer .md: Einzel-Scan ihres Sidecar-Verzeichnisses.
@@ -101,11 +114,11 @@ export class SidecarWatcher {
     let trigger = false;
     for (const path of paths) {
       const stat = await this.adapter.stat(path);
-      const mtime = stat?.mtime ?? 0;
-      const prev = this.lastMtimes.get(path);
-      this.lastMtimes.set(path, mtime);
+      const cur = { mtime: stat?.mtime ?? 0, size: stat?.size ?? 0 };
+      const prev = this.lastSeen.get(path);
+      this.lastSeen.set(path, cur);
       if (this.extractForeign(path) === null) continue;
-      if (prev === undefined || mtime > prev) trigger = true;
+      if (this.hasChanged(prev, cur)) trigger = true;
     }
     if (trigger) await this.onChanged(notePath);
   }
