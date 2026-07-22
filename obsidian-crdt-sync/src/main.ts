@@ -8,12 +8,15 @@ import { pruneTombstones } from './tombstones';
 import { PathQueue } from './path-queue';
 
 // 3-Wege-Text-Merge: die lokale Änderung (Diff base → local) wird als Patch auf
-// den bereits gemergten other-Stand angewandt. Nicht anwendbare Hunks (Kontext
-// durch den Remote-Edit verschoben) werden verworfen — dann überlebt other und
-// der nächste modify-Task konvergiert. Nötig, weil applyLocalContent(local) ein
-// Volltext-Diff gegen den (bereits Remote-gemergten) Doc bildet und damit die
-// Remote-Änderung zurückrollen würde; base=preMerge macht daraus die reine
-// lokale Delta-Anwendung.
+// den bereits gemergten other-Stand angewandt. diff-match-patch wendet Patches
+// fuzzy an: bei direkt überlappenden Edits setzt sich die lokale Änderung durch
+// (die Remote-Änderung dieser Stelle geht verloren); verschiebt der Remote-Edit
+// den Kontext stark (Heuristik: ≥ ~500 Zeichen, Match_Distance 1000 / Threshold
+// 0.5), wird der lokale Hunk still verworfen (dann überlebt der Remote-Stand an
+// dieser Stelle, der nächste modify-Task konvergiert). Nötig, weil
+// applyLocalContent(local) ein Volltext-Diff gegen den (bereits Remote-gemergten)
+// Doc bildet und damit die Remote-Änderung zurückrollen würde; base=preMerge
+// macht daraus die reine lokale Delta-Anwendung.
 const dmp = new diff_match_patch();
 function threeWayMerge(base: string, local: string, other: string): string {
   const patches = dmp.patch_make(base, local);

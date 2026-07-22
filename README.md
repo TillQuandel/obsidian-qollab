@@ -66,6 +66,14 @@ Wenn zwei Personen **gleichzeitig dieselbe Zeile** ändern, entscheidet Qollab a
 
 **Gerätelokale Tombstones (bewusste Grenze).** Die Lösch-Markierungen liegen nur auf dem Gerät, das die Löschung durchführt. Ein anderes Gerät, das während Löschung + Neuanlage geschlossen/offline war, kann mit seiner alten Historie weiterlaufen und nimmt am CRDT-Merge der neuen Inkarnation nicht mehr teil (sein Tie-Break bevorzugt womöglich die alte GUID). Sein `.md`-Inhalt bleibt über den normalen Datei-Sync trotzdem aktuell — es droht kein Datenverlust, aber der CRDT-Sync ist auf diesem Gerät bis zum Neuaufsetzen des Trackings degradiert. Gesyncte Tombstone-Dateien wären die Ausbaustufe (derzeit nicht umgesetzt).
 
+**Grenzen des Editier-Schutzes während eines Merges.** Der Write-Back-Guard schützt lokale Edits, die während eines laufenden Remote-Merges getippt werden, über einen 3-Wege-Text-Merge. Der ist nicht konfliktfest:
+
+- Bei direkt überlappenden Änderungen setzt sich die lokale Version durch — die Remote-Änderung dieser Stelle geht verloren.
+- Verschiebt die Remote-Änderung den Kontext um viele hundert Zeichen (z. B. großer eingefügter Absatz weiter oben), kann der lokale Edit still verloren gehen.
+- Bei Löschung ganzer Absätze remote können einzelne Textreste verschmelzen.
+
+Zusätzlich existiert ein sehr kleines Zeitfenster (Millisekunden um den Write-Back), in dem ein Edit sein modify-Event verliert und beim nächsten Remote-Merge überschrieben werden kann. Für diese Randfälle gilt die Empfehlung in der WARNING oben: Lasst die Konflikt-Kopie-Sicherung eures Sync-Dienstes aktiv.
+
 Echtzeit-Cursor-Sync (wie in Google Docs) ist angedacht, aber mit der server-losen File-Sync-Architektur nicht ohne Weiteres umsetzbar — kein fester Termin.
 
 ## Bekannte Architektur-Schwäche
