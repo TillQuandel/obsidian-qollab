@@ -330,10 +330,32 @@ export class SyncHandler {
     await this.removeSidecar(legacyPath);
   }
 
+  // Zieht ausstehende KOMPATIBLE Fremd-Sidecars (gleiche/legacy GUID) in den
+  // bereits geladenen Doc ein — reine mergeCompatible-Semantik, KEIN Tie-Break.
+  // Split-Brain (fremde Gewinner-GUID, switchToGuid) bleibt ausschließlich Sache
+  // von loadAndMerge; hier werden Verlierer-/Fremd-GUIDs bewusst ignoriert.
+  private async mergePendingForeign(notePath: string): Promise<void> {
+    const yjsFiles = await this.vault.listYjsFiles(notePath);
+    if (yjsFiles.length === 0) return;
+    const siblings = await this.decodeSiblings(yjsFiles);
+    this.mergeCompatible(notePath, siblings);
+  }
+
   // Bringt eine lokale .md-Änderung in den CRDT. Diff-basiertes setContent
   // erzeugt keine Ops, wenn der Doc-Text bereits identisch ist.
   async applyLocalContent(notePath: string, content: string): Promise<void> {
+    // War der Doc schon geladen, hat ensureDoc KEINE Fremd-Sidecars eingezogen.
+    // Eine per Datei-Sync (robocopy) überschriebene .md kann aber bereits fremde
+    // Edits enthalten, deren Original noch in einer ungemergten Fremd-Sidecar liegt.
+    // Ohne vorheriges Einmergen würde setContent den Diff der gemergten .md gegen
+    // den Doc bilden (der die Fremd-Ops noch nicht hat) und die Fremd-Einfügung als
+    // NEUE lokale Op unter eigener Client-ID erfinden → beim späteren Sidecar-Merge
+    // dupliziert (Yjs dedupliziert nach Item-ID, nicht Inhalt). Deshalb erst
+    // kompatible Fremd-Sidecars einmergen, dann diffen. Der Bootstrap-/Adopt-Pfad
+    // (Doc frisch, ensureDoc hat gerade selbst gemergt) braucht das nicht.
+    const docExisted = this.crdtManager.hasDoc(notePath);
     await this.ensureDoc(notePath);
+    if (docExisted) await this.mergePendingForeign(notePath);
     this.crdtManager.setContent(notePath, content);
     await this.saveState(notePath);
     // R1: Eigener GUID-State ist jetzt geschrieben — Legacy-Datei aufräumen.
