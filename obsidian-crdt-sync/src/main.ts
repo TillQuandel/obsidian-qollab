@@ -1,10 +1,25 @@
 import { Notice, Plugin, TFile } from 'obsidian';
+import { diff_match_patch } from 'diff-match-patch';
 import { CrdtManager } from './crdt-manager';
-import { SyncHandler, filterYjsFiles, TombstoneStore } from './sync-handler';
+import { SyncHandler, filterYjsFiles, TombstoneStore, QOLLAB_DIR } from './sync-handler';
 import { FileWatcher } from './file-watcher';
 import { CrdtSyncSettings, CrdtSyncSettingTab, DEFAULT_SETTINGS, generateClientId } from './settings';
 import { pruneTombstones } from './tombstones';
 import { PathQueue } from './path-queue';
+
+// 3-Wege-Text-Merge: die lokale Änderung (Diff base → local) wird als Patch auf
+// den bereits gemergten other-Stand angewandt. Nicht anwendbare Hunks (Kontext
+// durch den Remote-Edit verschoben) werden verworfen — dann überlebt other und
+// der nächste modify-Task konvergiert. Nötig, weil applyLocalContent(local) ein
+// Volltext-Diff gegen den (bereits Remote-gemergten) Doc bildet und damit die
+// Remote-Änderung zurückrollen würde; base=preMerge macht daraus die reine
+// lokale Delta-Anwendung.
+const dmp = new diff_match_patch();
+function threeWayMerge(base: string, local: string, other: string): string {
+  const patches = dmp.patch_make(base, local);
+  const [merged] = dmp.patch_apply(patches, other);
+  return merged;
+}
 
 export default class CrdtSyncPlugin extends Plugin {
   settings: CrdtSyncSettings;
@@ -167,6 +182,17 @@ export default class CrdtSyncPlugin extends Plugin {
     if (this.unloaded) return;
     if (!this.settings.enabled) return;
 
+    // Fix A: den .md-Inhalt VOR dem Merge festhalten. Er ist die Basis, um beim
+    // Write-Back einen lokalen User-Edit zu erkennen, der zwischen Merge-
+    // Berechnung und Write-Back in der Datei gelandet ist. Existiert die Datei
+    // (noch) nicht, gibt es keine Basis → Normalpfad (blind schreiben) wie bisher.
+    const preFile = this.app.vault.getAbstractFileByPath(notePath);
+    let preMerge: string | null = null;
+    if (preFile instanceof TFile) {
+      preMerge = await this.app.vault.read(preFile);
+      if (this.unloaded) return;
+    }
+
     const merged = await this.syncHandler.loadAndMerge(notePath);
     if (this.unloaded) return;
     if (merged === null) return;
@@ -174,18 +200,50 @@ export default class CrdtSyncPlugin extends Plugin {
     const file = this.app.vault.getAbstractFileByPath(notePath);
     if (!(file instanceof TFile)) return;
 
-    // Atomarer Read-Modify-Write: der Vergleich „aktueller Inhalt === merged"
-    // liegt in der process-Funktion. Bei Gleichheit denselben String
-    // zurückgeben (kein inhaltlicher Merge, keine Notice). Der writingPaths-Guard
-    // bleibt, da auch process ein modify-Event feuert.
+    // Atomarer Read-Modify-Write in der process-Funktion. Der writingPaths-Guard
+    // umschließt BEIDE process-Aufrufe, da jeder ein modify-Event feuert.
     this.writingPaths.add(notePath);
     let changed = false;
     try {
+      // Erster Versuch, Drei-Fall-Logik:
+      //   data === merged        → schon aktuell, kein Write, keine Notice.
+      //   data === preMerge      → Normalfall, gemergten Stand schreiben.
+      //   sonst                  → Edit im Merge-Fenster: NICHT überschreiben,
+      //                            data als `pending` nach außen reichen.
+      // Ohne preMerge-Basis (Datei existierte vor dem Merge nicht) gibt es keinen
+      // Edit-Guard → wie bisher den gemergten Stand schreiben.
+      let pending: string | null = null;
       await this.app.vault.process(file, (data) => {
         if (data === merged) return data;
-        changed = true;
-        return merged;
+        if (preMerge === null || data === preMerge) {
+          changed = true;
+          return merged;
+        }
+        pending = data;
+        return data;
       });
+
+      // Fix A: Ein Edit ist im Merge-Fenster gelandet. Ihn als 3-Wege-Merge
+      // (Basis = preMerge, lokal = pending) auf den gemergten Remote-Stand
+      // anwenden und via applyLocalContent ins CRDT bringen — so überleben beide
+      // Änderungen. Danach EIN zweiter Write-Back-Versuch mit derselben Logik
+      // (Basis ist jetzt `pending`). Weicht `data` erneut ab: aufgeben ohne Write,
+      // der nächste modify-Event-Task konvergiert. Kein Loop, max. eine Wiederholung.
+      if (pending !== null) {
+        const threeWay = threeWayMerge(preMerge ?? '', pending, merged);
+        await this.syncHandler.applyLocalContent(notePath, threeWay);
+        if (!this.unloaded) {
+          const merged2 = this.crdtManager.getContent(notePath);
+          await this.app.vault.process(file, (data) => {
+            if (data === merged2) return data;
+            if (data === pending) {
+              changed = true;
+              return merged2;
+            }
+            return data;
+          });
+        }
+      }
     } finally {
       this.writingPaths.delete(notePath);
     }
