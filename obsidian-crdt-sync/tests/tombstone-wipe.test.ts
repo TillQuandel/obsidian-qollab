@@ -16,13 +16,14 @@
 
 import { TFile } from 'obsidian';
 import CrdtSyncPlugin from '../src/main';
-import { SyncHandler } from '../src/sync-handler';
+import { SyncHandler, filterYjsFiles } from '../src/sync-handler';
 import { CrdtManager } from '../src/crdt-manager';
 import { encodeStateFile } from '../src/state-file';
 
 const NOTE = 'note.md';
-const B_YJS = '.qollab/note.md.remote01.yjs';
-const OWN_YJS = '.qollab/note.md.local000.yjs';
+// Codex-LOW: gültige 8-lowercase-hex clientIds (filterYjsFiles-konform)
+const B_YJS = '.qollab/note.md.deadbeef.yjs';
+const OWN_YJS = '.qollab/note.md.a1b2c3d4.yjs';
 const G = 'ff'.repeat(16); // GUID der gelöschten Inkarnation
 const FULL = 'Wichtiger Inhalt\nZeile 2\nZeile 3\n';
 
@@ -63,10 +64,10 @@ function makeVaultMock() {
       if (next !== cur) textFiles.set(file.path, next);
       return next;
     },
+    // Codex-LOW: echte filterYjsFiles-Logik statt injiziertem Mock — damit
+    // die Regression den Produktions-Filterpfad durchläuft.
     listYjsFiles: (notePath: string) =>
-      Array.from(files.keys()).filter(
-        (p) => p.startsWith(`.qollab/${notePath}.`) && p.endsWith('.yjs')
-      ),
+      filterYjsFiles(Array.from(files.keys()), notePath),
     _files: files,
     _textFiles: textFiles,
   };
@@ -84,11 +85,11 @@ function makeWipePlugin(vault: ReturnType<typeof makeVaultMock>) {
   plugin.settings = {
     enabled: true,
     statusNotice: false,
-    clientId: 'local000',
+    clientId: 'a1b2c3d4', // Codex-LOW: gültige 8-hex clientId
     tombstones: { [G]: Date.now() }, // A hat GUID G getombstoned
   };
   plugin.crdtManager = new CrdtManager();
-  plugin.syncHandler = new SyncHandler(vault as any, plugin.crdtManager, 'local000', {
+  plugin.syncHandler = new SyncHandler(vault as any, plugin.crdtManager, 'a1b2c3d4', {
     has: (g: string) => g in plugin.settings.tombstones,
     add: async (g: string) => {
       plugin.settings.tombstones[g] = Date.now();
@@ -123,9 +124,9 @@ describe('F1-Guard 2: echte Leerung bleibt möglich', () => {
   it('Doc mit Delete-Ops, merged="": Write-Back leert die .md (Guard 2 greift nicht)', async () => {
     const vault = makeVaultMock();
     const plugin = new (CrdtSyncPlugin as any)({ vault }, {});
-    plugin.settings = { enabled: true, statusNotice: false, clientId: 'local000', tombstones: {} };
+    plugin.settings = { enabled: true, statusNotice: false, clientId: 'a1b2c3d4', tombstones: {} };
     plugin.crdtManager = new CrdtManager();
-    plugin.syncHandler = new SyncHandler(vault as any, plugin.crdtManager, 'local000');
+    plugin.syncHandler = new SyncHandler(vault as any, plugin.crdtManager, 'a1b2c3d4');
 
     // Gemeinsame Basis: FULL auf eigenem und Remote-Doc (geteilte Yjs-Historie).
     const base = new CrdtManager();

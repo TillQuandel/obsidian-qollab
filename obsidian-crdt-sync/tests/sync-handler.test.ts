@@ -17,6 +17,10 @@ function makeVaultMock() {
     modifyBinary: async (file: { path: string }, data: ArrayBuffer | Uint8Array) => {
       files.set(file.path, (data instanceof Uint8Array ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) : data) as ArrayBuffer);
     },
+    delete: async (file: { path: string }) => {
+      files.delete(file.path);
+      textFiles.delete(file.path);
+    },
     createFolder: async (_path: string) => {},
     listYjsFiles: (notePath: string) =>
       Array.from(files.keys()).filter(p => p.startsWith(`.qollab/${notePath}.`) && p.endsWith('.yjs')),
@@ -132,23 +136,53 @@ describe('SyncHandler', () => {
     expect(merged).toContain('Bobs Text');
   });
 
-  it('loadAndMerge liest auch alte note.md.yjs (Migration)', async () => {
+  // R1-Semantik: Legacy-Datei (.qollab/note.md.yjs, kein Header, guid null) wird
+  // ignoriert und gelöscht, sobald ein GUID-tragender Sidecar existiert.
+  // Testfall (a): GUID-Sidecar vorhanden → Legacy-Inhalt taucht NICHT im Merge auf.
+  it('loadAndMerge ignoriert Legacy .yjs und löscht sie wenn GUID-Sidecar existiert (R1)', async () => {
     const vault = makeVaultMock() as any;
 
+    // Legacy-Datei mit altem Inhalt (kein QLB1-Header)
     const old = new CrdtManager();
     old.setContent('note.md', 'Alter Inhalt\n');
     vault._files.set('.qollab/note.md.yjs', old.encodeState('note.md').buffer);
 
+    // GUID-tragender Sidecar mit neuem Inhalt
     const remote = new CrdtManager();
     remote.setContent('note.md', 'Neuer Inhalt\n');
     vault._files.set('.qollab/note.md.a1b2c3d4.yjs', remote.encodeState('note.md').buffer);
+    vault._textFiles.set('note.md', 'Neuer Inhalt\n');
 
     const manager = new CrdtManager();
     const handler = new SyncHandler(vault, manager, 'local000');
 
     const merged = await handler.loadAndMerge('note.md');
-    expect(merged).toContain('Alter Inhalt');
+    // Alter Legacy-Inhalt darf NICHT im Ergebnis erscheinen
+    expect(merged).not.toContain('Alter Inhalt');
+    // GUID-Sidecar-Inhalt muss da sein
     expect(merged).toContain('Neuer Inhalt');
+    // Legacy-Datei muss gelöscht worden sein
+    expect(vault._files.has('.qollab/note.md.yjs')).toBe(false);
+  });
+
+  // Testfall (b): Nur Legacy vorhanden → wird gemergt; nach saveState gelöscht.
+  it('loadAndMerge mergt Legacy .yjs bei Erst-Import (kein GUID-State) und löscht sie danach (R1)', async () => {
+    const vault = makeVaultMock() as any;
+
+    const old = new CrdtManager();
+    old.setContent('note.md', 'Legacy-Inhalt\n');
+    vault._files.set('.qollab/note.md.yjs', old.encodeState('note.md').buffer);
+    vault._textFiles.set('note.md', 'Legacy-Inhalt\n');
+
+    const manager = new CrdtManager();
+    const handler = new SyncHandler(vault, manager, 'local000');
+
+    const merged = await handler.loadAndMerge('note.md');
+    expect(merged).toContain('Legacy-Inhalt');
+    // Legacy-Datei wurde nach dem Erst-Import gelöscht
+    expect(vault._files.has('.qollab/note.md.yjs')).toBe(false);
+    // Eigener GUID-Sidecar wurde angelegt
+    expect(vault._files.has('.qollab/note.md.local000.yjs')).toBe(true);
   });
 
   it('saveState schreibt .yjs-Datei für Note in Unterverzeichnis', async () => {
