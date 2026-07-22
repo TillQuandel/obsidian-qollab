@@ -60,7 +60,9 @@ export class SyncHandler {
     private vault: VaultLike,
     private crdtManager: CrdtManager,
     private clientId: string,
-    private tombstones: TombstoneStore = NO_TOMBSTONES
+    private tombstones: TombstoneStore = NO_TOMBSTONES,
+    // R2: optionaler Callback für korrupte Dateien (einmalige Notice-Logik liegt beim Aufrufer).
+    private onCorruptFile?: (path: string) => void
   ) {}
 
   stateFilePath(notePath: string): string {
@@ -131,27 +133,55 @@ export class SyncHandler {
   private async readStateFile(path: string): Promise<DecodedSibling | null> {
     const file = this.vault.getAbstractFileByPath(path);
     if (!file) return null;
-    const buffer = await this.vault.readBinary(file);
-    const { guid, update } = decodeStateFile(new Uint8Array(buffer));
-    return { path, guid, update };
+    // R2: read-/decode-Fehler (z.B. leere oder trunkierte Datei) abfangen.
+    try {
+      const buffer = await this.vault.readBinary(file);
+      const { guid, update } = decodeStateFile(new Uint8Array(buffer));
+      return { path, guid, update };
+    } catch {
+      this.onCorruptFile?.(path);
+      return null;
+    }
   }
 
-  // Dekodiert Sibling-Pfade und wendet die Tombstone-Regel (C.3) an: eine
-  // getombstonte GUID → Datei als stale Leiche löschen und aus der Liste nehmen.
-  // Die eigene Datei kann hier nie fälschlich gelöscht werden: die eigene GUID
-  // landet nie im gerätelokalen Tombstone-Set (der delete-Handler tombstont nur
-  // beim Löschen der Note und entfernt dabei die eigene Datei ohnehin mit).
+  // Dekodiert Sibling-Pfade und wendet die Tombstone- und Legacy-Regeln an:
+  //   C.3: Eine getombstonte GUID → Datei als stale Leiche löschen und ausschließen.
+  //   R1:  Legacy-Dateien (guid null, kein QLB1-Header) dienen nur dem Erst-Import.
+  //        Existiert unter den übergebenen Pfaden mindestens ein GUID-tragender
+  //        Sidecar, werden Legacy-Dateien ignoriert und sofort gelöscht.
+  //        Die eigene Datei kann nie fälschlich gelöscht werden: die eigene GUID
+  //        landet nie im gerätelokalen Tombstone-Set (der delete-Handler tombstont
+  //        nur beim Löschen der Note und entfernt dabei die eigene Datei ohnehin mit).
   private async decodeSiblings(paths: string[]): Promise<DecodedSibling[]> {
-    const result: DecodedSibling[] = [];
+    // Alle Dateien lesen, dann in einem zweiten Durchlauf entscheiden.
+    const decoded: Array<DecodedSibling | null> = [];
     for (const path of paths) {
-      const decoded = await this.readStateFile(path);
-      if (!decoded) continue;
-      if (decoded.guid !== null && this.tombstones.has(decoded.guid)) {
-        const file = this.vault.getAbstractFileByPath(path);
+      decoded.push(await this.readStateFile(path));
+    }
+
+    // R1: Prüfen ob mindestens ein GUID-tragender Sidecar existiert.
+    const hasGuidState = decoded.some((d) => d !== null && d.guid !== null);
+
+    const result: DecodedSibling[] = [];
+    for (let i = 0; i < paths.length; i++) {
+      const d = decoded[i];
+      if (!d) continue;
+
+      // Tombstone-Prüfung (C.3)
+      if (d.guid !== null && this.tombstones.has(d.guid)) {
+        const file = this.vault.getAbstractFileByPath(paths[i]);
         if (file) await this.vault.delete(file);
         continue;
       }
-      result.push(decoded);
+
+      // R1: Legacy ignorieren und löschen, sobald GUID-State existiert.
+      if (d.guid === null && hasGuidState) {
+        const file = this.vault.getAbstractFileByPath(paths[i]);
+        if (file) await this.vault.delete(file);
+        continue;
+      }
+
+      result.push(d);
     }
     return result;
   }
@@ -190,7 +220,13 @@ export class SyncHandler {
 
     const own = await this.readStateFile(this.stateFilePath(notePath));
     if (own) {
-      this.crdtManager.applyUpdate(notePath, own.update);
+      // R2: korrupter eigener State → überspringen; Doc bleibt leer und wird beim
+      // nächsten saveState (aus applyLocalContent) mit gültigem State überschrieben.
+      try {
+        this.crdtManager.applyUpdate(notePath, own.update);
+      } catch {
+        this.onCorruptFile?.(own.path);
+      }
       this.guids.set(notePath, own.guid ?? generateGuid());
       return;
     }
@@ -226,11 +262,17 @@ export class SyncHandler {
 
   // Merged alle Siblings, deren GUID der aktuellen entspricht oder die Legacy
   // (null) sind. Fremde, nicht getombstonte Verlierer-GUIDs werden ignoriert.
+  // R2: korrupte Updates (ungültige Yjs-Bytes) werden pro Sibling gefangen;
+  // der Gesamtmerge läuft mit den verbleibenden validen Siblings weiter.
   private mergeCompatible(notePath: string, siblings: DecodedSibling[]): void {
     const guid = this.guids.get(notePath);
     for (const s of siblings) {
       if (s.guid === null || s.guid === guid) {
-        this.crdtManager.applyUpdate(notePath, s.update);
+        try {
+          this.crdtManager.applyUpdate(notePath, s.update);
+        } catch {
+          this.onCorruptFile?.(s.path);
+        }
       }
     }
   }
@@ -255,9 +297,25 @@ export class SyncHandler {
     this.crdtManager.disposeDoc(notePath);
     this.guids.set(notePath, winner);
     for (const s of siblings) {
-      if (s.guid === winner) this.crdtManager.applyUpdate(notePath, s.update);
+      if (s.guid === winner) {
+        // R2: Korrupte Gewinner-Sidecars überspringen statt den Switch abzubrechen.
+        try {
+          this.crdtManager.applyUpdate(notePath, s.update);
+        } catch {
+          this.onCorruptFile?.(s.path);
+        }
+      }
     }
     this.crdtManager.setContent(notePath, mdText);
+  }
+
+  // R1: Löscht die Legacy-Datei (kein QLB1-Header) einer Note, falls sie noch
+  // existiert. Wird nach saveState aufgerufen: zu dem Zeitpunkt existiert
+  // GUID-tragender State, sodass die Legacy-Datei nicht mehr gebraucht wird.
+  private async cleanupLegacyFile(notePath: string): Promise<void> {
+    const legacyPath = `${QOLLAB_DIR}/${notePath}.yjs`;
+    const file = this.vault.getAbstractFileByPath(legacyPath);
+    if (file) await this.vault.delete(file);
   }
 
   // Bringt eine lokale .md-Änderung in den CRDT. Diff-basiertes setContent
@@ -266,6 +324,8 @@ export class SyncHandler {
     await this.ensureDoc(notePath);
     this.crdtManager.setContent(notePath, content);
     await this.saveState(notePath);
+    // R1: Eigener GUID-State ist jetzt geschrieben — Legacy-Datei aufräumen.
+    await this.cleanupLegacyFile(notePath);
   }
 
   async loadAndMerge(notePath: string): Promise<string | null> {
@@ -289,6 +349,8 @@ export class SyncHandler {
 
     // Übernommene Historie persistieren, sonst geht sie beim Neustart verloren.
     await this.saveState(notePath);
+    // R1: Eigener GUID-State ist jetzt geschrieben — Legacy-Datei aufräumen.
+    await this.cleanupLegacyFile(notePath);
 
     return this.crdtManager.getContent(notePath);
   }

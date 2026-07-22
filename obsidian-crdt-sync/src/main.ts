@@ -39,6 +39,8 @@ export default class CrdtSyncPlugin extends Plugin {
   };
   // Guard: verhindert Endlos-Loop wenn wir selbst eine .md-Datei schreiben
   private writingPaths = new Set<string>();
+  // R2: Pro-Pfad-Dedup für korrupte-Datei-Notices (einmal pro Session).
+  private corruptNoticePaths = new Set<string>();
   // Serialisiert ALLE Doc-Mutationen pro Note-Pfad (Remote-Merge, lokale
   // Änderung, Startup-Sweep) — verhindert verschränkte Mutationen desselben
   // Y.Doc und damit verlorene Updates.
@@ -65,7 +67,19 @@ export default class CrdtSyncPlugin extends Plugin {
         return (target as any)[prop];
       }
     });
-    this.syncHandler = new SyncHandler(vaultWithList as any, this.crdtManager, this.settings.clientId, this.tombstoneStore);
+    this.syncHandler = new SyncHandler(
+      vaultWithList as any,
+      this.crdtManager,
+      this.settings.clientId,
+      this.tombstoneStore,
+      // R2: korrupte Sidecar-Datei → einmalige Notice pro Session.
+      (path: string) => {
+        if (!this.corruptNoticePaths.has(path)) {
+          this.corruptNoticePaths.add(path);
+          new Notice(`Qollab: beschädigte Sync-Datei übersprungen: ${path}`);
+        }
+      }
+    );
 
     this.fileWatcher = new FileWatcher(this.app.vault, this.settings.clientId, async (notePath) => {
       await this.pathQueue.run(notePath, () => this.onRemoteYjsUpdate(notePath));
