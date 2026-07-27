@@ -23,6 +23,7 @@ import * as Y from 'yjs';
 import { SyncHandler } from '../src/sync-handler';
 import { CrdtManager } from '../src/crdt-manager';
 import { encodeStateFile } from '../src/state-file';
+import { listAllSidecars } from '../src/sidecar-io';
 import { makeVaultMock, toArrayBuffer } from './helpers/vault-mock';
 
 const GUID = 'aabbccddeeff00112233445566778899';
@@ -139,6 +140,92 @@ describe('Task 12 A: cache-freies Sidecar-Listing (adapter.list-Lag)', () => {
     // Kein dritter Client: die Fremd-Zeile stammt aus Bs Ops, nicht aus einer
     // erfundenen A-Op.
     expect(clientCount(manager)).toBe(2); // RED (unfixed): 3
+  });
+
+  // F-1: Ein cache-freies LISTING allein reicht nicht. Direkt hinter dem Listing
+  // liegt in readStateFile der exists/readBinary-Gate — dieselbe verdächtige
+  // Adapter-Sicht. Hier liegt Bs Sidecar AUSSCHLIESSLICH auf der Platte; die
+  // Adapter-Sicht kennt sie überhaupt nicht (exists false, readBinary ENOENT).
+  // Genau die Lage, wenn H1 keine list-Eigenschaft, sondern adapter-weit ist.
+  it('F-1: Fremd-Sidecar nur auf der Platte (Adapter-Sicht blind) wird gelesen statt als abwesend gewertet', async () => {
+    const vault = makeVaultMock() as any;
+    const a = buildBaseWithA();
+    const adapter = vault.adapter;
+    adapter.getBasePath = () => baseDir;
+    const rawWrite = adapter.writeBinary.bind(adapter);
+    adapter.writeBinary = async (p: string, data: ArrayBuffer | Uint8Array) => {
+      await rawWrite(p, data);
+      const abs = nodePath.join(baseDir, ...p.split('/'));
+      fs.mkdirSync(nodePath.dirname(abs), { recursive: true });
+      fs.writeFileSync(abs, Buffer.from(toArrayBuffer(data)));
+    };
+
+    placeOnDisk(vault, A_PATH, sidecarA(a));
+    vault._textFiles.set(NOTE, BASE_X);
+    const manager = new CrdtManager();
+    const handler = new SyncHandler(vault, manager, A_ID);
+    await handler.loadAndMerge(NOTE);
+
+    // Bs Sidecar landet zunächst NUR auf der Platte — die Adapter-Sicht (exists/
+    // readBinary) kennt sie nicht.
+    const bBytes = sidecarB(a);
+    fs.writeFileSync(nodePath.join(baseDir, ...B_PATH.split('/')), Buffer.from(bBytes));
+    expect(await adapter.exists(B_PATH)).toBe(false); // Adapter-Sicht ist blind
+    vault._textFiles.set(NOTE, BASE_X_Y);
+
+    await handler.applyLocalContent(NOTE, BASE_X_Y);
+
+    // Cache-Fenster vorbei (Realtest: Poll t+50 s) — jetzt sieht auch der Adapter
+    // die Datei und der Watcher zieht Bs Original-Ops ein.
+    vault._files.set(B_PATH, bBytes);
+    const merged = await handler.loadAndMerge(NOTE);
+
+    expect(countB(merged as string)).toBe(1); // RED (nur Listing gefixt): 2
+    expect(clientCount(manager)).toBe(2); // RED (nur Listing gefixt): 3
+  });
+
+  // m-2: der fs-Pfad von listAllSidecars (Walk, Unterordner, isDirectory-Zweig,
+  // fehlender Ordner) war komplett untestet.
+  describe('listAllSidecars auf dem fs-Pfad', () => {
+    function adapterWithBase(vault: any) {
+      vault.adapter.getBasePath = () => baseDir;
+      return vault.adapter;
+    }
+
+    it('läuft rekursiv über echte Unterordner und liefert vault-relative Pfade', async () => {
+      const vault = makeVaultMock() as any;
+      const adapter = adapterWithBase(vault);
+      fs.mkdirSync(nodePath.join(baseDir, '.qollab', 'folder', 'tief'), { recursive: true });
+      fs.writeFileSync(nodePath.join(baseDir, '.qollab', 'note.md.aaaaaaaa.yjs'), 'x');
+      fs.writeFileSync(
+        nodePath.join(baseDir, '.qollab', 'folder', 'sub.md.bbbbbbbb.yjs'),
+        'x'
+      );
+      fs.writeFileSync(
+        nodePath.join(baseDir, '.qollab', 'folder', 'tief', 'deep.md.cccccccc.yjs'),
+        'x'
+      );
+
+      const out = await listAllSidecars(adapter);
+
+      expect(out.sort()).toEqual(
+        [
+          '.qollab/folder/sub.md.bbbbbbbb.yjs',
+          '.qollab/folder/tief/deep.md.cccccccc.yjs',
+          '.qollab/note.md.aaaaaaaa.yjs',
+        ].sort()
+      );
+      // Die Adapter-Ablage ist leer — das Ergebnis stammt nachweislich vom fs-Pfad.
+      expect(vault._files.size).toBe(0);
+    });
+
+    it('fehlender .qollab-Ordner → leere Liste (kein Wurf)', async () => {
+      const vault = makeVaultMock() as any;
+      const adapter = adapterWithBase(vault);
+      fs.rmSync(nodePath.join(baseDir, '.qollab'), { recursive: true, force: true });
+
+      await expect(listAllSidecars(adapter)).resolves.toEqual([]);
+    });
   });
 });
 
