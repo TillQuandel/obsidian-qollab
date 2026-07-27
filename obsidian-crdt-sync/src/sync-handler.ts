@@ -1,7 +1,7 @@
 import { CrdtManager } from './crdt-manager';
 import { encodeStateFile, decodeStateFile, generateGuid } from './state-file';
 import type { SidecarAdapter } from './sidecar-io';
-import { ensureSidecarFolder, dirname } from './sidecar-io';
+import { ensureSidecarFolder, dirname, readSidecar, sidecarExists } from './sidecar-io';
 import { threeWayMerge } from './text-merge';
 
 export const QOLLAB_DIR = '.qollab';
@@ -65,8 +65,13 @@ interface DecodedSibling {
 // weiterarbeiten, ein IO-Fehler heißt „wir kennen den Stand nicht". Würde er wie
 // bisher zu null degradiert, hielte der Aufrufer eine vorhandene Fremd-Op für
 // nicht existent und erfände sie beim .md-Diff als eigene Op (Duplikat). Deshalb
-// eigener Fehlertyp, der den laufenden Merge abbricht — der nächste Trigger
-// (modify/Poll) holt ihn nach.
+// eigener Fehlertyp, der den laufenden Merge abbricht.
+//
+// Der Abbruch heilt NICHT von allein: loadAndMerge injiziert den .md-Text im
+// own-Branch bewusst nicht, und der Watcher dedupliziert seine Trigger per
+// lastSeen. Deshalb hängen zwei Rückkanäle daran — `abortedReads` (lokaler Edit
+// nicht erfasst → onRemoteYjsUpdate holt nach und schreibt vorher nichts zurück)
+// und der false-Rückgabewert von onRemoteYjsUpdate (Trigger nicht verbraucht).
 class SidecarReadError extends Error {
   constructor(readonly path: string) {
     super(`Sidecar nicht lesbar: ${path}`);
@@ -84,8 +89,21 @@ export class SyncHandler {
     private clientId: string,
     private tombstones: TombstoneStore = NO_TOMBSTONES,
     // R2: optionaler Callback für korrupte Dateien (einmalige Notice-Logik liegt beim Aufrufer).
-    private onCorruptFile?: (path: string) => void
+    private onCorruptFile?: (path: string) => void,
+    // Task 12: optionaler Callback für UNLESBARE (nicht korrupte) Dateien. Feuert
+    // bei jedem Abbruch; die Schwellen-/Notice-Logik liegt beim Aufrufer.
+    private onUnreadableFile?: (path: string) => void
   ) {}
+
+  // Notes, deren letzter Sidecar-Zugriff wegen eines IO-Fehlers abgebrochen ist.
+  // Der CRDT-Stand ist dann unvollständig gegenüber Disk und ggf. .md — solange
+  // das gilt, darf kein Write-Back die .md überschreiben (Review F-2b).
+  private abortedReads = new Set<string>();
+
+  // True, solange für diese Note ein abgebrochener Lauf nachzuholen ist.
+  hasAbortedRead(notePath: string): boolean {
+    return this.abortedReads.has(notePath);
+  }
 
   stateFilePath(notePath: string): string {
     return `${QOLLAB_DIR}/${notePath}.${this.clientId}.yjs`;
@@ -106,6 +124,7 @@ export class SyncHandler {
   // Note vergessen (delete-Handler): Doc + GUID-Map-Eintrag entfernen.
   disposeNote(notePath: string): void {
     this.guids.delete(notePath);
+    this.abortedReads.delete(notePath);
     this.crdtManager.disposeDoc(notePath);
   }
 
@@ -116,13 +135,17 @@ export class SyncHandler {
     const guid = this.guids.get(oldPath);
     this.guids.delete(oldPath);
     if (guid) this.guids.set(newPath, guid);
+    // Eine offene „lokaler Edit nicht erfasst"-Markierung zieht mit um.
+    if (this.abortedReads.delete(oldPath)) this.abortedReads.add(newPath);
     this.crdtManager.disposeDoc(oldPath);
   }
 
   // Löscht eine Sidecar, falls vorhanden (Ersatz für das frühere
   // getAbstractFileByPath-if(file)-delete-Muster über den Adapter).
   private async removeSidecar(path: string): Promise<void> {
-    if (await this.vault.adapter.exists(path)) await this.vault.adapter.remove(path);
+    // Frischer Existenz-Check: eine stale „existiert nicht"-Antwort ließe eine
+    // getombstonte/Legacy-Leiche liegen (Löschen bleibt auf dem Adapter).
+    if (await sidecarExists(this.vault.adapter, path)) await this.vault.adapter.remove(path);
   }
 
   async saveState(notePath: string): Promise<void> {
@@ -150,9 +173,10 @@ export class SyncHandler {
   // True, wenn die Sidecar existiert und byteweise identisch mit bytes ist.
   // Lese-/Decode-Fehler oder Nichtexistenz → false (dann normal schreiben).
   private async sidecarBytesEqual(path: string, bytes: Uint8Array): Promise<boolean> {
-    if (!(await this.vault.adapter.exists(path))) return false;
     try {
-      const disk = new Uint8Array(await this.vault.adapter.readBinary(path));
+      const buffer = await readSidecar(this.vault.adapter, path);
+      if (buffer === null) return false;
+      const disk = new Uint8Array(buffer);
       if (disk.length !== bytes.length) return false;
       for (let i = 0; i < bytes.length; i++) {
         if (disk[i] !== bytes[i]) return false;
@@ -164,17 +188,20 @@ export class SyncHandler {
   }
 
   private async readStateFile(path: string): Promise<DecodedSibling | null> {
-    // exists-Check trennt „nicht vorhanden" (null, keine Notice) von „vorhanden
-    // aber unlesbar/korrupt" — readBinary würde bei fehlender Datei werfen.
-    if (!(await this.vault.adapter.exists(path))) return null;
-    // Task 12: Read-Fehler ist transient (IO) → SidecarReadError, der Aufrufer
-    // bricht ab. NICHT als „existiert nicht" durchreichen.
-    let buffer: ArrayBuffer;
+    // Task 12/F-1: readSidecar liest cache-frei (Desktop: direkt am Dateisystem)
+    // und trennt „existiert nachweislich nicht" (null) von „unlesbar" (wirft).
+    // Der frühere adapter.exists-Vorabcheck ist damit weg — er lief über dieselbe
+    // verzögerte Sicht und konnte eine frisch gelistete Datei wieder wegvetoen.
+    let buffer: ArrayBuffer | null;
     try {
-      buffer = await this.vault.adapter.readBinary(path);
+      buffer = await readSidecar(this.vault.adapter, path);
     } catch {
+      // Read-Fehler ist transient (IO) → der Aufrufer bricht ab. NICHT als
+      // „existiert nicht" durchreichen.
+      this.onUnreadableFile?.(path);
       throw new SidecarReadError(path);
     }
+    if (buffer === null) return null;
     // R2: Decode-Fehler (leere/trunkierte Datei) = korrupt → überspringen.
     try {
       const { guid, update } = decodeStateFile(new Uint8Array(buffer));
@@ -373,14 +400,23 @@ export class SyncHandler {
   // Task 12: Wirft dabei das LESEN einer Sidecar (transienter IO-Fehler), wird der
   // Lauf abgebrochen — ohne setContent, ohne saveState. Der Doc kennt den Fremd-
   // Stand dann nicht, und genau deshalb darf der .md-Diff nicht laufen: er würde
-  // die unsichtbare Fremd-Op als eigene erfinden. Die .md trägt den lokalen Edit
-  // weiter, der nächste Trigger (modify/Poll) konvergiert. Bewusst KEIN Re-Queue.
+  // die unsichtbare Fremd-Op als eigene erfinden.
+  //
+  // Fix-Runde (Review F-2b): Der lokale Edit lebt danach NUR in der .md — es gibt
+  // keinen Trigger, der ihn von selbst nachholt (loadAndMerge injiziert den
+  // .md-Text im own-Branch bewusst nicht). Deshalb wird die Note als
+  // `abortedReads` markiert; onRemoteYjsUpdate holt den Lauf vor einem Write-Back
+  // nach und schreibt gar nicht, solange die Markierung steht. Das ist der
+  // minimale Rückkanal, kein Re-Queue-Mechanismus.
   async applyLocalContent(notePath: string, content: string): Promise<void> {
     let finalText: string;
     try {
       finalText = await this.mergeForLocalDiff(notePath, content);
     } catch (err) {
-      if (err instanceof SidecarReadError) return;
+      if (err instanceof SidecarReadError) {
+        this.abortedReads.add(notePath);
+        return;
+      }
       throw err;
     }
     this.crdtManager.setContent(notePath, finalText);
@@ -388,6 +424,8 @@ export class SyncHandler {
     await this.saveState(notePath);
     // R1: Eigener GUID-State ist jetzt geschrieben — Legacy-Datei aufräumen.
     await this.cleanupLegacyFile(notePath);
+    // Lokaler Stand ist erfasst und persistiert — Markierung fällt weg.
+    this.abortedReads.delete(notePath);
   }
 
   // Doc-Aufbau + Fremd-Merge + 3-Wege-Merge des lokalen .md-Texts. Getrennt von
@@ -441,6 +479,10 @@ export class SyncHandler {
         this.mergeCompatible(notePath, siblings);
       }
     } catch (err) {
+      // Der Abbruch wird hier NICHT als abortedReads markiert: die Markierung
+      // bedeutet ausschließlich „ein lokaler .md-Edit ist nicht erfasst", und das
+      // kann nur applyLocalContent auflösen. Der Aufrufer erkennt den Abbruch am
+      // null-Rückgabewert (kein Write-Back, Trigger bleibt unverbraucht).
       if (err instanceof SidecarReadError) return null;
       throw err;
     }

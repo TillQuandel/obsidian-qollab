@@ -6,6 +6,7 @@ import {
   listYjsInDir,
   ensureSidecarFolder,
   dirname,
+  statSidecar,
 } from './sidecar-io';
 import { SidecarWatcher } from './sidecar-watcher';
 import { CrdtSyncSettings, CrdtSyncSettingTab, DEFAULT_SETTINGS, generateClientId } from './settings';
@@ -40,6 +41,13 @@ export default class CrdtSyncPlugin extends Plugin {
   private writingPaths = new Set<string>();
   // R2: Pro-Pfad-Dedup für korrupte-Datei-Notices (einmal pro Session).
   private corruptNoticePaths = new Set<string>();
+  // Task 12: Zähler für aufeinanderfolgende IO-Lesefehler pro Sidecar-Pfad. Ein
+  // einzelner Fehler ist transient (EBUSY beim Sync-Write) und bleibt still; hält
+  // er an, ist die Note faktisch vom Sync abgeschnitten und der Nutzer muss es
+  // erfahren — sonst ist „synct nicht mehr" nicht von „alles in Ordnung"
+  // unterscheidbar.
+  private unreadableCounts = new Map<string, number>();
+  private static readonly UNREADABLE_NOTICE_AFTER = 3;
   // Serialisiert ALLE Doc-Mutationen pro Note-Pfad (Remote-Merge, lokale
   // Änderung, Startup-Sweep) — verhindert verschränkte Mutationen desselben
   // Y.Doc und damit verlorene Updates.
@@ -70,14 +78,23 @@ export default class CrdtSyncPlugin extends Plugin {
       stat: (p) => rawAdapter.stat(p),
       list: (p) => rawAdapter.list(p),
       rename: (from, to) => rawAdapter.rename(from, to),
-      // Task 12: Auf Desktop (FileSystemAdapter) listet sidecar-io direkt am
-      // Dateisystem statt über die verzögerte adapter.list-Sicht. Duck-Typing
-      // statt instanceof, damit Mobile/Test-Adapter ohne die Methode auskommen.
+      // Task 12: Auf Desktop (FileSystemAdapter) liest sidecar-io direkt am
+      // Dateisystem statt über die verzögerte Adapter-Sicht. Duck-Typing statt
+      // instanceof, damit Mobile/Test-Adapter ohne die Methode auskommen.
       getBasePath:
         typeof (rawAdapter as any).getBasePath === 'function'
           ? () => (rawAdapter as any).getBasePath() as string
           : undefined,
     };
+    if (!this.sidecarAdapter.getBasePath) {
+      // Einmalig beim Bind, nicht pro Aufruf: auf Mobile ist der Fallback der
+      // legitime Normalfall. Benennt Obsidian getBasePath aber um, fiele Qollab
+      // still auf genau die verzögerte Sicht zurück, die Task 12 ausgelöst hat.
+      console.warn(
+        'Qollab: kein Direktzugriff auf die Vault-Wurzel (getBasePath fehlt) — ' +
+          'Sidecar-Lesezugriffe laufen über die vault.adapter-Sicht, die verzögert sein kann.'
+      );
+    }
     const adapter = this.sidecarAdapter;
 
     // Schlankes VaultLike: Vault-API für die indizierte .md, Adapter für Sidecars.
@@ -99,13 +116,18 @@ export default class CrdtSyncPlugin extends Plugin {
           this.corruptNoticePaths.add(path);
           new Notice(`Qollab: beschädigte Sync-Datei übersprungen: ${path}`);
         }
-      }
+      },
+      // Task 12: unlesbare (nicht korrupte) Sidecar → erst nach mehreren Versuchen
+      // melden, damit ein transienter EBUSY nicht sofort nervt.
+      (path: string) => this.noteUnreadable(path)
     );
 
     // Eigener Wächter statt Vault-Events: Obsidian feuert für .qollab nie. Poll-Scan
     // per Intervall + Sofort-Trigger beim Öffnen einer Note.
     this.sidecarWatcher = new SidecarWatcher(adapter, this.settings.clientId, async (notePath) => {
-      await this.pathQueue.run(notePath, () => this.onRemoteYjsUpdate(notePath));
+      // Rückgabe durchreichen: false = Merge abgebrochen, der Watcher darf den
+      // Trigger dann nicht als verbraucht verbuchen (F-2a).
+      return this.pathQueue.run(notePath, () => this.onRemoteYjsUpdate(notePath));
     });
     this.sidecarWatcher.start({
       registerInterval: (fn, ms) => {
@@ -214,6 +236,18 @@ export default class CrdtSyncPlugin extends Plugin {
     });
   }
 
+  // Zählt Lesefehler pro Sidecar-Pfad und meldet einmalig, sobald die Datei
+  // dauerhaft unlesbar wirkt. Dedup über dieselbe Menge wie die Korrupt-Notice —
+  // ein Pfad erzeugt höchstens eine Notice pro Session.
+  private noteUnreadable(path: string): void {
+    const count = (this.unreadableCounts.get(path) ?? 0) + 1;
+    this.unreadableCounts.set(path, count);
+    if (count < CrdtSyncPlugin.UNREADABLE_NOTICE_AFTER) return;
+    if (this.corruptNoticePaths.has(path)) return;
+    this.corruptNoticePaths.add(path);
+    new Notice(`Qollab: Sync-Datei wiederholt nicht lesbar — Note synct nicht: ${path}`);
+  }
+
   private async snapshotStaleMarkdownFiles(): Promise<void> {
     if (!this.settings.enabled) return;
 
@@ -224,7 +258,9 @@ export default class CrdtSyncPlugin extends Plugin {
       // Sidecar-mtime über den Adapter (Index-blind für .qollab/). Ist der eigene
       // Sidecar mindestens so neu wie die .md, ist der Snapshot aktuell.
       const statePath = this.syncHandler.stateFilePath(file.path);
-      const stat = await this.sidecarAdapter.stat(statePath);
+      // Task 12 (m-3): frischer stat — eine stale Adapter-mtime würde die .md
+      // fälschlich als „Snapshot aktuell" überspringen.
+      const stat = await statSidecar(this.sidecarAdapter, statePath);
       if (stat && stat.mtime >= file.stat.mtime) {
         continue;
       }
@@ -244,9 +280,11 @@ export default class CrdtSyncPlugin extends Plugin {
     }
   }
 
-  private async onRemoteYjsUpdate(notePath: string): Promise<void> {
-    if (this.unloaded) return;
-    if (!this.settings.enabled) return;
+  // Rückgabe: false = der Merge lief NICHT durch (abgebrochen/übersprungen), der
+  // Watcher darf den Trigger nicht als verbraucht verbuchen (F-2a). true = erledigt.
+  private async onRemoteYjsUpdate(notePath: string): Promise<boolean> {
+    if (this.unloaded) return false;
+    if (!this.settings.enabled) return false;
 
     // Fix A: den .md-Inhalt VOR dem Merge festhalten. Er ist die Basis, um beim
     // Write-Back einen lokalen User-Edit zu erkennen, der zwischen Merge-
@@ -256,7 +294,7 @@ export default class CrdtSyncPlugin extends Plugin {
     let preMerge: string | null = null;
     if (preFile instanceof TFile) {
       preMerge = await this.app.vault.read(preFile);
-      if (this.unloaded) return;
+      if (this.unloaded) return false;
     }
 
     // Guard 1: ohne .md gibt es nichts zu mergen. Ein loadAndMerge-Aufruf ohne
@@ -267,21 +305,41 @@ export default class CrdtSyncPlugin extends Plugin {
     // Kommt die .md an, greift der reguläre Adopt-Zweig (ensureDoc) mit
     // .md-Injektion — kein eigener Aufruf hier nötig.
     const noteFile = this.app.vault.getAbstractFileByPath(notePath);
-    if (!noteFile) return;
+    // Verwaiste Sidecar ohne .md: bewusst nichts zu tun, gilt als erledigt —
+    // sonst triggerte sie bei jedem Poll erneut.
+    if (!noteFile) return true;
+
+    // Fix-Runde (Review F-2b): Hat ein früherer applyLocalContent wegen eines
+    // IO-Fehlers abgebrochen, lebt der lokale Edit NUR in der .md — loadAndMerge
+    // injiziert den .md-Text im own-Branch bewusst nicht. Ohne Nachholen liefe der
+    // Write-Back unten über `data === preMerge` und überschriebe ihn (Verlust).
+    // Deshalb den Lauf hier nachholen, bevor der gemergte Stand berechnet wird.
+    if (preMerge !== null && this.syncHandler.hasAbortedRead(notePath)) {
+      await this.syncHandler.applyLocalContent(notePath, preMerge);
+      if (this.unloaded) return false;
+    }
 
     const merged = await this.syncHandler.loadAndMerge(notePath);
-    if (this.unloaded) return;
-    if (merged === null) return;
+    if (this.unloaded) return false;
+    // null = nichts zu mergen ODER Merge wegen IO-Fehler abgebrochen. In beiden
+    // Fällen kein Write-Back; der Watcher hat lastSeen nicht fortgeschrieben.
+    if (merged === null) return false;
+
+    // Der Nachhol-Versuch ist erneut gescheitert: der lokale Edit ist weiterhin
+    // nicht im CRDT erfasst, `merged` kennt ihn nicht. Ein Write-Back würde ihn
+    // jetzt löschen — lieber gar nicht schreiben und beim nächsten Trigger erneut
+    // versuchen.
+    if (this.syncHandler.hasAbortedRead(notePath)) return false;
 
     // Guard 2: ein leerer, historienloser Merge-Stand darf eine vorhandene .md
     // nie überschreiben. Historienlos = Y.Doc hat keinerlei Ops (State-Vector leer,
     // store.clients.size === 0) — das passiert bei einem Frisch-Doc ohne Edits.
     // Abgrenzung: eine echte Leerung (User löscht allen Text) hinterlässt
     // Delete-Ops → hasOps() gibt true → dieser Guard greift NICHT.
-    if (merged === '' && !this.crdtManager.hasOps(notePath)) return;
+    if (merged === '' && !this.crdtManager.hasOps(notePath)) return true;
 
     const file = this.app.vault.getAbstractFileByPath(notePath);
-    if (!(file instanceof TFile)) return;
+    if (!(file instanceof TFile)) return true;
 
     // Atomarer Read-Modify-Write in der process-Funktion. Der writingPaths-Guard
     // umschließt BEIDE process-Aufrufe, da jeder ein modify-Event feuert.
@@ -334,6 +392,7 @@ export default class CrdtSyncPlugin extends Plugin {
     if (changed && this.settings.statusNotice) {
       new Notice(`CRDT Sync: ${file.name} automatisch gemergt.`);
     }
+    return true;
   }
 
   onunload() {

@@ -134,6 +134,19 @@ describe('F-2b: lokaler Edit überlebt einen IO-Abbruch', () => {
 
     expect(vault._textFiles.get(NOTE)).toBe(LOCAL);
   });
+
+  // Der Watcher braucht den Abbruch als Rückgabewert — ein abgebrochener Merge
+  // wirft nicht, er kehrt still zurück (F-2a im Realbetrieb, nicht nur bei Wurf).
+  it('meldet dem Watcher „Trigger nicht verbraucht", solange der IO-Fehler steht', async () => {
+    const { vault, plugin, io } = setup();
+
+    vault._textFiles.set(NOTE, LOCAL);
+    await plugin.syncHandler.applyLocalContent(NOTE, LOCAL);
+
+    expect(await plugin.onRemoteYjsUpdate(NOTE)).toBe(false); // RED (unfixed): undefined
+    io.failing = false;
+    expect(await plugin.onRemoteYjsUpdate(NOTE)).toBe(true);
+  });
 });
 
 describe('Concern 2: dauerhaft unlesbare Sidecar meldet sich', () => {

@@ -1,8 +1,11 @@
-import { listAllSidecars, listYjsInDir, type SidecarAdapter } from './sidecar-io';
+import { listAllSidecars, listYjsInDir, statSidecar, type SidecarAdapter } from './sidecar-io';
 
 export const SCAN_INTERVAL_MS = 30_000;
 
-export type OnYjsChanged = (notePath: string) => Promise<void>;
+// Rückgabe `false` (oder ein Wurf) heißt: der Merge lief NICHT durch, der Trigger
+// gilt als nicht verbraucht — siehe lastSeen-Behandlung in poll/scanNote. Jeder
+// andere Rückgabewert (inkl. undefined) zählt als erledigt.
+export type OnYjsChanged = (notePath: string) => Promise<boolean | void>;
 
 // Strikte per-Client-Form: .qollab/<notePath>.<8-hex-clientId>.yjs
 // Der notePath muss auf .md enden — Sync-Konfliktkopien (z.B. note.md.a1b2c3d4-DESKTOP.yjs)
@@ -82,17 +85,37 @@ export class SidecarWatcher {
     const seen = new Set<string>();
     for (const path of paths) {
       seen.add(path);
-      const stat = await this.adapter.stat(path);
+      // Task 12: statSidecar statt adapter.stat — ein stale stat auf eine bereits
+      // gesehene Sidecar würde ein Update unterdrücken (Review m-3).
+      const stat = await statSidecar(this.adapter, path);
       const cur = { mtime: stat?.mtime ?? 0, size: stat?.size ?? 0 };
       const prev = this.lastSeen.get(path);
-      this.lastSeen.set(path, cur);
       const notePath = this.extractForeign(path);
-      if (notePath === null) continue; // eigene/ungültige — nur Zustand tracken
-      if (this.hasChanged(prev, cur)) await this.onChanged(notePath);
+      if (notePath === null || !this.hasChanged(prev, cur)) {
+        this.lastSeen.set(path, cur); // eigene/ungültige/unverändert — nur tracken
+        continue;
+      }
+      // Fix-Runde (Review F-2a): lastSeen erst NACH erfolgreichem onChanged
+      // fortschreiben. Sonst konsumiert ein abgebrochener Merge (IO-Fehler) den
+      // Trigger dauerhaft — dieselbe Sidecar löst bis zum nächsten mtime/size-
+      // Wechsel oder Neustart nie wieder aus.
+      if (await this.runChanged(notePath)) this.lastSeen.set(path, cur);
     }
     // Verschwundene Dateien vergessen (kein Trigger).
     for (const key of [...this.lastSeen.keys()]) {
       if (!seen.has(key)) this.lastSeen.delete(key);
+    }
+  }
+
+  // Führt den Merge aus. false = Trigger NICHT verbraucht (Merge abgebrochen), der
+  // Aufrufer lässt lastSeen dann unangetastet, damit der nächste Scan erneut
+  // auslöst. Ein Wurf darf zudem den laufenden Scan nicht abbrechen — die übrigen
+  // Sidecars sollen weiterverarbeitet werden.
+  private async runChanged(notePath: string): Promise<boolean> {
+    try {
+      return (await this.onChanged(notePath)) !== false;
+    } catch {
+      return false;
     }
   }
 
@@ -111,15 +134,18 @@ export class SidecarWatcher {
   // ohne auf das Poll-Intervall zu warten).
   async scanNote(notePath: string): Promise<void> {
     const paths = await listYjsInDir(this.adapter, notePath);
+    const scanned: Array<[string, { mtime: number; size: number }]> = [];
     let trigger = false;
     for (const path of paths) {
-      const stat = await this.adapter.stat(path);
+      const stat = await statSidecar(this.adapter, path);
       const cur = { mtime: stat?.mtime ?? 0, size: stat?.size ?? 0 };
-      const prev = this.lastSeen.get(path);
-      this.lastSeen.set(path, cur);
+      scanned.push([path, cur]);
       if (this.extractForeign(path) === null) continue;
-      if (this.hasChanged(prev, cur)) trigger = true;
+      if (this.hasChanged(this.lastSeen.get(path), cur)) trigger = true;
     }
-    if (trigger) await this.onChanged(notePath);
+    // F-2a wie in poll: bei abgebrochenem Merge bleibt lastSeen unverändert,
+    // damit der nächste Scan denselben Stand erneut auslöst.
+    if (trigger && !(await this.runChanged(notePath))) return;
+    for (const [path, cur] of scanned) this.lastSeen.set(path, cur);
   }
 }
