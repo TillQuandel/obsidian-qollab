@@ -237,8 +237,13 @@ export default class CrdtSyncPlugin extends Plugin {
   }
 
   // Zählt Lesefehler pro Sidecar-Pfad und meldet einmalig, sobald die Datei
-  // dauerhaft unlesbar wirkt. Dedup über dieselbe Menge wie die Korrupt-Notice —
-  // ein Pfad erzeugt höchstens eine Notice pro Session.
+  // dauerhaft unlesbar wirkt.
+  //
+  // R2-3: Die Dedup-Menge `corruptNoticePaths` wird sich mit der Korrupt-Notice
+  // BEWUSST geteilt — ein Pfad, der bereits als „beschädigt" gemeldet wurde, meldet
+  // sich nie zusätzlich als „nicht lesbar" und umgekehrt. Für den Nutzer sind beides
+  // dieselbe Aussage („diese Datei blockiert den Sync"); zwei Meldungen zum selben
+  // Pfad wären Lärm. Also: höchstens eine Meldung pro Pfad und Session.
   private noteUnreadable(path: string): void {
     const count = (this.unreadableCounts.get(path) ?? 0) + 1;
     this.unreadableCounts.set(path, count);
@@ -314,8 +319,12 @@ export default class CrdtSyncPlugin extends Plugin {
     // injiziert den .md-Text im own-Branch bewusst nicht. Ohne Nachholen liefe der
     // Write-Back unten über `data === preMerge` und überschriebe ihn (Verlust).
     // Deshalb den Lauf hier nachholen, bevor der gemergte Stand berechnet wird.
-    if (preMerge !== null && this.syncHandler.hasAbortedRead(notePath)) {
-      await this.syncHandler.applyLocalContent(notePath, preMerge);
+    // Nachgeholt wird der GEMERKTE Text, nicht der aktuelle .md-Inhalt: nach einem
+    // Abbruch im pending-Zweig (R2-1) ist der Doc dem .md bereits um den Remote-Stand
+    // voraus, und ein Diff „.md gegen Doc" würde diesen zurückrollen.
+    const uncaptured = this.syncHandler.pendingLocalContent(notePath);
+    if (uncaptured !== undefined) {
+      await this.syncHandler.applyLocalContent(notePath, uncaptured);
       if (this.unloaded) return false;
     }
 
@@ -373,6 +382,14 @@ export default class CrdtSyncPlugin extends Plugin {
       if (pending !== null) {
         const threeWay = threeWayMerge(preMerge ?? '', pending, merged);
         await this.syncHandler.applyLocalContent(notePath, threeWay);
+        // R2-1: Zweiter Write-Back-Pfad, gleiche Falle wie oben. Bricht das
+        // applyLocalContent ab, ist `merged2` der Remote-Stand OHNE den
+        // pending-Edit und `data === pending` würde ihn überschreiben. Die beiden
+        // Bedingungen sind positiv korreliert: dieser Zweig existiert für
+        // „Sync-Overwrite + Editor-Save im selben Fenster" — genau die Lage, in der
+        // ein Sync-Tool Handles hält und EBUSY erzeugt. Kein Write, Trigger bleibt
+        // unverbraucht; der nächste Lauf konvergiert.
+        if (this.syncHandler.hasAbortedRead(notePath)) return false;
         if (!this.unloaded) {
           const merged2 = this.crdtManager.getContent(notePath);
           await this.app.vault.process(file, (data) => {

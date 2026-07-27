@@ -95,14 +95,28 @@ export class SyncHandler {
     private onUnreadableFile?: (path: string) => void
   ) {}
 
-  // Notes, deren letzter Sidecar-Zugriff wegen eines IO-Fehlers abgebrochen ist.
-  // Der CRDT-Stand ist dann unvollständig gegenüber Disk und ggf. .md — solange
-  // das gilt, darf kein Write-Back die .md überschreiben (Review F-2b).
-  private abortedReads = new Set<string>();
+  // Notes, deren letzter applyLocalContent wegen eines IO-Fehlers abgebrochen ist,
+  // samt dem Text, der dabei NICHT in den CRDT kam. Solange ein Eintrag steht, darf
+  // kein Write-Back die .md überschreiben (Review F-2b).
+  //
+  // Warum der Text mitgespeichert wird und der Nachhol-Versuch nicht einfach den
+  // aktuellen .md-Inhalt nimmt: Bricht der Lauf im pending-Zweig von
+  // onRemoteYjsUpdate ab (R2-1), hat das vorangegangene loadAndMerge den Doc bereits
+  // auf den Remote-Stand gezogen, ohne dass er je in die .md geschrieben wurde. Ein
+  // späterer Diff „.md gegen Doc" hielte den Remote-Edit dann für eine lokale
+  // Löschung und würde ihn zurückrollen (cross-device Datenverlust — der Spiegelfall
+  // von I-1 aus Task 11). Der gemerkte Text ist dagegen genau das, was schon einmal
+  // als korrekt berechnet wurde; ihn erneut anzuwenden ist idempotent.
+  private abortedReads = new Map<string, string>();
 
   // True, solange für diese Note ein abgebrochener Lauf nachzuholen ist.
   hasAbortedRead(notePath: string): boolean {
     return this.abortedReads.has(notePath);
+  }
+
+  // Der Text, dessen Erfassung abgebrochen ist — für den Nachhol-Versuch.
+  pendingLocalContent(notePath: string): string | undefined {
+    return this.abortedReads.get(notePath);
   }
 
   stateFilePath(notePath: string): string {
@@ -136,7 +150,9 @@ export class SyncHandler {
     this.guids.delete(oldPath);
     if (guid) this.guids.set(newPath, guid);
     // Eine offene „lokaler Edit nicht erfasst"-Markierung zieht mit um.
-    if (this.abortedReads.delete(oldPath)) this.abortedReads.add(newPath);
+    const uncaptured = this.abortedReads.get(oldPath);
+    this.abortedReads.delete(oldPath);
+    if (uncaptured !== undefined) this.abortedReads.set(newPath, uncaptured);
     this.crdtManager.disposeDoc(oldPath);
   }
 
@@ -414,7 +430,7 @@ export class SyncHandler {
       finalText = await this.mergeForLocalDiff(notePath, content);
     } catch (err) {
       if (err instanceof SidecarReadError) {
-        this.abortedReads.add(notePath);
+        this.abortedReads.set(notePath, content);
         return;
       }
       throw err;

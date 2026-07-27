@@ -114,7 +114,11 @@ export class SidecarWatcher {
   private async runChanged(notePath: string): Promise<boolean> {
     try {
       return (await this.onChanged(notePath)) !== false;
-    } catch {
+    } catch (err) {
+      // R2-2: Ohne Log äußerte sich ein echter Programmierfehler im Merge-Pfad nur
+      // noch als „triggert alle 30 s erneut" — der Wurf wird hier ja bewusst
+      // geschluckt, damit er den laufenden Scan nicht abbricht.
+      console.error('Qollab: Merge fehlgeschlagen für', notePath, err);
       return false;
     }
   }

@@ -149,6 +149,67 @@ describe('F-2b: lokaler Edit überlebt einen IO-Abbruch', () => {
   });
 });
 
+// R2-1: Der pending-Zweig von onRemoteYjsUpdate ist ein ZWEITER Write-Back-Pfad,
+// den der hasAbortedRead-Guard vor dem ersten Write-Back nicht abdeckt. Bricht das
+// applyLocalContent(threeWay) darin ab, ist merged2 der Remote-Stand OHNE den
+// pending-Edit — und `data === pending` schreibt ihn drüber. Die Bedingungen sind
+// positiv korreliert: der pending-Zweig existiert für „Sync-Overwrite + Editor-Save
+// im selben Fenster", also genau die Lage, in der ein Sync-Tool Handles hält.
+describe('R2-1: Editor-Save im Merge-Fenster überlebt einen Abbruch im Nachlauf', () => {
+  function makePlugin(vault: ReturnType<typeof makeVaultMock>) {
+    const plugin = new (CrdtSyncPlugin as any)({ vault }, {});
+    plugin.settings = { enabled: true, statusNotice: false, clientId: SELF, tombstones: {} };
+    plugin.crdtManager = new CrdtManager();
+    plugin.syncHandler = new SyncHandler(vault as any, plugin.crdtManager, SELF);
+    return plugin as any;
+  }
+
+  it('bricht applyLocalContent(threeWay) ab, bleibt der pending-Edit in der .md', async () => {
+    const vault = makeVaultMock() as any;
+
+    const base = new CrdtManager();
+    base.setContent(NOTE, BASE);
+    const baseState = base.encodeState(NOTE);
+    vault._files.set(OWN_YJS, toArrayBuffer(encodeStateFile(GUID, baseState)));
+
+    const remote = new CrdtManager();
+    remote.applyUpdate(NOTE, baseState);
+    remote.setContent(NOTE, REMOTE);
+    vault._files.set(REMOTE_YJS, toArrayBuffer(encodeStateFile(GUID, remote.encodeState(NOTE))));
+
+    vault._textFiles.set(NOTE, BASE);
+
+    // 1. Lesen der Fremd-Sidecar = loadAndMerge; genau dann landet der Editor-Save
+    //    in der .md (das Merge-Fenster). Ab dem 2. Lesen — dem Nachlauf in
+    //    applyLocalContent(threeWay) — hält das Sync-Tool die Datei (EBUSY).
+    const rawRead = vault.adapter.readBinary.bind(vault.adapter);
+    const io = { failing: true };
+    let remoteReads = 0;
+    vault.adapter.readBinary = async (p: string) => {
+      if (p === REMOTE_YJS) {
+        remoteReads++;
+        if (remoteReads === 1) vault._textFiles.set(NOTE, LOCAL);
+        else if (io.failing) throw new Error('EBUSY: resource busy or locked');
+      }
+      return rawRead(p);
+    };
+
+    const plugin = makePlugin(vault);
+    const consumed = await plugin.onRemoteYjsUpdate(NOTE);
+
+    // RED (ungeschützter pending-Zweig): 'Zeile 1 REMOTE\nZeile 2\n' — der im
+    // Merge-Fenster getippte Edit ist überschrieben.
+    expect(vault._textFiles.get(NOTE)).toBe(LOCAL);
+    expect(consumed).toBe(false); // Trigger bleibt unverbraucht
+    expect(plugin.syncHandler.hasAbortedRead(NOTE)).toBe(true);
+
+    // Kein Dauerschaden: sobald das Handle frei ist, konvergiert der nächste Lauf.
+    io.failing = false;
+    await plugin.onRemoteYjsUpdate(NOTE);
+    expect(vault._textFiles.get(NOTE)).toBe(MERGED);
+  });
+});
+
 describe('Concern 2: dauerhaft unlesbare Sidecar meldet sich', () => {
   it('SidecarReadError meldet den Pfad; ein Parse-Fehler (korrupt) tut es nicht', async () => {
     const vault = makeVaultMock() as any;
