@@ -70,6 +70,13 @@ export default class CrdtSyncPlugin extends Plugin {
       stat: (p) => rawAdapter.stat(p),
       list: (p) => rawAdapter.list(p),
       rename: (from, to) => rawAdapter.rename(from, to),
+      // Task 12: Auf Desktop (FileSystemAdapter) listet sidecar-io direkt am
+      // Dateisystem statt über die verzögerte adapter.list-Sicht. Duck-Typing
+      // statt instanceof, damit Mobile/Test-Adapter ohne die Methode auskommen.
+      getBasePath:
+        typeof (rawAdapter as any).getBasePath === 'function'
+          ? () => (rawAdapter as any).getBasePath() as string
+          : undefined,
     };
     const adapter = this.sidecarAdapter;
 

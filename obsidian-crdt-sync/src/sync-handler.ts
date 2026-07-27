@@ -59,6 +59,21 @@ interface DecodedSibling {
   update: Uint8Array;
 }
 
+// Task 12: Eine Sidecar existiert, ihr Read wirft aber (EBUSY, offenes Handle,
+// Sync-Tool schreibt gerade). Das ist strikt etwas anderes als „korrupt" (Read
+// gelingt, Parse/applyUpdate scheitert): korrupt heißt Datei überspringen und
+// weiterarbeiten, ein IO-Fehler heißt „wir kennen den Stand nicht". Würde er wie
+// bisher zu null degradiert, hielte der Aufrufer eine vorhandene Fremd-Op für
+// nicht existent und erfände sie beim .md-Diff als eigene Op (Duplikat). Deshalb
+// eigener Fehlertyp, der den laufenden Merge abbricht — der nächste Trigger
+// (modify/Poll) holt ihn nach.
+class SidecarReadError extends Error {
+  constructor(readonly path: string) {
+    super(`Sidecar nicht lesbar: ${path}`);
+    this.name = 'SidecarReadError';
+  }
+}
+
 export class SyncHandler {
   // Note-Pfad → GUID der aktuell geladenen Inkarnation.
   private guids = new Map<string, string>();
@@ -81,7 +96,10 @@ export class SyncHandler {
   async currentGuid(notePath: string): Promise<string | null> {
     const mapped = this.guids.get(notePath);
     if (mapped) return mapped;
-    const own = await this.readStateFile(this.stateFilePath(notePath));
+    // Task 12: Ein IO-Fehler darf den delete-Handler nicht scheitern lassen — er
+    // räumt dann ohne Tombstone auf (bisheriges Verhalten). Kein Abbruch-Fall:
+    // hier entsteht kein Merge und keine Op.
+    const own = await this.readStateFile(this.stateFilePath(notePath)).catch(() => null);
     return own?.guid ?? null;
   }
 
@@ -147,11 +165,18 @@ export class SyncHandler {
 
   private async readStateFile(path: string): Promise<DecodedSibling | null> {
     // exists-Check trennt „nicht vorhanden" (null, keine Notice) von „vorhanden
-    // aber korrupt" (Notice) — readBinary würde bei fehlender Datei werfen.
+    // aber unlesbar/korrupt" — readBinary würde bei fehlender Datei werfen.
     if (!(await this.vault.adapter.exists(path))) return null;
-    // R2: read-/decode-Fehler (z.B. leere oder trunkierte Datei) abfangen.
+    // Task 12: Read-Fehler ist transient (IO) → SidecarReadError, der Aufrufer
+    // bricht ab. NICHT als „existiert nicht" durchreichen.
+    let buffer: ArrayBuffer;
     try {
-      const buffer = await this.vault.adapter.readBinary(path);
+      buffer = await this.vault.adapter.readBinary(path);
+    } catch {
+      throw new SidecarReadError(path);
+    }
+    // R2: Decode-Fehler (leere/trunkierte Datei) = korrupt → überspringen.
+    try {
       const { guid, update } = decodeStateFile(new Uint8Array(buffer));
       return { path, guid, update };
     } catch {
@@ -344,7 +369,30 @@ export class SyncHandler {
   }
 
   // Bringt eine lokale .md-Änderung in den CRDT.
+  //
+  // Task 12: Wirft dabei das LESEN einer Sidecar (transienter IO-Fehler), wird der
+  // Lauf abgebrochen — ohne setContent, ohne saveState. Der Doc kennt den Fremd-
+  // Stand dann nicht, und genau deshalb darf der .md-Diff nicht laufen: er würde
+  // die unsichtbare Fremd-Op als eigene erfinden. Die .md trägt den lokalen Edit
+  // weiter, der nächste Trigger (modify/Poll) konvergiert. Bewusst KEIN Re-Queue.
   async applyLocalContent(notePath: string, content: string): Promise<void> {
+    let finalText: string;
+    try {
+      finalText = await this.mergeForLocalDiff(notePath, content);
+    } catch (err) {
+      if (err instanceof SidecarReadError) return;
+      throw err;
+    }
+    this.crdtManager.setContent(notePath, finalText);
+
+    await this.saveState(notePath);
+    // R1: Eigener GUID-State ist jetzt geschrieben — Legacy-Datei aufräumen.
+    await this.cleanupLegacyFile(notePath);
+  }
+
+  // Doc-Aufbau + Fremd-Merge + 3-Wege-Merge des lokalen .md-Texts. Getrennt von
+  // applyLocalContent, damit ein SidecarReadError vor setContent/saveState greift.
+  private async mergeForLocalDiff(notePath: string, content: string): Promise<string> {
     await this.ensureDoc(notePath);
 
     // Fremd-Sidecars, die ensureDoc nicht schon selbst eingezogen hat (Doc bereits
@@ -367,32 +415,34 @@ export class SyncHandler {
     // bereits (content === mergedText, häufigster Restart-/Sync-Overwrite-Fall), KEIN
     // 3-Wege-Patch: threeWayMerge würde die schon vorhandene Fremd-Einfügung erneut
     // einfügen (patch_apply dedupliziert nicht) — direkt der gemergte Stand.
-    const finalText =
-      content === mergedText ? mergedText : threeWayMerge(base, content, mergedText);
-    this.crdtManager.setContent(notePath, finalText);
-
-    await this.saveState(notePath);
-    // R1: Eigener GUID-State ist jetzt geschrieben — Legacy-Datei aufräumen.
-    await this.cleanupLegacyFile(notePath);
+    return content === mergedText ? mergedText : threeWayMerge(base, content, mergedText);
   }
 
   async loadAndMerge(notePath: string): Promise<string | null> {
     const yjsFiles = await this.vault.listYjsFiles(notePath);
+    // Leere Liste: unverändert „nichts zu mergen" (kein IO-Fehler-Fall).
     if (yjsFiles.length === 0) return null;
 
-    await this.ensureDoc(notePath);
+    // Task 12: Analog zu applyLocalContent — bei transientem IO-Fehler kein Merge
+    // auf Halbwissen und kein halber Stand nach außen (null → kein Write-Back).
+    try {
+      await this.ensureDoc(notePath);
 
-    const siblings = await this.decodeSiblings(yjsFiles);
-    const ownGuid = this.guids.get(notePath);
-    const winner = this.pickWinnerGuid(siblings, ownGuid);
+      const siblings = await this.decodeSiblings(yjsFiles);
+      const ownGuid = this.guids.get(notePath);
+      const winner = this.pickWinnerGuid(siblings, ownGuid);
 
-    if (winner !== undefined && winner !== ownGuid) {
-      // Fremde Inkarnation gewinnt den Tie-Break → Historie wechseln.
-      await this.switchToGuid(notePath, winner, siblings);
-    } else {
-      // Eigene Inkarnation gewinnt (oder alle kompatibel): kompatible mergen,
-      // Verlierer-GUIDs ignorieren. Kein Einspielen des lokalen .md-Texts.
-      this.mergeCompatible(notePath, siblings);
+      if (winner !== undefined && winner !== ownGuid) {
+        // Fremde Inkarnation gewinnt den Tie-Break → Historie wechseln.
+        await this.switchToGuid(notePath, winner, siblings);
+      } else {
+        // Eigene Inkarnation gewinnt (oder alle kompatibel): kompatible mergen,
+        // Verlierer-GUIDs ignorieren. Kein Einspielen des lokalen .md-Texts.
+        this.mergeCompatible(notePath, siblings);
+      }
+    } catch (err) {
+      if (err instanceof SidecarReadError) return null;
+      throw err;
     }
 
     // Übernommene Historie persistieren, sonst geht sie beim Neustart verloren.
