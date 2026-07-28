@@ -111,18 +111,20 @@ describe('Doc-GUID + Tombstone', () => {
 
   // Test 3
   it('Simultan-Erstkontakt (divergent, eine Zeile) konvergiert deterministisch, beide distinktiven Inhalte überleben', async () => {
-    // Reale Semantik: ohne gemeinsamen Ursprung diffet der Verlierer (größere
-    // GUID) seinen Volltext auf die Gewinner-Basis. Der Verlierer-Volltext wird
-    // damit kanonisch. Weil beide Geräte auf allen ausser EINER Zeile
-    // übereinstimmen, enthält der konvergente Text sowohl den Gewinner-Beitrag
-    // (die geteilte Zeile) als auch die Änderung des Verlierers.
+    // Reale Semantik seit Task 13/A: Zwischen zwei Inkarnationen gibt es keinen
+    // gemeinsamen Vorfahren — der Verlierer (größere GUID) VEREINIGT deshalb
+    // seinen Stand mit der Gewinner-Basis, statt ihn per 2-Wege-Diff darüber zu
+    // legen. Vorher wurde der Verlierer-Volltext kanonisch und die abweichende
+    // Zeile des Gewinners ging verloren (inkl. Delete-Ops, die den Verlust zum
+    // Gewinner zurücktrugen — Realtest S05 v1: 10/10 divergent). Jetzt überleben
+    // beide Zeilen, Gewinner-Beitrag zuerst.
     // GUIDs fest gesetzt, damit deterministisch der gewünschte Verlierer die
     // inhaltliche Änderung trägt.
     const G_SMALL = '00000000000000000000000000000000';
     const G_LARGE = 'ffffffffffffffffffffffffffffffff';
     const textWin = 'Alice war hier\nZeile 2\n'; // kleinere GUID (Gewinner-Basis)
     const textLose = 'Alice war hier\nBob war hier\n'; // größere GUID, ändert Zeile 2
-    const expected = textLose;
+    const expected = 'Alice war hier\nZeile 2\nBob war hier\n';
 
     const vA = makeVaultMock() as any; // Gerät mit kleiner GUID
     const vB = makeVaultMock() as any; // Gerät mit großer GUID
@@ -160,6 +162,7 @@ describe('Doc-GUID + Tombstone', () => {
     // Zeile) — belegt nur, dass gemeinsamer Inhalt nicht zerstört wird.
     expect(resA).toContain('Alice war hier');
     expect(resA).toContain('Bob war hier'); // Verlierer-Änderung erhalten
+    expect(resA).toContain('Zeile 2'); // Gewinner-Zeile nicht mehr weggediffed
     expect(await A.currentGuid('note.md')).toBe(G_SMALL);
     expect(await B.currentGuid('note.md')).toBe(G_SMALL);
   });
@@ -176,6 +179,8 @@ describe('Doc-GUID + Tombstone', () => {
       '.qollab/note.md.1e6ac001.yjs',
       toAB(legacy.encodeState('note.md'))
     );
+    // Task 13/C: Die Note existiert lokal (sonst greift der Phantom-Guard).
+    vault._textFiles.set('note.md', 'Legacy-Inhalt\n');
 
     const merged = await handler.loadAndMerge('note.md');
     expect(merged).toBe('Legacy-Inhalt\n');

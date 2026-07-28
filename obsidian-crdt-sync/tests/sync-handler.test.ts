@@ -1,6 +1,7 @@
 import { SyncHandler } from '../src/sync-handler';
 import { CrdtManager } from '../src/crdt-manager';
-import { makeVaultMock, toArrayBuffer } from './helpers/vault-mock';
+import { encodeStateFile } from '../src/state-file';
+import { makeVaultMock, toArrayBuffer, toArrayBuffer as toAB } from './helpers/vault-mock';
 
 describe('SyncHandler', () => {
   it('stateFilePath gibt per-User .yjs-Pfad zurück', () => {
@@ -66,6 +67,10 @@ describe('SyncHandler', () => {
     const remote = new CrdtManager();
     remote.setContent('note.md', 'Gemergter Stand\n');
     vault._files.set('.qollab/note.md.5e307e01.yjs', remote.encodeState('note.md').buffer);
+    // Task 13/C: Ohne existierende .md würde der Phantom-Guard greifen (kein
+    // eigener State für eine Note, die es hier nicht gibt) — die .md gehört zu
+    // diesem Szenario ohnehin dazu.
+    vault._textFiles.set('note.md', 'Gemergter Stand\n');
 
     const manager = new CrdtManager();
     const handler = new SyncHandler(vault, manager, '10ca1000');
@@ -101,6 +106,9 @@ describe('SyncHandler', () => {
     bob.setContent('note.md', 'Bobs Text\n');
     vault._files.set('.qollab/note.md.b0b00001.yjs', bob.encodeState('note.md').buffer);
 
+    // Task 13/C: Die Note existiert lokal (sonst greift der Phantom-Guard).
+    vault._textFiles.set('note.md', 'Alices Text\n');
+
     const manager = new CrdtManager();
     const handler = new SyncHandler(vault, manager, '10ca1000');
 
@@ -120,10 +128,17 @@ describe('SyncHandler', () => {
     old.setContent('note.md', 'Alter Inhalt\n');
     vault._files.set('.qollab/note.md.yjs', old.encodeState('note.md').buffer);
 
-    // GUID-tragender Sidecar mit neuem Inhalt
+    // GUID-tragender Sidecar mit neuem Inhalt. Task 13: vorher wurde hier ein
+    // ROHER State ohne QLB1-Header abgelegt — damit war auch diese Datei Legacy,
+    // die R1-Regel (Legacy nur ohne GUID-State) griff gar nicht, und der Test war
+    // nur grün, weil das anschließende 2-Wege-`setContent(mdText)` den
+    // Legacy-Inhalt wieder aus dem Doc löschte. Jetzt mit echtem Header.
     const remote = new CrdtManager();
     remote.setContent('note.md', 'Neuer Inhalt\n');
-    vault._files.set('.qollab/note.md.a1b2c3d4.yjs', remote.encodeState('note.md').buffer);
+    vault._files.set(
+      '.qollab/note.md.a1b2c3d4.yjs',
+      toAB(encodeStateFile('11111111111111111111111111111111', remote.encodeState('note.md')))
+    );
     vault._textFiles.set('note.md', 'Neuer Inhalt\n');
 
     const manager = new CrdtManager();

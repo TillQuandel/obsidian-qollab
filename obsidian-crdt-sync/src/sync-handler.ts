@@ -2,7 +2,7 @@ import { CrdtManager } from './crdt-manager';
 import { encodeStateFile, decodeStateFile, generateGuid } from './state-file';
 import type { SidecarAdapter } from './sidecar-io';
 import { ensureSidecarFolder, dirname, readSidecar, sidecarExists } from './sidecar-io';
-import { threeWayMerge } from './text-merge';
+import { threeWayMerge, unionMerge } from './text-merge';
 
 export const QOLLAB_DIR = '.qollab';
 
@@ -291,13 +291,17 @@ export class SyncHandler {
   //      die Gewinner-GUID bestimmen und alle kompatiblen (Gewinner-GUID +
   //      Legacy) mergen.
   //   3. gar nichts → neue GUID, leerer Doc (lazy).
-  private async ensureDoc(notePath: string): Promise<void> {
+  //
+  // Rückgabe: true, wenn der Adopt-Zweig gelaufen ist UND dabei der lokale
+  // .md-Text in den Doc vereinigt wurde. Der Aufrufer darf den .md-Text dann
+  // nicht ein zweites Mal einspielen (siehe mergeForLocalDiff).
+  private async ensureDoc(notePath: string): Promise<boolean> {
     if (this.crdtManager.hasDoc(notePath)) {
       if (!this.guids.has(notePath)) {
         const own = await this.readStateFile(this.stateFilePath(notePath));
         this.guids.set(notePath, own?.guid ?? generateGuid());
       }
-      return;
+      return false;
     }
 
     const own = await this.readStateFile(this.stateFilePath(notePath));
@@ -310,7 +314,7 @@ export class SyncHandler {
         this.onCorruptFile?.(own.path);
       }
       this.guids.set(notePath, own.guid ?? generateGuid());
-      return;
+      return false;
     }
 
     const ownPath = this.stateFilePath(notePath);
@@ -331,15 +335,22 @@ export class SyncHandler {
     // loadAndMerge dann NICHT re-injiziert werden (würde ankommende Remote-Edits
     // zurückrollen) — deshalb sitzt dieser Diff ausschließlich hier im Adopt-Zweig.
     //
-    // Transiente Staleness: Eine hier eingediffte veraltete .md rollt fremde Edits
-    // vorübergehend zurück; das heilt sich selbst, sobald die neuere .md via
-    // Datei-Sync nachkommt (nächstes create/modify → loadAndMerge mit dann bereits
-    // erfasstem eigenem State läuft über den own-Branch ohne .md-Injektion).
+    // Task 13/A: Der lokale Text wird VEREINIGT statt als 2-Wege-Diff eingespielt.
+    // `setContent(mdText)` zwang den frisch adoptierten Doc exakt auf die lokale
+    // Datei — adoptierter Fremd-Inhalt, den die .md (noch) nicht kannte, wurde
+    // dabei gelöscht, inklusive Delete-Ops, die den Verlust über den nächsten
+    // Merge zum Peer zurücktragen. Zwischen der fremden Inkarnation und dem
+    // lokalen Dateistand gibt es keinen gemeinsamen Vorfahren → unionMerge
+    // (Details dort). Damit entfällt auch das frühere transiente Zurückrollen
+    // fremder Edits durch eine veraltete .md.
     const file = this.vault.getAbstractFileByPath(notePath);
-    if (file) {
-      const mdText = await this.vault.read(file);
-      this.crdtManager.setContent(notePath, mdText);
-    }
+    if (!file) return false;
+    const mdText = await this.vault.read(file);
+    this.crdtManager.setContent(
+      notePath,
+      unionMerge(this.crdtManager.getContent(notePath), mdText)
+    );
+    return true;
   }
 
   // Merged alle Siblings, deren GUID der aktuellen entspricht oder die Legacy
@@ -376,6 +387,10 @@ export class SyncHandler {
     const file = this.vault.getAbstractFileByPath(notePath);
     if (!file) return;
     const mdText = await this.vault.read(file);
+    // Task 13/A: Den lokalen Stand VOR dem Verwerfen sichern — Doc UND .md. Der
+    // Doc kann der Datei voraus sein (bereits gemergter, noch nicht
+    // zurückgeschriebener Stand) und die Datei dem Doc (externer Edit).
+    const localText = unionMerge(this.crdtManager.getContent(notePath), mdText);
     this.crdtManager.disposeDoc(notePath);
     this.guids.set(notePath, winner);
     for (const s of siblings) {
@@ -388,7 +403,18 @@ export class SyncHandler {
         }
       }
     }
-    this.crdtManager.setContent(notePath, mdText);
+    // Task 13/A: Früher `setContent(mdText)` — ein 2-Wege-Diff, der den frisch
+    // aufgebauten Gewinner-Doc exakt auf die lokale Datei zwang. Inhalt, der nur
+    // im Verlierer-Doc lebte, verschwand ersatzlos; Gewinner-Inhalt, den die
+    // lokale .md noch nicht kannte, wurde als DELETE-Op geschrieben und über den
+    // nächsten Merge zum Gewinner zurückpropagiert (Realtest S05: 10/10
+    // divergent). Beide Inkarnationen haben keinen gemeinsamen Vorfahren →
+    // unionMerge. Auf Op-Ebene bleibt der Wechsel prinzipbedingt verlustbehaftet:
+    // der lokale Beitrag zählt danach als frische Einfügung dieses Geräts.
+    this.crdtManager.setContent(
+      notePath,
+      unionMerge(this.crdtManager.getContent(notePath), localText)
+    );
   }
 
   // R1: Löscht die Legacy-Datei (kein QLB1-Header) einer Note, falls sie noch
@@ -447,7 +473,7 @@ export class SyncHandler {
   // Doc-Aufbau + Fremd-Merge + 3-Wege-Merge des lokalen .md-Texts. Getrennt von
   // applyLocalContent, damit ein SidecarReadError vor setContent/saveState greift.
   private async mergeForLocalDiff(notePath: string, content: string): Promise<string> {
-    await this.ensureDoc(notePath);
+    const adopted = await this.ensureDoc(notePath);
 
     // Fremd-Sidecars, die ensureDoc nicht schon selbst eingezogen hat (Doc bereits
     // in-memory ODER Bootstrap aus eigenem State), VOR dem lokalen Diff einmergen.
@@ -457,10 +483,21 @@ export class SyncHandler {
     // dupliziert (Yjs dedupliziert nach Item-ID, nicht Inhalt). Trifft Laufzeit-
     // (modify) UND Restart-/Sweep-Pfad (Sync bei geschlossener App, Eigen-State-
     // Bootstrap). Im Adopt-Zweig hat ensureDoc bereits gemergt+gediffed; der Merge
-    // ist dann idempotent und der 3-Wege-Merge unten ein No-Op (content == mergedText).
+    // ist dann idempotent und der lokale Diff unten entfällt (siehe `adopted`).
     const base = this.crdtManager.getContent(notePath);
     await this.mergePendingForeign(notePath);
     const mergedText = this.crdtManager.getContent(notePath);
+
+    // Task 13/A: Im Adopt-Zweig hat ensureDoc den .md-Text bereits mit dem
+    // adoptierten Fremd-Stand VEREINIGT. Ein zusätzlicher 3-Wege-Merge würde ihn
+    // sofort wieder zerstören: `base` enthält den Fremd-Inhalt, `content` (die
+    // .md) nicht — der Patch base→content wäre eine Löschung genau dieses
+    // Inhalts. Hier bleibt nur, einen inzwischen abweichenden Aufrufer-Text
+    // (Datei änderte sich zwischen ensureDoc-Read und diesem Aufruf) mit
+    // einzubeziehen — ebenfalls ohne gemeinsamen Vorfahren, also vereinigend.
+    if (adopted) {
+      return content === mergedText ? mergedText : unionMerge(mergedText, content);
+    }
 
     // 3-Wege-Merge (wie onRemoteYjsUpdate): die lokale Änderung (Delta base→content)
     // wird auf den fremd-gemergten Stand angewandt. So überlebt ein Fremd-Edit, den

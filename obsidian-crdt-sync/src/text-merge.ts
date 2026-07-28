@@ -21,3 +21,28 @@ export function threeWayMerge(base: string, local: string, other: string): strin
   const [merged] = dmp.patch_apply(patches, other);
   return merged;
 }
+
+// Vereinigt zwei Textstände OHNE gemeinsamen Vorfahren: alles, was nur eine der
+// beiden Seiten kennt, bleibt erhalten, Gemeinsames bleibt einmal stehen.
+//
+// Genau diese Lage herrscht beim Inkarnationswechsel (switchToGuid) und beim
+// Adoptieren einer fremden Inkarnation (ensureDoc): die beiden Yjs-Historien
+// haben keine gemeinsame Wurzel. Damit ist threeWayMerge hier NICHT anwendbar —
+// als Basis käme nur der eigene Stand (.md oder Doc) infrage, und sobald beide
+// gleich sind (der Normalfall), ist der Patch leer und der gesamte lokale
+// Beitrag fiele weg. Ein 2-Wege-`setContent` löscht umgekehrt alles, was nur die
+// Gegenseite kennt — und schreibt diese Löschung als Delete-Op, die über den
+// nächsten Merge zurückpropagiert.
+//
+// Zeilen-Modus (diff_linesToChars_): ein Zeichen-Diff würde geänderte Zeilen
+// ineinander verschränken (`ZBoeile…`); zeilenweise bleiben beide Fassungen als
+// ganze Zeilen stehen. Preis der fehlenden Basis: eine nur auf einer Seite
+// gelöschte Zeile, die die andere Inkarnation noch führt, kommt zurück —
+// bewusste Richtung (Wiederauferstehung statt stillem Verlust).
+export function unionMerge(other: string, local: string): string {
+  if (other === local) return other;
+  const { chars1, chars2, lineArray } = dmp.diff_linesToChars_(other, local);
+  const diffs = dmp.diff_main(chars1, chars2, false);
+  dmp.diff_charsToLines_(diffs, lineArray);
+  return diffs.map(([, text]) => text).join('');
+}
