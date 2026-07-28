@@ -52,6 +52,42 @@ describe('Task 13/A: Inkarnationswechsel verliert keinen Inhalt', () => {
     expect(await handler.currentGuid(NOTE)).toBe(G_SMALL);
   });
 
+  // Review C-1/I-1: dieselbe Lage mit Texten OHNE abschließendes Zeilenende —
+  // in Obsidian der Normalfall (die S04-Realtest-Note endet auf Byte 0x31).
+  it('switchToGuid: klebt ohne abschließendes Zeilenende keine Zeilen zusammen', async () => {
+    const vault = makeVaultMock() as any;
+    const mdText = 'Zeile 1\nZeile 2';
+    const ownDocText = 'Zeile 1\nZeile 2\nNur-im-Doc X';
+    const winnerText = 'Zeile 1\nZeile 2\nGewinner Y';
+
+    writeSidecar(vault, OWN_YJS, G_LARGE, ownDocText);
+    writeSidecar(vault, FOREIGN_YJS, G_SMALL, winnerText);
+    vault._textFiles.set(NOTE, mdText);
+
+    const handler = new SyncHandler(vault, new CrdtManager(), '10ca1000');
+    const merged = (await handler.loadAndMerge(NOTE))!;
+
+    // Jede Zeile bleibt eine eigene Zeile (RED: "Gewinner YNur-im-Doc X").
+    const lines = merged.split('\n');
+    expect(lines).toContain('Zeile 1');
+    expect(lines).toContain('Zeile 2');
+    expect(lines).toContain('Gewinner Y');
+    expect(lines).toContain('Nur-im-Doc X');
+    // Kein erfundenes Zeilenende: keine Seite hatte eins.
+    expect(merged.endsWith('\n')).toBe(false);
+  });
+
+  it('Adopt-Zweig: reine Append-Divergenz ohne Zeilenende bleibt sauber', async () => {
+    const vault = makeVaultMock() as any;
+    writeSidecar(vault, FOREIGN_YJS, G_SMALL, 'a\nb\nc');
+    vault._textFiles.set(NOTE, 'a\nb');
+
+    const handler = new SyncHandler(vault, new CrdtManager(), '10ca1000');
+    const merged = await handler.loadAndMerge(NOTE);
+
+    expect(merged).toBe('a\nb\nc'); // RED: "a\nb\ncb"
+  });
+
   // Test 3 (Brief): kein Delete-Op-Rückfluss auf den Gewinner.
   it('switchToGuid: der neue State löscht beim Gewinner nichts, was nur die Verlierer-.md nicht kannte', async () => {
     const vault = makeVaultMock() as any;

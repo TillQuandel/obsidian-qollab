@@ -112,6 +112,26 @@ describe('Task 13/B: Sweep prägt keine GUID ohne echten Edit', () => {
     expect(saved.guid).toBe(guidBefore); // gleiche Inkarnation
   });
 
+  // Review I-3: Der Sweep muss auf DERSELBEN Basis entscheiden wie ensureDoc —
+  // eine dekodierbare GUID, nicht die bloße Anwesenheit einer Datei. Eine halb
+  // kopierte/korrupte Fremd-Sidecar (Sync-Dienst schreibt gerade) trägt keine
+  // GUID; ensureDoc prägte dann doch eine frische Inkarnation → Split-Brain
+  // durch die Hintertür.
+  it('korrupte Fremd-Sidecar zählt nicht als adoptierbar: keine Prägung', async () => {
+    const vault = makeVaultMock();
+    vault._textFiles.set(NOTE, BASE);
+    // 12 Bytes: zu kurz für den QLB1-Header → keine GUID lesbar.
+    vault._files.set(
+      `.qollab/${NOTE}.bbbb2222.yjs`,
+      new Uint8Array([0x51, 0x4c, 0x42, 0x31, 1, 2, 3, 4, 5, 6, 7, 8]).buffer as ArrayBuffer
+    );
+
+    const { plugin } = await bootPlugin(vault, 'aaaa1111');
+    await plugin.snapshotStaleMarkdownFiles();
+
+    expect(vault._files.has(ownPath('aaaa1111'))).toBe(false);
+  });
+
   it('ohne eigene Sidecar, aber mit adoptierbarer Fremd-Sidecar: Sweep adoptiert deren GUID', async () => {
     const vault = makeVaultMock();
     const FOREIGN_GUID = '00000000000000000000000000000000';
@@ -212,5 +232,34 @@ describe('Task 13: Zwei-Geräte-Rollout (Szenario-2-Semantik)', () => {
     // Beide Geräte auf derselben Inkarnation.
     expect(guidOf(vA, ownPath('aaaa1111'))).toBe(guidA);
     expect(guidOf(vB, ownPath('bbbb2222'))).toBe(guidA);
+  });
+
+  // Review C-1/I-1: derselbe Rollout mit einer Note OHNE abschließendes
+  // Zeilenende — im Realtest der tatsächliche Dateizustand.
+  it('Rollout ohne abschließendes Zeilenende: keine verklebten Zeilen auf beiden Geräten', async () => {
+    const NO_NL = 'Termin: Montag';
+    const vA = makeVaultMock();
+    const vB = makeVaultMock();
+    vA._textFiles.set(NOTE, NO_NL);
+    vB._textFiles.set(NOTE, NO_NL);
+
+    const A = await bootPlugin(vA, 'aaaa1111');
+    const B = await bootPlugin(vB, 'bbbb2222');
+    await A.plugin.snapshotStaleMarkdownFiles();
+    await B.plugin.snapshotStaleMarkdownFiles();
+
+    vA._textFiles.set(NOTE, NO_NL + '\nA-Edit');
+    await A.handlers.get('modify')!(tfile(NOTE));
+
+    vB._files.set(ownPath('aaaa1111'), vA._files.get(ownPath('aaaa1111'))!);
+    await B.plugin.sidecarWatcher.poll();
+
+    // RED: "Termin: Montag\nA-EditTermin: Montag" (auf beiden Geräten).
+    expect(vB._textFiles.get(NOTE)!.split('\n')).toEqual(['Termin: Montag', 'A-Edit']);
+
+    // Rück-Sync: der Müll würde sonst als Insert-Op auch beim Gewinner landen.
+    vA._files.set(ownPath('bbbb2222'), vB._files.get(ownPath('bbbb2222'))!);
+    await A.plugin.sidecarWatcher.poll();
+    expect(vA._textFiles.get(NOTE)!.split('\n')).toEqual(['Termin: Montag', 'A-Edit']);
   });
 });
