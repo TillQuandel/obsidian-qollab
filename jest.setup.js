@@ -43,8 +43,13 @@ class Plugin {
 }
 
 class Notice {
-  constructor(_message) {}
+  // Task 14: Meldungen mitschneiden, damit Tests eine (einmalige) Notice
+  // assertieren können. Tests, die das nutzen, leeren die Liste selbst.
+  constructor(message) {
+    Notice.messages.push(message);
+  }
 }
+Notice.messages = [];
 
 class PluginSettingTab {
   constructor(app, plugin) {

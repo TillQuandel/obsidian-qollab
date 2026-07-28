@@ -38,6 +38,29 @@ export interface VaultMock {
   _writeCount: Map<string, number>; // adapter.writeBinary-Aufrufe pro Pfad
 }
 
+// Task 14: Obsidians App.loadLocalStorage/saveLocalStorage. Der Speicher liegt im
+// Electron-Profil des GERÄTS, nie im Vault — er wird also von OneDrive/Syncthing
+// nicht mitkopiert. Genau das bildet der Mock ab: jede Instanz ist ein eigenes
+// Gerät. Zwei Geräte am selben (geteilten) Vault-Mock bekommen deshalb je einen
+// eigenen Store, während sie sich die Dateien teilen.
+export interface LocalStorageMock {
+  loadLocalStorage(key: string): any | null;
+  saveLocalStorage(key: string, data: unknown | null): void;
+  _store: Map<string, unknown>;
+}
+
+export function makeLocalStorage(): LocalStorageMock {
+  const store = new Map<string, unknown>();
+  return {
+    loadLocalStorage: (key: string) => (store.has(key) ? store.get(key) : null),
+    saveLocalStorage: (key: string, data: unknown | null) => {
+      if (data === null) store.delete(key);
+      else store.set(key, data);
+    },
+    _store: store,
+  };
+}
+
 export function makeVaultMock(): VaultMock {
   const files = new Map<string, ArrayBuffer>(); // Sidecars (.qollab/…)
   const textFiles = new Map<string, string>(); // .md-Notes (indiziert)
