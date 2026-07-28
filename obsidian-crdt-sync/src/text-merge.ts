@@ -38,11 +38,27 @@ export function threeWayMerge(base: string, local: string, other: string): strin
 // ineinander verschränken (`ZBoeile…`); zeilenweise bleiben beide Fassungen als
 // ganze Zeilen stehen. Preis der fehlenden Basis: eine nur auf einer Seite
 // gelöschte Zeile, die die andere Inkarnation noch führt, kommt zurück —
-// bewusste Richtung (Wiederauferstehung statt stillem Verlust).
+// bewusste Richtung (Wiederauferstehung statt stillem Verlust). Ebenso
+// unvermeidbar: umsortierte Zeilen erscheinen doppelt (eine Verschiebung ist
+// ohne Basis nicht von „gelöscht + eingefügt" zu unterscheiden).
+//
+// Zeilenende-Normalisierung (Review C-1): diff_linesToChars_ tokenisiert
+// INKLUSIVE Zeilenende — `"b"` und `"b\n"` sind verschiedene Tokens. Endet einer
+// der Stände nicht auf `\n` (in Obsidian der Normalfall), fänden die Diffs keine
+// gemeinsame Schlusszeile und das `join('')` klebte zwei Zeilen aneinander
+// (`"a\nb\nc"` ∪ `"a\nb"` → `"a\nb\ncb"`). Deshalb vor dem Diff beidseitig ein
+// Zeilenende garantieren und es hinterher nur dann wieder entfernen, wenn KEINE
+// der beiden Seiten eines hatte — sonst würde die Union ein Zeilenende erfinden
+// bzw. verschlucken.
 export function unionMerge(other: string, local: string): string {
   if (other === local) return other;
-  const { chars1, chars2, lineArray } = dmp.diff_linesToChars_(other, local);
+  const otherNl = other.endsWith('\n');
+  const localNl = local.endsWith('\n');
+  const a = other === '' || otherNl ? other : other + '\n';
+  const b = local === '' || localNl ? local : local + '\n';
+  const { chars1, chars2, lineArray } = dmp.diff_linesToChars_(a, b);
   const diffs = dmp.diff_main(chars1, chars2, false);
   dmp.diff_charsToLines_(diffs, lineArray);
-  return diffs.map(([, text]) => text).join('');
+  const merged = diffs.map(([, text]) => text).join('');
+  return !otherNl && !localNl && merged.endsWith('\n') ? merged.slice(0, -1) : merged;
 }
