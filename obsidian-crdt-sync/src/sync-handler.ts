@@ -517,6 +517,27 @@ export class SyncHandler {
     // Task 12: Analog zu applyLocalContent — bei transientem IO-Fehler kein Merge
     // auf Halbwissen und kein halber Stand nach außen (null → kein Write-Back).
     try {
+      // Task 13/C (Phantom-Guard): Eine fremde Sidecar, deren .md noch nicht
+      // angekommen ist, darf hier keinen eigenen State erzeugen. ensureDoc würde
+      // eine GUID prägen (die fremde — oder mangels lesbarer Fremd-GUID eine
+      // frische) und saveState schriebe eine eigene Sidecar für eine Note, die es
+      // auf diesem Gerät gar nicht gibt; diese Phantom-GUID vergiftet spätere
+      // Tie-Breaks (Realtest S04). Der Guard sitzt bewusst hier und nicht nur im
+      // Aufrufer (main.ts, Guard 1): so gilt er für JEDEN Pfad (Poll, file-open,
+      // Initial-Scan). Die fremde Datei bleibt unangetastet liegen — sobald die
+      // .md ankommt, adoptiert der reguläre Pfad sie.
+      //
+      // Existiert bereits eigener State (Doc oder Sidecar), bleibt es beim
+      // bisherigen Verhalten: kein Tie-Break ohne .md, eigene Historie bleibt
+      // stehen (siehe switchToGuid).
+      if (
+        !this.vault.getAbstractFileByPath(notePath) &&
+        !this.crdtManager.hasDoc(notePath) &&
+        !(await sidecarExists(this.vault.adapter, this.stateFilePath(notePath)))
+      ) {
+        return null;
+      }
+
       await this.ensureDoc(notePath);
 
       const siblings = await this.decodeSiblings(yjsFiles);
