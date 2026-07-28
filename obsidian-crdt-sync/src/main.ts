@@ -495,9 +495,15 @@ export default class CrdtSyncPlugin extends Plugin {
   // Task 14, Fix C: Der Watcher hat eine Änderung an unserem eigenen Sidecar-Pfad
   // gesehen. War sie nicht von uns, trägt ein zweites Gerät dieselbe clientId
   // (Alt-Installation mit mitgesyncter data.json) — sonst bliebe der Peer für immer
-  // hinter dem Self-Ignore unsichtbar. Dann: neu provisionieren, EINMAL melden und
-  // die Note regulär mergen (der alte Pfad ist jetzt fremd). Die alte Datei wird
-  // NICHT gelöscht — sie gehört ab sofort dem anderen Gerät.
+  // hinter dem Self-Ignore unsichtbar. Dann: neu provisionieren, die Kollision EINMAL
+  // melden und die Note regulär mergen (der alte Pfad ist jetzt fremd). Die alte
+  // Datei wird NICHT gelöscht — sie gehört ab sofort dem anderen Gerät.
+  //
+  // Kein Once-Guard wie bei corruptNoticePaths (Review M-1): Pro Vorfall kann hier
+  // ohnehin nur eine Meldung entstehen — nach dem Reprovisionieren matcht der alte
+  // Pfad den Self-Check nicht mehr, und die restlichen Pfade des Durchlaufs tragen
+  // bereits die neue ID. Ein sitzungsweiter Guard würde nur eine SPÄTERE, echte
+  // zweite Kollision verschlucken.
   private async onOwnSidecarChanged(
     notePath: string,
     path: string,

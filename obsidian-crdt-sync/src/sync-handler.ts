@@ -230,6 +230,8 @@ export class SyncHandler {
   disposeNote(notePath: string): void {
     this.guids.delete(notePath);
     this.abortedReads.delete(notePath);
+    // Task 14: Die Signatur beschreibt eine Datei, die es nicht mehr gibt.
+    this.ownSignatures.delete(this.stateFilePath(notePath));
     this.crdtManager.disposeDoc(notePath);
   }
 
@@ -244,6 +246,16 @@ export class SyncHandler {
     const uncaptured = this.abortedReads.get(oldPath);
     this.abortedReads.delete(oldPath);
     if (uncaptured !== undefined) this.abortedReads.set(newPath, uncaptured);
+    // Task 14 (Review I-1): Die Sidecar wandert im rename-Handler am SyncHandler
+    // vorbei mit (kein saveState) — die Signatur des alten Pfads beschreibt danach
+    // eine Datei, die dort nicht mehr liegt. Bliebe sie stehen, träfe sie nach einem
+    // Rename ZURÜCK auf die inzwischen editierte Datei: Rename erhält mtime und
+    // size, der Byte-Vergleich schlägt fehl → erfundene Kollision. Signatur des
+    // neuen Pfads ebenfalls verwerfen: dort liegen jetzt fremde (= unsere alten)
+    // Bytes, für die wir nie eine Signatur geschrieben haben. Löschen genügt in
+    // beiden Fällen — die nächste Sichtung setzt eine frische Baseline.
+    this.ownSignatures.delete(this.stateFilePath(oldPath));
+    this.ownSignatures.delete(this.stateFilePath(newPath));
     this.crdtManager.disposeDoc(oldPath);
   }
 

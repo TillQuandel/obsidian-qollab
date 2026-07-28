@@ -1,4 +1,4 @@
-import { Notice } from 'obsidian';
+import { Notice, TFile } from 'obsidian';
 import CrdtSyncPlugin from '../src/main';
 import { CrdtManager } from '../src/crdt-manager';
 import { decodeStateFile, encodeStateFile } from '../src/state-file';
@@ -33,8 +33,12 @@ const SHARED_ID = 'c10ec10e'; // per data.json-Sync geklonte ID (Klon-Ära)
 const BASE_TEXT = 'Basis\n';
 const PEER_TEXT = 'Basis\nA-Zeile\n';
 
+function ownPathFor(notePath: string, clientId: string): string {
+  return `.qollab/${notePath}.${clientId}.yjs`;
+}
+
 function ownPath(clientId: string): string {
-  return `.qollab/${NOTE}.${clientId}.yjs`;
+  return ownPathFor(NOTE, clientId);
 }
 
 // Ein Gerät: eigene Plugin-Instanz + eigener localStorage, gemeinsamer Vault-Mock.
@@ -43,10 +47,14 @@ function ownPath(clientId: string): string {
 async function bootDevice(
   vault: VaultMock,
   opts: { storage?: LocalStorageMock; data?: any } = {}
-): Promise<{ plugin: any; storage: LocalStorageMock }> {
+): Promise<{ plugin: any; storage: LocalStorageMock; handlers: Map<string, any> }> {
   const storage = opts.storage ?? makeLocalStorage();
+  const handlers = new Map<string, (...args: any[]) => any>();
   const vaultWithEvents = Object.assign(vault, {
-    on: () => ({}),
+    on: (event: string, cb: (...args: any[]) => any) => {
+      handlers.set(event, cb);
+      return { __event: event };
+    },
     offref: () => {},
   });
   const app = {
@@ -62,7 +70,14 @@ async function bootDevice(
   const plugin = new (CrdtSyncPlugin as any)(app, {});
   plugin._data = opts.data ?? null;
   await plugin.onload();
-  return { plugin, storage };
+  return { plugin, storage, handlers };
+}
+
+function tfile(path: string): TFile {
+  const f = new TFile();
+  f.path = path;
+  f.name = path.split('/').pop() ?? path;
+  return f;
 }
 
 // Merges mitschneiden UND durchreichen (kein Mock-Ersatz: der echte Merge soll laufen).
@@ -297,6 +312,46 @@ describe('Keine False Positives: eigene Writes lösen keine Neu-Provisionierung 
 
     expect(plugin.clientId).toBe(id);
     expect((Notice as any).messages.filter((m: string) => /Kollision/i.test(m))).toEqual([]);
+  });
+
+  // Review I-1: Der rename-Handler verschiebt die Sidecar am SyncHandler vorbei
+  // (kein saveState). Bleibt die Signatur des alten Pfads stehen, trifft sie nach
+  // einem Rename ZURÜCK auf eine inzwischen editierte Datei — mtime und size hat der
+  // Rename erhalten, der Byte-Vergleich läuft gegen den Stand von vor dem Edit →
+  // erfundene Kollision samt Nutzer-Notice und verwaister Sidecar.
+  it('Rename A→B, Edit, Rename zurück meldet keine Kollision', async () => {
+    const vault = makeVaultMock();
+    const A = 'A.md';
+    const B = 'B.md';
+    vault._textFiles.set(A, BASE_TEXT);
+    const { plugin, handlers } = await bootDevice(vault);
+    const id = plugin.clientId;
+
+    await plugin.syncHandler.applyLocalContent(A, BASE_TEXT);
+    await plugin.sidecarWatcher.poll(); // Baseline auf .qollab/A.md.<id>.yjs
+
+    // Rename A → B: Obsidian benennt die .md um, dann feuert das Event.
+    vault._textFiles.set(B, vault._textFiles.get(A)!);
+    vault._textFiles.delete(A);
+    await handlers.get('rename')!(tfile(B), A);
+
+    // Edit unter dem neuen Namen → Sidecar-Inhalt ändert sich.
+    vault._textFiles.set(B, 'Basis\nEdit unter B\n');
+    await plugin.syncHandler.applyLocalContent(B, 'Basis\nEdit unter B\n');
+    await plugin.sidecarWatcher.poll();
+
+    // … und wieder zurück auf den alten Namen.
+    vault._textFiles.set(A, vault._textFiles.get(B)!);
+    vault._textFiles.delete(B);
+    await handlers.get('rename')!(tfile(A), B);
+
+    await plugin.sidecarWatcher.poll();
+
+    // RED (vor dem Fix): clientId neu vergeben + 1 Kollisions-Notice.
+    expect((Notice as any).messages.filter((m: string) => /Kollision/i.test(m))).toEqual([]);
+    expect(plugin.clientId).toBe(id);
+    expect(vault._files.has(ownPathFor(A, id))).toBe(true);
+    expect([...vault._files.keys()].filter((p) => p.endsWith('.yjs'))).toHaveLength(1);
   });
 
   it('Task-12-Retry-Pfad (abgebrochener Lauf + Nachholen) provisioniert nicht neu', async () => {
