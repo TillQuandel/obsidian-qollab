@@ -270,6 +270,24 @@ export default class CrdtSyncPlugin extends Plugin {
         continue;
       }
 
+      // Task 13/B: Ohne eigene Sidecar fehlt die Vergleichsbasis — „lokal
+      // geändert" ist für diese Note nicht feststellbar, jede unveränderte Note
+      // sähe wie ein Offline-Edit aus. Prägte der Sweep hier eine frische GUID,
+      // bekäme beim Zwei-Geräte-Rollout JEDE Seite ihre eigene Inkarnation
+      // derselben Note (Split-Brain); der Tie-Break-Verlierer verwirft danach
+      // seine Historie (Realtest S05 v1: 10/10 divergent). Deshalb: ohne eigene
+      // Sidecar nur dann snapshotten, wenn eine adoptierbare fremde Sidecar
+      // vorliegt — dann übernimmt ensureDoc deren GUID statt eine neue zu prägen.
+      // Sonst entsteht die GUID beim ersten echten Edit (modify-Handler), also
+      // genau einmal und auf dem Gerät, das wirklich editiert hat.
+      //
+      // Offline-Edits bleiben erfasst: sie betreffen Notes, die dieses Gerät
+      // schon kennt (eigene Sidecar vorhanden) — dort greift unverändert der
+      // mtime-Vergleich oben.
+      if (!stat && (await listYjsInDir(this.sidecarAdapter, file.path)).length === 0) {
+        continue;
+      }
+
       // Pro-Datei-Arbeit über dieselbe Queue wie modify/Remote-Merge — der Sweep
       // darf nicht parallel zu einem laufenden Merge denselben Doc mutieren.
       try {
