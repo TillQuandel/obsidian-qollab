@@ -1,7 +1,13 @@
 import { CrdtManager } from './crdt-manager';
 import { encodeStateFile, decodeStateFile, generateGuid } from './state-file';
 import type { SidecarAdapter } from './sidecar-io';
-import { ensureSidecarFolder, dirname, readSidecar, sidecarExists } from './sidecar-io';
+import {
+  ensureSidecarFolder,
+  dirname,
+  readSidecar,
+  sidecarExists,
+  statSidecar,
+} from './sidecar-io';
 import { threeWayMerge, unionMerge } from './text-merge';
 
 export const QOLLAB_DIR = '.qollab';
@@ -79,6 +85,29 @@ class SidecarReadError extends Error {
   }
 }
 
+// Task 14: Signatur des zuletzt von UNS geschriebenen Stands einer eigenen
+// Sidecar-Datei. (mtime,size) erkennt den Normalfall ohne Lesezugriff, der Hash
+// entscheidet die Zweifelsfälle (mtime-Bump durch ein Sync-Tool bei identischen
+// Bytes ist keine Kollision). In-memory und pro Prozess — es geht um „hat seit
+// unserem letzten Write jemand anders geschrieben", nicht um Persistenz.
+interface OwnSidecarSignature {
+  mtime: number;
+  size: number;
+  hash: number;
+}
+
+// FNV-1a (32 bit). Kein Krypto-Anspruch: der Hash vergleicht unsere eigenen Bytes
+// mit dem Disk-Stand, ein Angreifer-Modell gibt es hier nicht. Zusammen mit der
+// Länge reicht das, um einen fremden Yjs-State von unserem zu unterscheiden.
+function hashBytes(bytes: Uint8Array): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < bytes.length; i++) {
+    h ^= bytes[i];
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
 export class SyncHandler {
   // Note-Pfad → GUID der aktuell geladenen Inkarnation.
   private guids = new Map<string, string>();
@@ -119,8 +148,70 @@ export class SyncHandler {
     return this.abortedReads.get(notePath);
   }
 
+  // Task 14: Signatur unserer eigenen Sidecars + Pfade, die wir gerade schreiben
+  // (writingPaths-Analogon für Sidecars). Beides zusammen hält das False-Positive-
+  // Fenster der Kollisionserkennung klein.
+  private ownSignatures = new Map<string, OwnSidecarSignature>();
+  private writingSidecars = new Set<string>();
+
   stateFilePath(notePath: string): string {
     return `${QOLLAB_DIR}/${notePath}.${this.clientId}.yjs`;
+  }
+
+  // Task 14: Neue Geräte-ID nach erkannter Kollision. Die bisherigen Signaturen
+  // gehören zu Pfaden, die uns ab jetzt nicht mehr gehören (sie sind Fremd-Sidecars
+  // des anderen Geräts) — deshalb verwerfen statt mitschleppen.
+  setClientId(clientId: string): void {
+    this.clientId = clientId;
+    this.ownSignatures.clear();
+  }
+
+  // Task 14: Hat ein FREMDER Schreiber unsere eigene Sidecar-Datei überschrieben?
+  // Das ist das Symptom einer geklonten clientId (mitgesyncte data.json): beide
+  // Geräte schreiben denselben Pfad, und der Self-Ignore des Watchers verschluckt
+  // den Peer dauerhaft. Aufrufer ist der Poll, der die (mtime,size)-Änderung schon
+  // festgestellt hat; `cur` ist genau dieser Stand.
+  //
+  // Ausschlüsse in dieser Reihenfolge (lieber ein verpasster als ein erfundener Fund
+  // — Neu-Provisionierung ist zwar gutartig, aber nicht gratis):
+  //   1. Wir schreiben diesen Pfad gerade selbst.
+  //   2. Signatur passt exakt → unser letzter Write.
+  //   3. Bytes identisch mit unserem letzten Stand → Sync-Tool hat unsere eigene
+  //      Datei zurückkopiert (neue mtime, gleicher Inhalt).
+  //   4. Keine Signatur (erste Sichtung nach dem Start) → Baseline setzen; über
+  //      einen Schreiber lässt sich hier nichts aussagen.
+  //   5. Unlesbar oder verschwunden → keine Aussage (transienter IO-Fehler).
+  async isForeignSidecarWrite(
+    path: string,
+    cur?: { mtime: number; size: number }
+  ): Promise<boolean> {
+    if (this.writingSidecars.has(path)) return false;
+    const known = this.ownSignatures.get(path);
+    if (known && cur && known.mtime === cur.mtime && known.size === cur.size) return false;
+
+    let buffer: ArrayBuffer | null;
+    try {
+      buffer = await readSidecar(this.vault.adapter, path);
+    } catch {
+      return false;
+    }
+    if (buffer === null) return false;
+
+    const bytes = new Uint8Array(buffer);
+    const signature: OwnSidecarSignature = {
+      mtime: cur?.mtime ?? known?.mtime ?? 0,
+      size: bytes.length,
+      hash: hashBytes(bytes),
+    };
+    if (!known) {
+      this.ownSignatures.set(path, signature);
+      return false;
+    }
+    if (known.hash === signature.hash && known.size === signature.size) {
+      this.ownSignatures.set(path, signature);
+      return false;
+    }
+    return true;
   }
 
   // Aktuelle GUID der Note: aus der Map, sonst aus dem Header der eigenen .yjs.
@@ -178,12 +269,35 @@ export class SyncHandler {
     // der Peer-Poll den mtime-Bump → merge → resave → … (endloser 30s-Zyklus
     // zwischen konvergierten Peers, Sync-Churn, .yjs-Konfliktkopien). Deshalb: nur
     // schreiben, wenn sich die encodierten Bytes vom Disk-Stand unterscheiden.
-    if (await this.sidecarBytesEqual(stateFile, state)) return;
-    await ensureSidecarFolder(this.vault.adapter, dirname(stateFile));
-    // adapter.writeBinary legt an ODER überschreibt in einem Aufruf — kein
-    // create/modify-Split und kein Race-Fallback mehr nötig (der frühere,
-    // index-basierte Split war in echten Vaults ein Silent-No-Op).
-    await this.vault.adapter.writeBinary(stateFile, state);
+    if (await this.sidecarBytesEqual(stateFile, state)) {
+      // Der Disk-Stand IST unser Stand — Signatur trotzdem auffrischen, sonst
+      // hinge die Kollisionserkennung an einer veralteten mtime.
+      await this.rememberOwnSidecar(stateFile, state);
+      return;
+    }
+    // Task 14: Das Schreibfenster ausnehmen, damit ein parallel laufender Poll den
+    // halb geschriebenen eigenen Stand nicht als fremden Schreiber liest.
+    this.writingSidecars.add(stateFile);
+    try {
+      await ensureSidecarFolder(this.vault.adapter, dirname(stateFile));
+      // adapter.writeBinary legt an ODER überschreibt in einem Aufruf — kein
+      // create/modify-Split und kein Race-Fallback mehr nötig (der frühere,
+      // index-basierte Split war in echten Vaults ein Silent-No-Op).
+      await this.vault.adapter.writeBinary(stateFile, state);
+      await this.rememberOwnSidecar(stateFile, state);
+    } finally {
+      this.writingSidecars.delete(stateFile);
+    }
+  }
+
+  // Merkt sich, was wir zuletzt unter dem eigenen Pfad abgelegt haben (Task 14).
+  private async rememberOwnSidecar(path: string, bytes: Uint8Array): Promise<void> {
+    const stat = await statSidecar(this.vault.adapter, path).catch(() => null);
+    this.ownSignatures.set(path, {
+      mtime: stat?.mtime ?? 0,
+      size: stat?.size ?? bytes.length,
+      hash: hashBytes(bytes),
+    });
   }
 
   // True, wenn die Sidecar existiert und byteweise identisch mit bytes ist.

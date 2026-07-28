@@ -1,10 +1,14 @@
 import { App, PluginSettingTab, Setting } from 'obsidian';
 import type CrdtSyncPlugin from './main';
 
+// Alles hier landet via saveData in <vault>/.obsidian/plugins/qollab/data.json —
+// also in einem Ordner, den der dokumentierte Standard-Aufbau MITSYNCHRONISIERT.
+// Deshalb steht die clientId bewusst NICHT mehr hier, sondern im gerätelokalen
+// localStorage (main.ts, Task 14): eine mitgesyncte Geräte-ID lässt beide Geräte
+// denselben Sidecar-Pfad beschreiben und legt den Remote-Merge still lahm.
 export interface CrdtSyncSettings {
   enabled: boolean;
   statusNotice: boolean;
-  clientId: string;
   // GUIDs gelöschter Note-Inkarnationen → deletedAt (epoch ms). Gerätelokal;
   // verhindert Zombie-Resurrection stale fremder .yjs (siehe tombstones.ts).
   tombstones: Record<string, number>;
@@ -25,7 +29,6 @@ export function generateClientId(): string {
 export const DEFAULT_SETTINGS: CrdtSyncSettings = {
   enabled: true,
   statusNotice: true,
-  clientId: '',
   tombstones: {},
 };
 
@@ -65,6 +68,9 @@ export class CrdtSyncSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Client-ID')
-      .setDesc(`Eindeutige ID dieses Geräts: ${this.plugin.settings.clientId}`);
+      .setDesc(
+        `Eindeutige ID dieses Geräts: ${this.plugin.clientId} ` +
+          '(nur auf diesem Gerät gespeichert, wird nicht mitsynchronisiert)'
+      );
   }
 }

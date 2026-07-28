@@ -22,8 +22,22 @@ function toArrayBuffer(data: ArrayBuffer | Uint8Array): ArrayBuffer {
     : data) as ArrayBuffer;
 }
 
+// Task 14: Schlüssel der gerätelokalen Geräte-ID. App.saveLocalStorage legt sie im
+// Electron-Profil ab — vault-spezifisch UND gerätelokal, also außerhalb jedes
+// Datei-Syncs. In data.json (= im Vault, wird mitsynchronisiert) hat sie nichts zu
+// suchen: zwei Geräte mit derselben ID schreiben denselben Sidecar-Pfad, und der
+// Self-Ignore des Watchers legt den automatischen Remote-Merge still lahm.
+const CLIENT_ID_KEY = 'qollab-client-id';
+// Das Sidecar-Dateiformat (`<note>.<clientId>.yjs`) verlangt exakt 8 Hex-Zeichen.
+// Alles andere aus dem Speicher wird verworfen statt in Dateinamen weitergereicht.
+const CLIENT_ID_RE = /^[0-9a-f]{8}$/;
+
 export default class CrdtSyncPlugin extends Plugin {
   settings: CrdtSyncSettings;
+  // Geräte-ID dieser Installation (gerätelokal, siehe CLIENT_ID_KEY).
+  clientId: string;
+  // Alt-ID aus data.json, nur für die einmalige Migration nach localStorage.
+  private legacyClientId = '';
   private crdtManager: CrdtManager;
   private syncHandler: SyncHandler;
   private sidecarWatcher: SidecarWatcher;
@@ -56,11 +70,7 @@ export default class CrdtSyncPlugin extends Plugin {
 
   async onload() {
     await this.loadSettings();
-
-    if (!this.settings.clientId) {
-      this.settings.clientId = generateClientId();
-      await this.saveSettings();
-    }
+    this.clientId = await this.provisionClientId();
 
     this.crdtManager = new CrdtManager();
     const vault = this.app.vault;
@@ -108,7 +118,7 @@ export default class CrdtSyncPlugin extends Plugin {
     this.syncHandler = new SyncHandler(
       vaultLike as any,
       this.crdtManager,
-      this.settings.clientId,
+      this.clientId,
       this.tombstoneStore,
       // R2: korrupte Sidecar-Datei → einmalige Notice pro Session.
       (path: string) => {
@@ -124,11 +134,17 @@ export default class CrdtSyncPlugin extends Plugin {
 
     // Eigener Wächter statt Vault-Events: Obsidian feuert für .qollab nie. Poll-Scan
     // per Intervall + Sofort-Trigger beim Öffnen einer Note.
-    this.sidecarWatcher = new SidecarWatcher(adapter, this.settings.clientId, async (notePath) => {
-      // Rückgabe durchreichen: false = Merge abgebrochen, der Watcher darf den
-      // Trigger dann nicht als verbraucht verbuchen (F-2a).
-      return this.pathQueue.run(notePath, () => this.onRemoteYjsUpdate(notePath));
-    });
+    this.sidecarWatcher = new SidecarWatcher(
+      adapter,
+      this.clientId,
+      async (notePath) => {
+        // Rückgabe durchreichen: false = Merge abgebrochen, der Watcher darf den
+        // Trigger dann nicht als verbraucht verbuchen (F-2a).
+        return this.pathQueue.run(notePath, () => this.onRemoteYjsUpdate(notePath));
+      },
+      // Task 14: Änderungen an der EIGENEN Sidecar prüfen (Kollisionserkennung).
+      (notePath, path, cur) => this.onOwnSidecarChanged(notePath, path, cur)
+    );
     this.sidecarWatcher.start({
       registerInterval: (fn, ms) => {
         const id = window.setInterval(fn, ms);
@@ -442,8 +458,68 @@ export default class CrdtSyncPlugin extends Plugin {
     this.crdtManager.disposeAll();
   }
 
+  // Task 14, Fix B: Geräte-ID beschaffen.
+  //   1. localStorage hat eine gültige ID → nutzen.
+  //   2. sonst data.json-Alt-ID → einmalig übernehmen (und aus data.json entfernen).
+  //   3. sonst frisch generieren.
+  // Der Migrationsfall 2 kann auf BEIDEN Geräten dieselbe ID ergeben (die geklonte
+  // data.json war ja überall gleich) — deshalb ist die Kollisionserkennung in
+  // onOwnSidecarChanged Pflichtteil dieses Fixes und nicht Kür.
+  private async provisionClientId(): Promise<string> {
+    const stored = this.app.loadLocalStorage(CLIENT_ID_KEY);
+    let id: string | null =
+      typeof stored === 'string' && CLIENT_ID_RE.test(stored) ? stored : null;
+    if (id === null) {
+      id = CLIENT_ID_RE.test(this.legacyClientId) ? this.legacyClientId : generateClientId();
+      this.app.saveLocalStorage(CLIENT_ID_KEY, id);
+    }
+    if (this.legacyClientId) {
+      // loadSettings hat den Alt-Schlüssel bereits aus dem Settings-Objekt
+      // getrennt; dieser Save schreibt data.json endgültig ohne clientId.
+      this.legacyClientId = '';
+      await this.saveSettings();
+    }
+    return id;
+  }
+
+  // Task 14, Fix C/D: neue Geräte-ID vergeben. Gutartig — die alte Sidecar-Datei
+  // bleibt liegen und ist ab jetzt eine Fremd-Sidecar derselben GUID, die ganz
+  // normal gemergt wird.
+  private reprovisionClientId(): void {
+    this.clientId = generateClientId();
+    this.app.saveLocalStorage(CLIENT_ID_KEY, this.clientId);
+    this.syncHandler.setClientId(this.clientId);
+    this.sidecarWatcher.setClientId(this.clientId);
+  }
+
+  // Task 14, Fix C: Der Watcher hat eine Änderung an unserem eigenen Sidecar-Pfad
+  // gesehen. War sie nicht von uns, trägt ein zweites Gerät dieselbe clientId
+  // (Alt-Installation mit mitgesyncter data.json) — sonst bliebe der Peer für immer
+  // hinter dem Self-Ignore unsichtbar. Dann: neu provisionieren, EINMAL melden und
+  // die Note regulär mergen (der alte Pfad ist jetzt fremd). Die alte Datei wird
+  // NICHT gelöscht — sie gehört ab sofort dem anderen Gerät.
+  private async onOwnSidecarChanged(
+    notePath: string,
+    path: string,
+    cur: { mtime: number; size: number }
+  ): Promise<boolean> {
+    if (this.unloaded) return false;
+    if (!(await this.syncHandler.isForeignSidecarWrite(path, cur))) return false;
+
+    this.reprovisionClientId();
+    new Notice('Qollab: Geräte-ID-Kollision erkannt, neu provisioniert.');
+    await this.pathQueue.run(notePath, () => this.onRemoteYjsUpdate(notePath));
+    return true;
+  }
+
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    // Task 14: Eine Alt-Installation trägt die clientId noch in data.json. Sie wird
+    // hier vom Settings-Objekt getrennt (und damit beim nächsten saveData aus
+    // data.json entfernt); provisionClientId entscheidet über die Migration.
+    const raw = ((await this.loadData()) ?? {}) as Record<string, unknown>;
+    this.legacyClientId = typeof raw.clientId === 'string' ? raw.clientId : '';
+    delete raw.clientId;
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, raw);
     // Tombstones > 90 Tage beim Laden entfernen (hält die Data-Datei klein).
     this.settings.tombstones = pruneTombstones(this.settings.tombstones ?? {});
   }

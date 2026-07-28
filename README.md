@@ -23,6 +23,10 @@ Jetzt müsst ihr manuell schauen was die andere geschrieben hat und die Änderun
 
 Funktioniert mit OneDrive, Dropbox, Google Drive, iCloud, Syncthing — und jedem anderen Dienst der Dateien synchronisiert.
 
+**Voraussetzung: Obsidian 1.8.7 oder neuer.** Qollab legt seine Geräte-ID im vault-spezifischen Profilspeicher ab, den Obsidian erst ab dieser Version bereitstellt.
+
+**Die Geräte-ID liegt nicht im Vault.** Jede Installation bekommt beim ersten Start eine eigene, zufällige Geräte-ID (sichtbar in den Plugin-Einstellungen). Sie steht im Obsidian-Profil des jeweiligen Geräts, nicht in der mitsynchronisierten `data.json` — ihr könnt den Vault-Ordner also komplett synchronisieren, `.obsidian/` eingeschlossen. Bis v0.4.0 stand sie in `.obsidian/plugins/qollab/data.json`: wurde die mitsynchronisiert, trugen beide Geräte dieselbe ID, schrieben dieselbe Hilfsdatei und der automatische Merge fand **nie** statt. Beim ersten Start nach dem Update wandert eine vorhandene ID automatisch ins Geräteprofil und wird aus `data.json` entfernt.
+
 ## Mit GitHub teilen
 
 Wenn ihr euren Vault über ein privates GitHub-Repository teilt (z.B. mit dem [Obsidian-Git-Plugin](https://github.com/denolehov/obsidian-git)):
@@ -79,6 +83,10 @@ Zusätzlich existiert ein sehr kleines Zeitfenster (Millisekunden um den Write-B
 **Veralteter Stand beim Nachhol-Versuch nach einem Lesefehler.** Ist eine Hilfsdatei kurzzeitig nicht lesbar (Sync-Tool hält gerade ein Handle), bricht Qollab den laufenden Schritt ab und merkt sich den Text, der dabei nicht erfasst wurde; beim nächsten Durchlauf wird genau dieser Text nachgespielt. Wird die Note im Sub-Sekunden-Fenster zwischen Abbruch und Nachhol-Versuch extern editiert, ohne dass dazwischen ein modify-Event verarbeitet wurde, spielt der Nachhol-Versuch den älteren Stand ein. In allen anderen Reihenfolgen fängt der reguläre modify-/Merge-Fenster-Pfad den Edit ab.
 
 **Doppel-Kollision im selben Verarbeitungsschritt.** Enthält eine `.md`-Änderung in *einem* Schritt sowohl einen noch ungemergten Fremd-Edit (aus der Hilfsdatei) als auch einen lokalen Edit, kann der Fremd-Edit verdoppelt werden. Erreichbar über Read-Coalescing im Poll-Fenster (mehrere Änderungen fallen in denselben Lesevorgang) oder über den Restart-Sweep beim App-Start. Das Fenster ist eng und es gibt **keine Verlustrichtung** — nur eine mögliche Verdopplung, kein Datenverlust. Dieselbe Wurzel hat ein Ankunftsreihenfolge-Fenster: Bringt der Datei-Sync die `.md` *vor* der zugehörigen Fremd-Hilfsdatei auf die Disk und verarbeitet der modify-Handler die `.md`, bevor die Hilfsdatei geschrieben ist, findet der Vor-Merge-Schritt nichts einzumergen — der Diff erfindet die Fremd-Edits weiterhin als lokale Ops, und der spätere Hilfsdatei-Merge verdoppelt sie. Beide Restfälle sind ohne Op-Provenienz (Herkunftsverfolgung einzelner Einfügungen) nicht auf Datei-Ebene von einem echten lokalen Edit zu unterscheiden; ein sauberer Fix, der Fremd- von Lokal-Edits im selben Text trennt, ist Kandidat für v0.5.
+
+**Geräte-ID-Kollision — erkannt und automatisch geheilt.** Haben zwei Geräte dieselbe Geräte-ID (nur noch möglich, wenn beide dieselbe alte `data.json` geerbt haben und sie beim Update gleichzeitig migrieren), schreiben sie dieselbe Hilfsdatei. Qollab merkt beim nächsten Scan, dass die eigene Hilfsdatei von fremder Hand verändert wurde, vergibt dem Gerät eine neue ID und meldet das einmalig. Die alte Datei bleibt liegen — sie gehört ab dann dem anderen Gerät und wird als normale Fremd-Datei derselben Note-Inkarnation gemergt. Grenzen davon: Erkannt wird erst beim nächsten Scan (bis zu 30 s), und die Historie, die sich beide Geräte bis dahin gegenseitig überschrieben haben, lässt sich nicht rekonstruieren — dort gewinnt der zuletzt geschriebene Stand.
+
+**Verlorenes Obsidian-Profil = neue Geräte-ID.** Wird das Profil zurückgesetzt (Neuinstallation, neuer Rechner, aufgeräumter `localStorage`), bekommt das Gerät eine frische ID. Der Inhalt ist nicht in Gefahr: die eigene Alt-Datei zählt danach als Fremd-Datei derselben Note-Inkarnation und wird ganz normal eingemergt. Sie bleibt allerdings als verwaiste Hilfsdatei liegen.
 
 Echtzeit-Cursor-Sync (wie in Google Docs) ist angedacht, aber mit der server-losen File-Sync-Architektur nicht ohne Weiteres umsetzbar — kein fester Termin.
 

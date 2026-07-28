@@ -262,6 +262,43 @@ describe('Keine False Positives: eigene Writes lösen keine Neu-Provisionierung 
     expect((Notice as any).messages.filter((m: string) => /Kollision/i.test(m))).toEqual([]);
   });
 
+  // Task 13 schreibt die EIGENE Sidecar in Pfaden neu, die nicht von einem lokalen
+  // Edit ausgehen: verliert die eigene Inkarnation den GUID-Tie-Break, vereinigt
+  // switchToGuid den Stand und saveState legt die eigene Datei mit fremder GUID neu
+  // an. Das darf die Kollisionserkennung nicht als fremden Schreiber lesen.
+  it('Task-13-Inkarnationswechsel (switchToGuid) provisioniert nicht neu', async () => {
+    const vault = makeVaultMock();
+    vault._textFiles.set(NOTE, BASE_TEXT);
+    const { plugin } = await bootDevice(vault);
+    const id = plugin.clientId;
+
+    await plugin.syncHandler.applyLocalContent(NOTE, 'Basis\nEigene Zeile\n');
+    await plugin.sidecarWatcher.poll(); // Baseline auf die eigene Datei
+    const ownGuid = readGuid(vault, ownPath(id));
+
+    // Fremd-Sidecar mit kleinerer GUID → sie gewinnt den Tie-Break.
+    const winnerGuid = '0'.repeat(31) + '1';
+    const foreign = new CrdtManager();
+    foreign.setContent(NOTE, 'Basis\nFremde Zeile\n');
+    const foreignPath = `.qollab/${NOTE}.beef0001.yjs`;
+    vault._files.set(
+      foreignPath,
+      toArrayBuffer(encodeStateFile(winnerGuid, foreign.encodeState(NOTE)))
+    );
+    vault._mtimes.set(foreignPath, 500);
+
+    await plugin.sidecarWatcher.poll(); // Merge → switchToGuid → eigener Re-Save
+    expect(readGuid(vault, ownPath(id))).not.toBe(ownGuid);
+    expect(readGuid(vault, ownPath(id))).toBe(winnerGuid); // Wechsel fand statt
+
+    // Die eigene Datei hat sich seit der Baseline geändert — von UNS.
+    await plugin.sidecarWatcher.poll();
+    await plugin.sidecarWatcher.poll();
+
+    expect(plugin.clientId).toBe(id);
+    expect((Notice as any).messages.filter((m: string) => /Kollision/i.test(m))).toEqual([]);
+  });
+
   it('Task-12-Retry-Pfad (abgebrochener Lauf + Nachholen) provisioniert nicht neu', async () => {
     const vault = makeVaultMock() as any;
     vault._textFiles.set(NOTE, BASE_TEXT);

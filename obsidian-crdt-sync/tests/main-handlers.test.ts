@@ -1,6 +1,6 @@
 import { TFile } from 'obsidian';
 import CrdtSyncPlugin from '../src/main';
-import { makeVaultMock, VaultMock } from './helpers/vault-mock';
+import { makeVaultMock, makeLocalStorage, VaultMock } from './helpers/vault-mock';
 
 // Fix B (Handler-Ebene): rename/delete von note.md dürfen die Sidecars der
 // eigenständigen Note note.md.archive.md NICHT anfassen. Die Handler nutzen
@@ -52,7 +52,14 @@ function makeApp(vault: VaultMock, onLayoutReady?: (cb: () => any) => void) {
     offref: () => {},
     onLayoutReady: onLayoutReady ?? (() => {}), // Standard: Sweep NICHT starten
   };
-  const app = { vault: vaultWithEvents, workspace };
+  // Task 14: onload provisioniert die clientId über den gerätelokalen Speicher.
+  const storage = makeLocalStorage();
+  const app = {
+    vault: vaultWithEvents,
+    workspace,
+    loadLocalStorage: storage.loadLocalStorage,
+    saveLocalStorage: storage.saveLocalStorage,
+  };
   return { app, handlers, renamed, deleted };
 }
 

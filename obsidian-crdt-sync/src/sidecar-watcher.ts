@@ -7,6 +7,17 @@ export const SCAN_INTERVAL_MS = 30_000;
 // andere Rückgabewert (inkl. undefined) zählt als erledigt.
 export type OnYjsChanged = (notePath: string) => Promise<boolean | void>;
 
+// Task 14: Meldung über eine Änderung an der EIGENEN Sidecar-Datei. Normalerweise
+// war das unser eigener saveState; war es ein anderes Gerät, teilen sich zwei
+// Geräte dieselbe clientId und der Self-Ignore unten verschluckt den Peer für
+// immer. Die Entscheidung (und die Neu-Provisionierung) liegt beim Aufrufer — der
+// Watcher kennt weder Sidecar-Inhalte noch die Identitäts-Ablage.
+export type OnOwnSidecarChanged = (
+  notePath: string,
+  path: string,
+  cur: { mtime: number; size: number }
+) => Promise<boolean | void>;
+
 // Strikte per-Client-Form: .qollab/<notePath>.<8-hex-clientId>.yjs
 // Der notePath muss auf .md enden — Sync-Konfliktkopien (z.B. note.md.a1b2c3d4-DESKTOP.yjs)
 // werden so herausgefiltert, da ihr Suffix nach dem letzten .md nicht [0-9a-f]{8} ist.
@@ -39,8 +50,17 @@ export class SidecarWatcher {
   constructor(
     private adapter: SidecarAdapter,
     private clientId: string,
-    private onChanged: OnYjsChanged
+    private onChanged: OnYjsChanged,
+    // Optional: ohne Hook verhält sich der Watcher wie bisher (eigene Dateien
+    // werden nur getrackt).
+    private onOwnChanged?: OnOwnSidecarChanged
   ) {}
+
+  // Task 14: Nach einer erkannten ID-Kollision provisioniert main.ts neu; ab dann
+  // sind die Dateien der alten ID für den Watcher fremd (und lösen Merges aus).
+  setClientId(clientId: string): void {
+    this.clientId = clientId;
+  }
 
   start(host: SidecarWatcherHost): void {
     this.disposers.push(
@@ -76,6 +96,13 @@ export class SidecarWatcher {
     return null;
   }
 
+  // Gegenstück zu extractForeign: notePath, wenn der Pfad die Sidecar DIESES
+  // Geräts ist. Legacy-Dateien zählen nicht — sie tragen keine clientId.
+  private extractOwn(path: string): string | null {
+    const m = QOLLAB_RE.exec(path);
+    return m && m[2] === this.clientId ? m[1] : null;
+  }
+
   // Rekursiver Poll-Scan des gesamten .qollab-Baums. Neue oder (per mtime)
   // geänderte fremde Sidecar → onChanged. Gelöschte Dateien: nur aus der Map
   // entfernen (kein Trigger). Dient zugleich als Initial-Scan: bei leerer Map
@@ -91,8 +118,16 @@ export class SidecarWatcher {
       const cur = { mtime: stat?.mtime ?? 0, size: stat?.size ?? 0 };
       const prev = this.lastSeen.get(path);
       const notePath = this.extractForeign(path);
-      if (notePath === null || !this.hasChanged(prev, cur)) {
-        this.lastSeen.set(path, cur); // eigene/ungültige/unverändert — nur tracken
+      if (notePath === null) {
+        // Eigene oder uninteressante Datei. Task 14: eine VERÄNDERTE eigene Datei
+        // ist der einzige Hinweis darauf, dass ein zweites Gerät dieselbe clientId
+        // trägt — hier abzweigen, statt sie wie bisher stumm mitzutracken.
+        await this.checkOwnSidecar(path, prev, cur);
+        this.lastSeen.set(path, cur);
+        continue;
+      }
+      if (!this.hasChanged(prev, cur)) {
+        this.lastSeen.set(path, cur); // unverändert — nur tracken
         continue;
       }
       // Fix-Runde (Review F-2a): lastSeen erst NACH erfolgreichem onChanged
@@ -120,6 +155,25 @@ export class SidecarWatcher {
       // geschluckt, damit er den laufenden Scan nicht abbricht.
       console.error('Qollab: Merge fehlgeschlagen für', notePath, err);
       return false;
+    }
+  }
+
+  // Task 14: Änderung an der eigenen Sidecar melden. Ein Wurf darf den Scan nicht
+  // abbrechen (gleiche Regel wie runChanged) — die übrigen Sidecars sollen
+  // weiterlaufen.
+  private async checkOwnSidecar(
+    path: string,
+    prev: { mtime: number; size: number } | undefined,
+    cur: { mtime: number; size: number }
+  ): Promise<void> {
+    if (!this.onOwnChanged) return;
+    const notePath = this.extractOwn(path);
+    if (notePath === null) return;
+    if (!this.hasChanged(prev, cur)) return;
+    try {
+      await this.onOwnChanged(notePath, path, cur);
+    } catch (err) {
+      console.error('Qollab: Kollisionsprüfung fehlgeschlagen für', path, err);
     }
   }
 

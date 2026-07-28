@@ -2,7 +2,12 @@ import { TFile } from 'obsidian';
 import CrdtSyncPlugin from '../src/main';
 import { CrdtManager } from '../src/crdt-manager';
 import { decodeStateFile, encodeStateFile } from '../src/state-file';
-import { makeVaultMock, VaultMock, toArrayBuffer as toAB } from './helpers/vault-mock';
+import {
+  makeVaultMock,
+  makeLocalStorage,
+  VaultMock,
+  toArrayBuffer as toAB,
+} from './helpers/vault-mock';
 
 // Task 13/B + /C auf Plugin-Ebene: der Startup-Sweep darf für eine unveränderte
 // Note ohne eigene Sidecar KEINE frische GUID prägen (sonst prägen beim
@@ -41,7 +46,19 @@ async function bootPlugin(vault: VaultMock, clientId: string) {
     offref: () => {},
     onLayoutReady: () => {}, // Sweep hier bewusst nicht automatisch starten
   };
-  const plugin = new (CrdtSyncPlugin as any)({ vault: vaultWithEvents, workspace }, {});
+  // Task 14: eigener (gerätelokaler) Speicher pro Boot. Die clientId kommt hier
+  // weiterhin aus der data.json — onload migriert sie einmalig in diesen Speicher,
+  // die Sidecar-Pfade der Tests bleiben damit unverändert.
+  const storage = makeLocalStorage();
+  const plugin = new (CrdtSyncPlugin as any)(
+    {
+      vault: vaultWithEvents,
+      workspace,
+      loadLocalStorage: storage.loadLocalStorage,
+      saveLocalStorage: storage.saveLocalStorage,
+    },
+    {}
+  );
   plugin._data = { enabled: true, statusNotice: false, clientId, tombstones: {} };
   await plugin.onload();
   return { plugin: plugin as any, handlers };
