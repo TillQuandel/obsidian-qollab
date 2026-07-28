@@ -417,12 +417,47 @@ export class SyncHandler {
     );
   }
 
+  // Pfad der clientId-losen Legacy-Datei (v0.1-Ära).
+  private legacyFilePath(notePath: string): string {
+    return `${QOLLAB_DIR}/${notePath}.yjs`;
+  }
+
   // R1: Löscht die Legacy-Datei (kein QLB1-Header) einer Note, falls sie noch
   // existiert. Wird nach saveState aufgerufen: zu dem Zeitpunkt existiert
   // GUID-tragender State, sodass die Legacy-Datei nicht mehr gebraucht wird.
   private async cleanupLegacyFile(notePath: string): Promise<void> {
-    const legacyPath = `${QOLLAB_DIR}/${notePath}.yjs`;
-    await this.removeSidecar(legacyPath);
+    await this.removeSidecar(this.legacyFilePath(notePath));
+  }
+
+  // Review I-3: Entscheidungsgrundlage für den Startup-Sweep — könnte ensureDoc
+  // für diese Note eine FREMDE Inkarnation adoptieren? Bewusst über dieselbe
+  // decodeSiblings-Kette wie ensureDoc (Tombstone-, Legacy- und Korrupt-Regeln
+  // inklusive), damit Sweep und Adoption nicht auseinanderdriften.
+  //
+  // Reine Datei-Existenz genügt nicht: eine korrupte oder halb kopierte Sidecar
+  // (Sync-Dienst schreibt gerade — der von Task 12 belegte Realfall), eine
+  // getombstete oder eine reine Legacy-Datei liefert KEINE GUID. pickWinnerGuid
+  // gäbe dann `undefined` zurück und ensureDoc prägte genau die frische
+  // Inkarnation, die Fix B verhindern soll (Split-Brain durch die Hintertür).
+  // Deshalb: adoptierbar = mindestens ein Sibling mit dekodierbarer GUID.
+  //
+  // Legacy-Dateien fallen bewusst NICHT darunter: ihr Erst-Import bleibt Sache
+  // des Watchers (er triggert auch auf die Legacy-Form), der ihn mit vorhandener
+  // .md über loadAndMerge fährt — der Sweep muss dafür nicht blind prägen.
+  // Nebeneffekt wie in ensureDoc: getombstete und obsolete Legacy-Dateien werden
+  // dabei aufgeräumt.
+  async hasAdoptableGuid(notePath: string): Promise<boolean> {
+    const ownPath = this.stateFilePath(notePath);
+    const foreign = (await this.vault.listYjsFiles(notePath)).filter((p) => p !== ownPath);
+    if (foreign.length === 0) return false;
+    try {
+      return (await this.decodeSiblings(foreign)).some((s) => s.guid !== null);
+    } catch (err) {
+      // Unlesbare Sidecar (transienter IO-Fehler): Stand unbekannt → im Zweifel
+      // NICHT prägen, der nächste Sweep/Trigger entscheidet erneut.
+      if (err instanceof SidecarReadError) return false;
+      throw err;
+    }
   }
 
   // Zieht ausstehende KOMPATIBLE Fremd-Sidecars (gleiche/legacy GUID) in den Doc
@@ -484,20 +519,21 @@ export class SyncHandler {
     // (modify) UND Restart-/Sweep-Pfad (Sync bei geschlossener App, Eigen-State-
     // Bootstrap). Im Adopt-Zweig hat ensureDoc bereits gemergt+gediffed; der Merge
     // ist dann idempotent und der lokale Diff unten entfällt (siehe `adopted`).
-    const base = this.crdtManager.getContent(notePath);
+    // Basis nur für den own-Branch: im Adopt-Zweig gibt es keinen lokalen Diff
+    // (siehe unten), dort bliebe sie ungenutzt.
+    const base = adopted ? undefined : this.crdtManager.getContent(notePath);
     await this.mergePendingForeign(notePath);
     const mergedText = this.crdtManager.getContent(notePath);
+    if (content === mergedText) return mergedText;
 
     // Task 13/A: Im Adopt-Zweig hat ensureDoc den .md-Text bereits mit dem
     // adoptierten Fremd-Stand VEREINIGT. Ein zusätzlicher 3-Wege-Merge würde ihn
-    // sofort wieder zerstören: `base` enthält den Fremd-Inhalt, `content` (die
-    // .md) nicht — der Patch base→content wäre eine Löschung genau dieses
+    // sofort wieder zerstören: die Basis enthielte den Fremd-Inhalt, `content`
+    // (die .md) nicht — der Patch Basis→content wäre eine Löschung genau dieses
     // Inhalts. Hier bleibt nur, einen inzwischen abweichenden Aufrufer-Text
     // (Datei änderte sich zwischen ensureDoc-Read und diesem Aufruf) mit
     // einzubeziehen — ebenfalls ohne gemeinsamen Vorfahren, also vereinigend.
-    if (adopted) {
-      return content === mergedText ? mergedText : unionMerge(mergedText, content);
-    }
+    if (base === undefined) return unionMerge(mergedText, content);
 
     // 3-Wege-Merge (wie onRemoteYjsUpdate): die lokale Änderung (Delta base→content)
     // wird auf den fremd-gemergten Stand angewandt. So überlebt ein Fremd-Edit, den
@@ -505,8 +541,9 @@ export class SyncHandler {
     // Datenverlust) UND ein echter lokaler Edit. Enthält die .md den Fremd-Stand
     // bereits (content === mergedText, häufigster Restart-/Sync-Overwrite-Fall), KEIN
     // 3-Wege-Patch: threeWayMerge würde die schon vorhandene Fremd-Einfügung erneut
-    // einfügen (patch_apply dedupliziert nicht) — direkt der gemergte Stand.
-    return content === mergedText ? mergedText : threeWayMerge(base, content, mergedText);
+    // einfügen (patch_apply dedupliziert nicht) — dieser Fall ist oben schon
+    // abgefangen (content === mergedText → direkt der gemergte Stand).
+    return threeWayMerge(base, content, mergedText);
   }
 
   async loadAndMerge(notePath: string): Promise<string | null> {
@@ -527,17 +564,25 @@ export class SyncHandler {
       // Initial-Scan). Die fremde Datei bleibt unangetastet liegen — sobald die
       // .md ankommt, adoptiert der reguläre Pfad sie.
       //
-      // Existiert bereits eigener State (Doc oder Sidecar), bleibt es beim
-      // bisherigen Verhalten: kein Tie-Break ohne .md, eigene Historie bleibt
-      // stehen (siehe switchToGuid).
+      // Existiert bereits eigener State, bleibt es beim bisherigen Verhalten:
+      // kein Tie-Break ohne .md, eigene Historie bleibt stehen (siehe
+      // switchToGuid). „Eigener State" umfasst neben der per-Client-Sidecar auch
+      // die clientId-lose Legacy-Datei (Review M-4) — sonst würde eine Note, deren
+      // einziger State v0.1-Legacy ist, bei fehlender .md still übersprungen und
+      // die Legacy-Leiche nie aufgeräumt.
       if (
         !this.vault.getAbstractFileByPath(notePath) &&
         !this.crdtManager.hasDoc(notePath) &&
-        !(await sidecarExists(this.vault.adapter, this.stateFilePath(notePath)))
+        !(await sidecarExists(this.vault.adapter, this.stateFilePath(notePath))) &&
+        !(await sidecarExists(this.vault.adapter, this.legacyFilePath(notePath)))
       ) {
         return null;
       }
 
+      // Rückgabewert („hat adoptiert und den .md-Text vereinigt") hier bewusst
+      // ignoriert: loadAndMerge spielt den .md-Text ohnehin nicht als lokalen Diff
+      // ein — im Adopt-Zweig hat ensureDoc ihn bereits vereinigt, im own-Branch
+      // bleibt er absichtlich draußen (er würde Remote-Edits zurückrollen).
       await this.ensureDoc(notePath);
 
       const siblings = await this.decodeSiblings(yjsFiles);

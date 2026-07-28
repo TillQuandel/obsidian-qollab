@@ -284,7 +284,13 @@ export default class CrdtSyncPlugin extends Plugin {
       // Offline-Edits bleiben erfasst: sie betreffen Notes, die dieses Gerät
       // schon kennt (eigene Sidecar vorhanden) — dort greift unverändert der
       // mtime-Vergleich oben.
-      if (!stat && (await listYjsInDir(this.sidecarAdapter, file.path)).length === 0) {
+      //
+      // Review I-3: Die Frage „gibt es etwas zu adoptieren?" beantwortet der
+      // SyncHandler auf derselben Basis wie ensureDoc (dekodierbare, nicht
+      // getombstete GUID) — reine Datei-Existenz genügt nicht: eine korrupte oder
+      // halb kopierte Fremd-Sidecar trägt keine GUID, ensureDoc prägte dann doch
+      // eine frische Inkarnation.
+      if (!stat && !(await this.syncHandler.hasAdoptableGuid(file.path))) {
         continue;
       }
 
