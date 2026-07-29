@@ -133,6 +133,10 @@ export class SyncHandler {
   // geschlossen hat, sobald der Datei-Sync die .md unter dem alten Pfad
   // zurückspielt.
   //
+  // „DIESELBE Inkarnation" ist wörtlich gemeint: `switchToGuid` tauscht die
+  // Inkarnation unter einem Pfad aus und verwirft deshalb den Eintrag (Review
+  // F-2) — die Historie gehört zur aufgegebenen, nicht zur neuen GUID.
+  //
   // Grenze: rein in-memory und damit sitzungslokal. Nach einem App-Neustart ist
   // die Historie weg, ein Rename VOR dem Neustart und ein Delete DANACH tombstont
   // wieder nur den neuen Pfad. Vertretbar, weil Tombstones ohnehin gerätelokal
@@ -638,6 +642,12 @@ export class SyncHandler {
     const localText = unionMerge(this.crdtManager.getContent(notePath), mdText);
     this.crdtManager.disposeDoc(notePath);
     this.guids.set(notePath, winner);
+    // Review F-2: Die Pfad-Historie beschreibt die Renames der JETZT aufgegebenen
+    // Inkarnation — die Gewinnerin hat unter den alten Pfaden nie gelebt. Bliebe
+    // sie stehen, tombstonte ein späteres Delete `(alterPfad, winner)` und räumte
+    // dort eine fremde Sidecar der Gewinner-GUID fälschlich ab. Genau das
+    // Falsch-Positiv, das Fix A beseitigt hat.
+    this.priorPaths.delete(notePath);
     for (const s of siblings) {
       if (s.guid === winner) {
         // R2: Korrupte Gewinner-Sidecars überspringen statt den Switch abzubrechen.
