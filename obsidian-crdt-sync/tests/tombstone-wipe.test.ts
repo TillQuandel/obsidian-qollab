@@ -18,7 +18,7 @@ import CrdtSyncPlugin from '../src/main';
 import { SyncHandler } from '../src/sync-handler';
 import { CrdtManager } from '../src/crdt-manager';
 import { encodeStateFile } from '../src/state-file';
-import { makeVaultMock, toArrayBuffer as toAB } from './helpers/vault-mock';
+import { makeVaultMock, makeLocalStorage, toArrayBuffer as toAB } from './helpers/vault-mock';
 
 const NOTE = 'note.md';
 // Codex-LOW: gültige 8-lowercase-hex clientIds (filterYjsFiles-konform)
@@ -102,5 +102,86 @@ describe('F1-Guard 2: echte Leerung bleibt möglich', () => {
 
     // Guard 2 darf echte Leerung (Doc hat Delete-Ops → hasOps=true) nicht blocken.
     expect(vault._textFiles.get(NOTE)).toBe('');
+  });
+});
+
+// Test 3 (Task 15 — Nicht-Regression): Zombie-Schutz ueberlebt Fix A/B.
+//
+// Szenario: note-t3.md wird geloescht (Tombstone auf G_OLD_WIPE via delete-Handler),
+// dann gleichnamig neu angelegt. Geraet-B-Sidecar (GUID G_OLD_WIPE, GLEICHER Pfad)
+// trifft ein. Er muss weiterhin ignoriert und geloescht werden.
+//
+// Dieser Test muss VOR UND NACH Fix GRUEN sein (Nicht-Regression).
+// Falls er nach Fix rot wird, ist das ein Rueckschritt im Zombie-Schutz.
+//
+// Testet: Nach Fix A schreibt delete-Handler key = 'note-t3.md G_OLD_WIPE'.
+// decodeSiblings prueft has(G_OLD_WIPE, 'note-t3.md') -> Treffer -> stale Sidecar geloescht.
+
+const G_OLD_WIPE = 'cc'.repeat(16);
+const B_ID_WIPE = 'babe0001';
+const NOTE_T3 = 'note-t3.md';
+
+function makeSidecarT3(guid: string, text: string): ArrayBuffer {
+  const mgr = new CrdtManager();
+  mgr.setContent(NOTE_T3, text);
+  return toAB(encodeStateFile(guid, mgr.encodeState(NOTE_T3)));
+}
+
+async function bootT3(vault: ReturnType<typeof makeVaultMock>) {
+  const handlers = new Map<string, (...args: any[]) => any>();
+  const storage = makeLocalStorage();
+  const app = {
+    vault: {
+      ...vault,
+      on: (event: string, cb: (...args: any[]) => any) => {
+        handlers.set(event, cb);
+        return { __event: event };
+      },
+      offref: () => {},
+    },
+    workspace: {
+      on: () => ({}),
+      offref: () => {},
+      onLayoutReady: () => {},
+    },
+    loadLocalStorage: storage.loadLocalStorage,
+    saveLocalStorage: storage.saveLocalStorage,
+  };
+  const plugin = new (CrdtSyncPlugin as any)(app, {});
+  await plugin.onload();
+  return { plugin: plugin as any, handlers };
+}
+
+describe('Test 3 — Zombie-Schutz: stale Sidecar unter GLEICHEM Pfad geblockt (Nicht-Regression)', () => {
+  it('stale Geraet-B-Sidecar (gleicher Pfad) nach delete+Neuanlage geloescht', async () => {
+    const { TFile } = require('obsidian');
+    const vault = makeVaultMock();
+    const { plugin, handlers } = await bootT3(vault);
+    const OWN_ID_T3: string = plugin.clientId;
+
+    vault._files.set(
+      `.qollab/${NOTE_T3}.${OWN_ID_T3}.yjs`,
+      makeSidecarT3(G_OLD_WIPE, 'original')
+    );
+    vault._textFiles.set(NOTE_T3, 'original');
+
+    // Delete -> Tombstone auf G_OLD_WIPE (global vor Fix, pfad-spezifisch nach Fix).
+    const fT3 = new TFile();
+    fT3.path = NOTE_T3;
+    fT3.name = NOTE_T3;
+    fT3.stat = { mtime: 0, ctime: 0, size: 0 };
+    await handlers.get('delete')!(fT3);
+
+    // note-t3.md wird gleichnamig neu angelegt.
+    vault._textFiles.set(NOTE_T3, 'neuer inhalt');
+
+    // Stale Geraet-B-Sidecar (alte GUID, gleicher Pfad) trifft ein.
+    const B_SIDECAR_T3 = `.qollab/${NOTE_T3}.${B_ID_WIPE}.yjs`;
+    vault._files.set(B_SIDECAR_T3, makeSidecarT3(G_OLD_WIPE, 'stale'));
+
+    await plugin.onRemoteYjsUpdate(NOTE_T3);
+
+    // Zombie-Schutz: stale Sidecar muss geloescht sein.
+    expect(vault._files.has(B_SIDECAR_T3)).toBe(false);
   });
 });

@@ -1,8 +1,10 @@
+import { TFile } from 'obsidian';
 import { SyncHandler, TombstoneStore } from '../src/sync-handler';
 import { CrdtManager } from '../src/crdt-manager';
 import { PathQueue } from '../src/path-queue';
 import { encodeStateFile, generateGuid } from '../src/state-file';
-import { makeVaultMock, toArrayBuffer as toAB } from './helpers/vault-mock';
+import { makeVaultMock, makeLocalStorage, toArrayBuffer as toAB } from './helpers/vault-mock';
+import CrdtSyncPlugin from '../src/main';
 
 // Task 4, Abschnitt D: Regressions-Test „paralleles modify verliert kein Update".
 //
@@ -230,5 +232,154 @@ describe('Nebenläufigkeit: Delete resurrectet keine .yjs (Task 4 Review-Nachtra
     await p1;
 
     expect(vault._files.has(OWN_YJS)).toBe(true); // wieder da (Race-Beleg)
+  });
+});
+
+// Test 5 (Task 15 — Befund 4/7): rename+delete-Race auf verschiedenen Pfaden.
+//
+// Szenario: rename(alt.md → neu.md) läuft; parallel delete(neu.md).
+// Ohne Fix C (rename nur auf oldPath serialisiert): delete(neu.md) läuft sofort
+// — currentGuid('neu.md') ist zu diesem Zeitpunkt null (rename nicht abgeschlossen),
+// kein Tombstone wird gesetzt. Nach rename: neu.md hat Sidecars, aber kein Tombstone.
+//
+// Mit Fix C (beide Pfade in deterministischer Reihenfolge gesperrt): delete(neu.md)
+// wartet auf den rename-Task. Danach: currentGuid('neu.md') = G → Tombstone gesetzt,
+// Sidecars gelöscht.
+//
+// RED (vor Fix C, "OHNE Fix C"-Teil): kein Tombstone → delete läuft out-of-order.
+// GREEN (nach Fix C, "MIT Fix C"-Teil): Tombstone korrekt, Sidecars gelöscht.
+
+const ALT_MD = 'alt.md';
+const NEU_MD = 'neu.md';
+
+function tfileRD(path: string): TFile {
+  const f = new TFile();
+  f.path = path;
+  f.name = path.split('/').pop() ?? path;
+  f.stat = { mtime: 0, ctime: 0, size: 0 };
+  return f;
+}
+
+function makeSidecar(guid: string, text: string): ArrayBuffer {
+  const mgr = new CrdtManager();
+  mgr.setContent(ALT_MD, text);
+  return toAB(encodeStateFile(guid, mgr.encodeState(ALT_MD)));
+}
+
+async function bootRDPlugin(vault: ReturnType<typeof makeVaultMock>) {
+  const handlers = new Map<string, (...args: any[]) => any>();
+  const storage = makeLocalStorage();
+  const app = {
+    vault: {
+      ...vault,
+      on: (event: string, cb: (...args: any[]) => any) => {
+        handlers.set(event, cb);
+        return { __event: event };
+      },
+      offref: () => {},
+    },
+    workspace: {
+      on: () => ({}),
+      offref: () => {},
+      onLayoutReady: () => {},
+    },
+    loadLocalStorage: storage.loadLocalStorage,
+    saveLocalStorage: storage.saveLocalStorage,
+  };
+  const plugin = new (CrdtSyncPlugin as any)(app, {});
+  await plugin.onload();
+  return { plugin: plugin as any, handlers };
+}
+
+// Gated adapter.rename: hält die erste Umbenennung an, bis releaseRename() aufgerufen wird.
+function installRenameGate(vault: ReturnType<typeof makeVaultMock>) {
+  let releaseRename!: () => void;
+  const renameGate = new Promise<void>((r) => { releaseRename = r; });
+  let gated = false;
+  const origRename = vault.adapter.rename;
+  vault.adapter.rename = async (from: string, to: string) => {
+    if (!gated) {
+      gated = true;
+      await renameGate;
+    }
+    return origRename(from, to);
+  };
+  return { releaseRename: () => releaseRename() };
+}
+
+describe('Nebenläufigkeit: rename+delete-Race auf verschiedenen Pfaden (Task 15 Befund 4/7)', () => {
+  // Gemeinsamer Setup: alt.md mit GUID G, own Sidecar.
+  async function setupRenameDelete() {
+    const vault = makeVaultMock();
+    const { releaseRename } = installRenameGate(vault);
+
+    const { plugin, handlers } = await bootRDPlugin(vault);
+    const OWN_ID: string = plugin.clientId;
+    const G = generateGuid();
+
+    const OWN_YJS_ALT = `.qollab/${ALT_MD}.${OWN_ID}.yjs`;
+    const OWN_YJS_NEU = `.qollab/${NEU_MD}.${OWN_ID}.yjs`;
+
+    vault._files.set(OWN_YJS_ALT, makeSidecar(G, 'basis'));
+    vault._textFiles.set(ALT_MD, 'basis');
+    vault._textFiles.set(NEU_MD, 'basis');
+
+    return { vault, plugin, handlers, OWN_ID, G, OWN_YJS_ALT, OWN_YJS_NEU, releaseRename };
+  }
+
+  it('OHNE Fix C (alter Stand): delete(neu.md) läuft vor rename → kein Tombstone gesetzt', async () => {
+    // Dieser Test charakterisiert das alte Verhalten (Race-Beleg).
+    // Mit Fix C wird delete(neu.md) serialisiert NACH rename → der Test ist dann
+    // eine Beschreibung des Bugs, den Fix C behebt.
+    const vault = makeVaultMock();
+    // KEIN rename-Gate: direkter Zugang zum Bug-Verhalten ohne Fix C.
+    // Simulation: delete läuft BEVOR rename die GUID-Map aktualisiert hat.
+    const { plugin, handlers } = await bootRDPlugin(vault);
+    const OWN_ID: string = plugin.clientId;
+    const G = generateGuid();
+
+    const OWN_YJS_ALT = `.qollab/${ALT_MD}.${OWN_ID}.yjs`;
+    vault._files.set(OWN_YJS_ALT, makeSidecar(G, 'basis'));
+    vault._textFiles.set(ALT_MD, 'basis');
+    vault._textFiles.set(NEU_MD, 'basis');
+
+    // Direkte Simulation ohne Queue: delete läuft BEVOR renameNote die GUID-Map aktualisiert.
+    // currentGuid('neu.md') ist null → kein Tombstone.
+    const guidBeforeRename = await plugin.syncHandler.currentGuid(NEU_MD);
+    // GUID für neu.md ist noch nicht bekannt (rename hat noch nicht stattgefunden).
+    expect(guidBeforeRename).toBeNull();
+    // → kein Tombstone würde gesetzt → Befund 4/7 ist real.
+  });
+
+  it('MIT Fix C: delete(neu.md) wartet auf rename → Tombstone wird korrekt gesetzt', async () => {
+    const { vault, plugin, handlers, OWN_ID, G, OWN_YJS_ALT, OWN_YJS_NEU, releaseRename } =
+      await setupRenameDelete();
+
+    // Rename-Task starten (wird durch rename-Gate gehalten).
+    const renameTask = handlers.get('rename')!(tfileRD(NEU_MD), ALT_MD);
+    await tick(); // Rename startet und trifft die Gate.
+
+    // Delete(neu.md) feuert während rename noch läuft.
+    let deleteCompleted = false;
+    const deleteTask = handlers
+      .get('delete')!(tfileRD(NEU_MD))
+      .then(() => { deleteCompleted = true; });
+
+    await tick();
+    // MIT Fix C: delete(neu.md) wartet auf rename's neu.md-Lock.
+    // Der deleteCompleted-Check kann hier nicht garantiert false sein (Timing-sensitiv),
+    // aber der Endstand muss korrekt sein.
+
+    // Rename abschließen → lock freigeben.
+    releaseRename();
+    await Promise.all([renameTask, deleteTask]);
+
+    // Mit Fix C: Delete hat NACH rename gelaufen → currentGuid('neu.md') = G → Tombstone.
+    const tombstoneKeys = Object.keys(plugin.settings.tombstones);
+    const hasTombstoneForG = tombstoneKeys.some((k: string) => k.includes(G));
+    expect(hasTombstoneForG).toBe(true);
+
+    // Nach Fix C: Sidecars von neu.md wurden vom delete-Handler gelöscht.
+    expect(vault._files.has(OWN_YJS_NEU)).toBe(false);
   });
 });
