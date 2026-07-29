@@ -243,7 +243,9 @@ export class SyncHandler {
   }
 
   // Aktuelle GUID der Note: aus der Map, sonst aus dem Header der eigenen .yjs.
-  // Vom delete-Handler benötigt (was tombstonen?).
+  // Reiner Lese-Zugriff auf die EIGENE Sicht. Der delete-Handler nutzt seit
+  // Review F-1 `guidsToTombstone` (siehe dort); hier bleibt bewusst alles wie
+  // gehabt, damit der Merge-/Adopt-Pfad unberührt ist.
   async currentGuid(notePath: string): Promise<string | null> {
     const mapped = this.guids.get(notePath);
     if (mapped) return mapped;
@@ -252,6 +254,59 @@ export class SyncHandler {
     // hier entsteht kein Merge und keine Op.
     const own = await this.readStateFile(this.stateFilePath(notePath)).catch(() => null);
     return own?.guid ?? null;
+  }
+
+  // NUR für den Delete-Pfad (Review F-1): welche Inkarnationen sind unter diesem
+  // Pfad zu beerdigen?
+  //
+  // `currentGuid` kennt ausschließlich die eigene Sicht (guids-Map + eigene
+  // Sidecar). Eine Note, die per Datei-Sync mit einer FREMDEN Sidecar ankam und
+  // hier nie geöffnet oder editiert wurde, hat beides nicht — sie lieferte `null`,
+  // und der delete-Handler setzte gar keinen Tombstone, auch nicht für den
+  // aktuellen Pfad. Trifft danach eine stale Fremd-Sidecar auf eine gleichnamige
+  // Neuanlage, adoptiert ensureDoc die tote Inkarnation und unionMerge zieht ihren
+  // Inhalt hinein. (Kein Task-15-Regress: master/v0.4.0 verhalten sich identisch.)
+  //
+  // Deshalb: findet sich keine eigene GUID, zählen die dekodierbaren GUIDs der
+  // Fremd-Siblings. Bewusst ALLE, nicht nur die Tie-Break-Gewinnerin:
+  //   - Der Schlüssel ist (notePath, guid). Ein Tombstone auf eine Verlierer-GUID
+  //     an DIESEM Pfad kann dieselbe Inkarnation unter einem anderen Pfad nicht
+  //     treffen — der Schaden, den Fix A beseitigt hat, entsteht hier nicht.
+  //   - Nur die Gewinnerin zu tombstonen risse die Lücke direkt wieder auf: ist
+  //     deren Sidecar weg, wählt pickWinnerGuid schlicht die nächstkleinere
+  //     verbliebene GUID, und der Adopt-Zweig belebt die Note darüber wieder.
+  //   - Was hier liegt, hat unter diesem Pfad gelebt; der Nutzer hat den Pfad
+  //     gelöscht. Split-Brain-Reste sind mehrere Leichen, nicht weniger.
+  //
+  // Rückgabe `null` heißt „Stand unbekannt" (transienter IO-Fehler) — der Aufrufer
+  // setzt dann GAR KEINEN Tombstone, statt auf Halbwissen eine womöglich lebende
+  // Inkarnation zu beerdigen. Das leere Array heißt „nachweislich keine GUID".
+  async guidsToTombstone(notePath: string): Promise<string[] | null> {
+    const mapped = this.guids.get(notePath);
+    if (mapped) return [mapped];
+
+    const ownPath = this.stateFilePath(notePath);
+    try {
+      const own = await this.readStateFile(ownPath);
+      if (own?.guid) return [own.guid];
+
+      const foreign = (await this.vault.listYjsFiles(notePath)).filter((p) => p !== ownPath);
+      const guids = new Set<string>();
+      for (const path of foreign) {
+        const d = await this.readStateFile(path);
+        if (d?.guid) guids.add(d.guid);
+      }
+      return [...guids];
+    } catch {
+      // Unlesbare Sidecar (SidecarReadError: EBUSY, offenes Handle) oder ein
+      // fehlgeschlagenes Listing. Beides heißt „wir kennen den Stand nicht" und
+      // darf NICHT als „keine GUID" durchgehen — sonst beerdigt ein transienter
+      // IO-Fehler nichts, ein halb gelesenes Verzeichnis dagegen zu wenig.
+      // Bewusst breit gefangen: hier gibt es keinen Fehler, bei dem ein Tombstone
+      // die sicherere Antwort wäre. Das entspricht dem Vorverhalten von
+      // `currentGuid` (Task-12-Kommentar dort).
+      return null;
+    }
   }
 
   // Pfade, unter denen die aktuell unter `notePath` geladene Inkarnation auf

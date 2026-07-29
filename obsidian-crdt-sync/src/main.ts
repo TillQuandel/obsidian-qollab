@@ -233,15 +233,22 @@ export default class CrdtSyncPlugin extends Plugin {
     // werden. Ohne lokal gesehenen Rename (Zweitgerät: der Datei-Sync stellt den
     // Rename als delete+create zu) ist die Historie leer — dann bleibt es exakt
     // beim aktuellen Pfad, und Fix A gilt unverändert.
+    //
+    // Welche GUIDs überhaupt beerdigt werden, entscheidet `guidsToTombstone`
+    // (Review F-1): normalerweise genau die eigene, bei einer nur per Sync
+    // bekannten Note die der Fremd-Siblings. `null` heißt „Stand unbekannt"
+    // (IO-Fehler) → kein Tombstone, aufräumen wie bisher.
     this.registerEvent(
       this.app.vault.on('delete', async (file) => {
         if (!(file instanceof TFile)) return;
         if (!file.path.endsWith('.md')) return;
         await this.pathQueue.run(file.path, async () => {
-          const guid = await this.syncHandler.currentGuid(file.path);
-          if (guid) {
-            for (const p of this.syncHandler.incarnationPaths(file.path)) {
-              await this.tombstoneStore.add(guid, p);
+          const guids = await this.syncHandler.guidsToTombstone(file.path);
+          if (guids) {
+            for (const guid of guids) {
+              for (const p of this.syncHandler.incarnationPaths(file.path)) {
+                await this.tombstoneStore.add(guid, p);
+              }
             }
           }
           // Sidecars über den Adapter listen und entfernen (Index-blind).
