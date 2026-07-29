@@ -14,7 +14,7 @@
 // (main.ts) verwendet wird — das ist der Schluessel zum RED/GREEN-Verhalten:
 //   VOR Fix A/B: tombstoneStore.add(G) schreibt {G: timestamp} (global).
 //                decodeSiblings prueft has(G) → findet G → Sidecar geloescht → RED.
-//   NACH Fix A/B: tombstoneStore.add(G, path) schreibt {'path G': timestamp}.
+//   NACH Fix A/B: tombstoneStore.add(G, path) schreibt {'path\0G': timestamp}.
 //                decodeSiblings prueft has(G, otherPath) → kein Treffer → GREEN.
 
 import { TFile } from 'obsidian';
@@ -81,8 +81,8 @@ async function bootPlugin(vault: VaultMock) {
 //   decodeSiblings fuer neu.md: has(G) → true → Geraet-A-Sidecar wird geloescht.
 //   Assertion SCHEITERT.
 //
-// GREEN (nach Fix A/B): tombstoneStore.add(G, 'alt.md') → {'alt.md G': timestamp}.
-//   decodeSiblings fuer neu.md: has(G, 'neu.md') → 'neu.md G' nicht gefunden → false
+// GREEN (nach Fix A/B): tombstoneStore.add(G, 'alt.md') → {'alt.md\0G': timestamp}.
+//   decodeSiblings fuer neu.md: has(G, 'neu.md') → 'neu.md\0G' nicht gefunden → false
 //   → Geraet-A-Sidecar bleibt. Assertion BESTEHT.
 // --------------------------------------------------------------------------
 describe('Test 1 - Sync-Rename: Geraet-A-Sidecar unter neu.md ueberlebt delete(alt.md)', () => {
@@ -127,8 +127,8 @@ describe('Test 1 - Sync-Rename: Geraet-A-Sidecar unter neu.md ueberlebt delete(a
 //   decodeSiblings fuer pfad2: has(G) → true → removeSidecar() auf eigene Sidecar.
 //   Spy faengt den Remove-Aufruf → removedPfad2Own = true → Assertion SCHEITERT.
 //
-// GREEN (nach Fix A/B): tombstoneStore.add(G, 'pfad1.md') → {'pfad1.md G': ...}.
-//   decodeSiblings fuer pfad2: has(G, 'pfad2.md') → 'pfad2.md G' nicht gefunden → false
+// GREEN (nach Fix A/B): tombstoneStore.add(G, 'pfad1.md') → {'pfad1.md\0G': ...}.
+//   decodeSiblings fuer pfad2: has(G, 'pfad2.md') → 'pfad2.md\0G' nicht gefunden → false
 //   → kein removeSidecar auf eigene Sidecar → removedPfad2Own = false → Assertion BESTEHT.
 // --------------------------------------------------------------------------
 describe('Test 2 - Eigene Sidecar ueberlebt: Tombstone auf pfad1 greift nicht auf pfad2', () => {

@@ -32,13 +32,17 @@ describe('pruneTombstones', () => {
 
 // Test 4 (Task 15): migrateTombstones — Alt-Format-Einträge werden verworfen.
 //
-// RED (vor Fix A): migrateTombstones ist nicht exportiert → Import-Fehler /
-//   undefined → "TypeError: migrateTombstones is not a function".
+// RED (vor Fix A): migrateTombstones ist nicht exportiert → undefined →
+//   "TypeError: migrateTombstones is not a function".
 //
-// GREEN (nach Fix A): Funktion existiert; Einträge ohne Leerzeichen (Alt-Format,
-//   nur GUID als Schlüssel) werden verworfen; Neu-Format-Einträge (Leerzeichen
-//   als Separator) werden behalten; zu alte Einträge werden zusätzlich geprüft
-//   (pruneTombstones-Verhalten bleibt erhalten).
+// GREEN (nach Fix A): Funktion existiert; Einträge ohne NUL-Separator
+//   (Alt-Format, nur die GUID als Schlüssel) werden verworfen — für sie ist der
+//   Pfad nicht rekonstruierbar, und als Wildcard behalten trügen sie genau den
+//   GUID-globalen Bug weiter. Neu-Format-Einträge (`${notePath}\0${guid}`)
+//   bleiben, das Prune-Verhalten nach Alter gilt unverändert weiter.
+//
+// Der Separator steht hier bewusst als Literal '\0' und nicht als importierte
+// Konstante: der Test pinnt das Format, nicht die Implementierung.
 describe('migrateTombstones (Task 15 — Fix A)', () => {
   const G = 'aa'.repeat(16);
   const now = 1_000_000_000_000;
@@ -47,14 +51,21 @@ describe('migrateTombstones (Task 15 — Fix A)', () => {
     expect(typeof migrateTombstones).toBe('function');
   });
 
-  it('verwirft Alt-Format (kein Leerzeichen), behält Neu-Format, prüft Alter', () => {
+  it('verwirft Alt-Format (kein NUL), behält Neu-Format, prüft Alter', () => {
     const input: Record<string, number> = {
-      [G]: now - 1000,                              // Alt-Format → verwerfen
-      [`note.md ${G}`]: now - 1000,                 // Neu-Format, frisch → behalten
-      [`alt.md ${G}`]: now - TOMBSTONE_MAX_AGE_MS - 1, // Neu-Format, zu alt → prune
+      [G]: now - 1000, // Alt-Format (GUID-global) → verwerfen
+      [`note.md\0${G}`]: now - 1000, // Neu-Format, frisch → behalten
+      [`alt.md\0${G}`]: now - TOMBSTONE_MAX_AGE_MS - 1, // Neu-Format, zu alt → prune
     };
     const result = migrateTombstones(input, now);
-    expect(result).toEqual({ [`note.md ${G}`]: now - 1000 });
+    expect(result).toEqual({ [`note.md\0${G}`]: now - 1000 });
+  });
+
+  // Pfade mit Leerzeichen sind in Vaults der Normalfall („Meine Note.md") — der
+  // Separator darf sie nicht vom Alt-Format ununterscheidbar machen.
+  it('behält Neu-Format auch bei Pfaden mit Leerzeichen', () => {
+    const key = `Ordner/Meine Note.md\0${G}`;
+    expect(migrateTombstones({ [key]: now - 1000 }, now)).toEqual({ [key]: now - 1000 });
   });
 
   it('leerer Store bleibt leer', () => {
@@ -66,8 +77,8 @@ describe('migrateTombstones (Task 15 — Fix A)', () => {
   });
 
   it('mutiert die Eingabe nicht', () => {
-    const input = { [G]: now - 1000, [`p ${G}`]: now - 1000 };
+    const input = { [G]: now - 1000, [`p\0${G}`]: now - 1000 };
     migrateTombstones(input, now);
-    expect(Object.keys(input)).toEqual([G, `p ${G}`]);
+    expect(Object.keys(input)).toEqual([G, `p\0${G}`]);
   });
 });
