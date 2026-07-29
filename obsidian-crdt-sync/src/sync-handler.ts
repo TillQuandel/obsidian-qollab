@@ -359,13 +359,22 @@ export class SyncHandler {
   }
 
   // Dekodiert Sibling-Pfade und wendet die Tombstone- und Legacy-Regeln an:
-  //   C.3: Eine getombstonte GUID → Datei als stale Leiche löschen und ausschließen.
+  //   C.3: Eine für DIESEN Pfad getombstonte GUID → Datei als stale Leiche
+  //        löschen und ausschließen. Der Tombstone gilt seit Task 15 pro Paar
+  //        (notePath, guid), deshalb braucht die Prüfung den Pfad.
   //   R1:  Legacy-Dateien (guid null, kein QLB1-Header) dienen nur dem Erst-Import.
   //        Existiert unter den übergebenen Pfaden mindestens ein GUID-tragender
   //        Sidecar, werden Legacy-Dateien ignoriert und sofort gelöscht.
-  //        Die eigene Datei kann nie fälschlich gelöscht werden: die eigene GUID
-  //        landet nie im gerätelokalen Tombstone-Set (der delete-Handler tombstont
-  //        nur beim Löschen der Note und entfernt dabei die eigene Datei ohnehin mit).
+  //
+  // Die frühere Begründung, die eigene Datei könne nie fälschlich gelöscht werden
+  // („die eigene GUID landet nie im Tombstone-Set"), war nachweislich falsch: ein
+  // sync-vermittelter Rename stellt eine Umbenennung als delete+create zu und
+  // tombstont damit eine LEBENDE Inkarnation, und im Adopt-Zweig hängt dieselbe
+  // GUID ohnehin an mehreren Pfaden. Stattdessen gilt jetzt hart: über den
+  // Tombstone-Zweig wird die eigene Sidecar nie gelöscht, nur vom Ergebnis
+  // ausgeschlossen (siehe unten). Der Legacy-Zweig (R1) bleibt unverändert — dort
+  // ist das Löschen der eigenen Legacy-Datei gewollt, weil ihr Inhalt zu dem
+  // Zeitpunkt bereits im GUID-tragenden State steht.
   private async decodeSiblings(notePath: string, paths: string[]): Promise<DecodedSibling[]> {
     // Alle Dateien lesen, dann in einem zweiten Durchlauf entscheiden.
     const decoded: Array<DecodedSibling | null> = [];
@@ -376,6 +385,7 @@ export class SyncHandler {
     // R1: Prüfen ob mindestens ein GUID-tragender Sidecar existiert.
     const hasGuidState = decoded.some((d) => d !== null && d.guid !== null);
 
+    const ownPath = this.stateFilePath(notePath);
     const result: DecodedSibling[] = [];
     for (let i = 0; i < paths.length; i++) {
       const d = decoded[i];
@@ -383,7 +393,12 @@ export class SyncHandler {
 
       // Tombstone-Prüfung (C.3) — pfadgebunden (Task 15 Fix A).
       if (d.guid !== null && this.tombstones.has(d.guid, notePath)) {
-        await this.removeSidecar(paths[i]);
+        // Fix B: Die eigene Sidecar wird hier NIE gelöscht — sie ist unser
+        // lebender State. Löschte man sie, legte der saveState am Ende desselben
+        // Laufs sie sofort wieder an: Löschen-Neuschreiben-Schleife bei jedem
+        // Trigger. Ausschließen genügt; ihr Stand steckt bereits im Doc
+        // (ensureDoc hat ihn im own-Branch angewandt).
+        if (paths[i] !== ownPath) await this.removeSidecar(paths[i]);
         continue;
       }
 

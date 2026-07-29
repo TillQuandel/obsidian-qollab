@@ -108,6 +108,40 @@ describe('F1-Guard 2: echte Leerung bleibt möglich', () => {
   });
 });
 
+// Task 15 Fix B: Über den Tombstone-Zweig wird die EIGENE Sidecar nie gelöscht —
+// sie ist unser lebender State, nicht die Leiche einer fremden Inkarnation.
+//
+// Realfall (Befund 2/5) ist genau die Lage aus dem Datei-Kopf: der Sync stellt
+// ein delete zu, der Tombstone für (note.md, G) sitzt, aber die .md kehrt im
+// Delete-vs-Edit-Konflikt zurück und Doc plus eigene Sidecar leben unter
+// demselben Pfad weiter. decodeSiblings löschte die eigene Sidecar vor dem
+// Merge, saveState schrieb sie unmittelbar danach wieder — Sidecar-Thrash bei
+// jedem Trigger. Die fremde Leiche wird weiterhin gelöscht.
+describe('Fix B: eigene Sidecar überlebt den Tombstone-Zweig', () => {
+  it('getombstonete Inkarnation unter demselben Pfad: kein remove auf die eigene .yjs', async () => {
+    const vault = makeVaultMock();
+    const plugin = makeWipePlugin(vault); // Tombstone: (NOTE, G)
+
+    // .md lebt weiter, eigene Sidecar trägt noch die getombstonete Inkarnation G.
+    vault._textFiles.set(NOTE, FULL);
+    vault._files.set(OWN_YJS, bSidecar(FULL));
+    vault._files.set(B_YJS, bSidecar(FULL + 'Zeile von B\n'));
+
+    const removed: string[] = [];
+    const origRemove = vault.adapter.remove;
+    vault.adapter.remove = async (p: string) => {
+      removed.push(p);
+      return origRemove(p);
+    };
+
+    await plugin.onRemoteYjsUpdate(NOTE);
+
+    expect(removed).not.toContain(OWN_YJS);
+    // Der Zombie-Schutz gegen FREMDE Leichen bleibt davon unberührt.
+    expect(removed).toContain(B_YJS);
+  });
+});
+
 // Test 3 (Task 15 — Nicht-Regression): Zombie-Schutz ueberlebt Fix A/B.
 //
 // Szenario: note-t3.md wird geloescht (Tombstone auf G_OLD_WIPE via delete-Handler),
