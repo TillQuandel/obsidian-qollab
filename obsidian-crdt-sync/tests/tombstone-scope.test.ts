@@ -217,6 +217,12 @@ describe('Test 6 - C-1: rename dann delete, Fremd-Sidecar unter dem ALTEN Pfad',
     vault._textFiles.set('neu.md', GEHEIM);
     await handlers.get('rename')!(tfile('neu.md'), 'alt.md');
 
+    // Review F-3: Der Rename selbst tombstont NICHT. Das ist die im Kommentar an
+    // `priorPaths` (sync-handler.ts) ausdruecklich verworfene Alternative — sie
+    // wuerde alt.md fuer eine LEBENDE Inkarnation entwerten. Ohne diese Zeile
+    // bewacht kein Test die Entscheidung.
+    expect(Object.keys(plugin.settings.tombstones)).toEqual([]);
+
     // 3. Delete neu.md.
     vault._textFiles.delete('neu.md');
     await handlers.get('delete')!(tfile('neu.md'));
@@ -242,9 +248,20 @@ describe('Test 6 - C-1: rename dann delete, Fremd-Sidecar unter dem ALTEN Pfad',
 // dieser Inkarnation ist auf B also LEER — der Tombstone darf ausschliesslich auf
 // alt.md landen, sonst entwertet er neu.md fuer eine LEBENDE Inkarnation und
 // reisst genau die Luecke wieder auf, die Fix A geschlossen hat.
+//
+// Runde 3 (Review F-3): auf den tragenden Teil reduziert. Gestrichen sind
+//   - `not.toContain('neu.md\0G')` und `toHaveLength(1)` als Einzelaussagen:
+//     im Setup existiert kein Rename, der String 'neu.md' ist dem Plugin zum
+//     Delete-Zeitpunkt unbekannt — keine plausible Fehlimplementierung von
+//     incarnationPaths kann ihn erzeugen;
+//   - der zweite Abschnitt (Fremd-Sidecar unter neu.md ueberlebt
+//     onRemoteYjsUpdate): identische Konstellation und Aussage wie Test 1.
+// Was bleibt, ist echt diskriminierend: EIN exakter Schluessel-Satz. Er faellt
+// bei GUID-globalem Schluessel (Fix A) und bei jeder Ausweitung des Tombstones
+// auf zusaetzliche Pfade oder GUIDs.
 // --------------------------------------------------------------------------
 describe('Test 7 - C-1-Grenze: ohne lokalen Rename bleibt der Tombstone auf dem geloeschten Pfad', () => {
-  it('delete(alt.md) tombstont NUR alt.md; Fremd-Sidecar unter neu.md ueberlebt', async () => {
+  it('delete(alt.md) tombstont exakt (alt.md, G) und sonst nichts', async () => {
     const vault = makeVaultMock();
     const { plugin, handlers } = await bootPlugin(vault);
     const OWN_ID: string = plugin.clientId;
@@ -256,18 +273,203 @@ describe('Test 7 - C-1-Grenze: ohne lokalen Rename bleibt der Tombstone auf dem 
     // Sync-zugestelltes delete(alt.md).
     await handlers.get('delete')!(tfile('alt.md'));
 
-    const keys = Object.keys(plugin.settings.tombstones);
-    expect(keys).toContain(`alt.md\0${G}`);
-    expect(keys).not.toContain(`neu.md\0${G}`);
-    expect(keys).toHaveLength(1);
+    expect(Object.keys(plugin.settings.tombstones)).toEqual([`alt.md\0${G}`]);
+  });
+});
 
-    // Die Inkarnation laeuft unter neu.md weiter: Geraet-A-Sidecar bleibt.
-    const A_SIDECAR_NEU = `.qollab/neu.md.${A_ID}.yjs`;
-    vault._textFiles.set('neu.md', 'alt-inhalt');
-    vault._files.set(A_SIDECAR_NEU, buildSidecar(G, 'a-inhalt', 'neu.md'));
+// --------------------------------------------------------------------------
+// Test 8 (Review F-1): Die Note ist NUR durch eine FREMDE Sidecar bekannt.
+//
+// Sie kam per Datei-Sync an (.md + Sidecar des anderen Geraets) und wurde hier
+// nie geoeffnet oder editiert — es gibt also weder einen Eintrag in `guids` noch
+// eine eigene Sidecar. `currentGuid` liefert dann null und der delete-Handler
+// setzt GAR KEINEN Tombstone, auch nicht fuer den aktuellen Pfad.
+//
+// Kein Task-15-Regress: `currentGuid` ist gegenueber master unveraendert, v0.4.0
+// verhaelt sich identisch. Es gehoert aber in die Delete-/Tombstone-Semantik,
+// die Task 15 aufraeumt.
+//
+// RED (vor F-1): keine GUID → kein Tombstone. Die verspaetete Fremd-Sidecar
+//   trifft spaeter auf eine gleichnamige NEUE Note, ensureDoc adoptiert die tote
+//   Inkarnation, unionMerge schiebt ihren Inhalt hinein.
+// GREEN (nach F-1): der Delete-Pfad faellt auf die dekodierbaren GUIDs der
+//   Fremd-Siblings zurueck → (note.md, G) ist getombstont.
+// --------------------------------------------------------------------------
+describe('Test 8 - F-1: Note nur durch fremde Sidecar bekannt', () => {
+  it('delete tombstont die fremde Inkarnation; die neue gleichnamige Note bleibt sauber', async () => {
+    const vault = makeVaultMock();
+    const { plugin, handlers } = await bootPlugin(vault);
 
+    const GEHEIM = 'GEHEIM alter inhalt\n';
+    const NEUTRAL = 'brandneu und unbeteiligt\n';
+    const A_SIDECAR = `.qollab/note.md.${A_ID}.yjs`;
+
+    // 1. Per Sync angekommen: .md + FREMDE Sidecar. Keine eigene Sidecar, kein
+    //    Doc, kein guids-Eintrag — die Note wurde hier nie angefasst.
+    vault._textFiles.set('note.md', GEHEIM);
+    vault._files.set(A_SIDECAR, buildSidecar(G, GEHEIM, 'note.md'));
+
+    // 2. Nutzer loescht note.md.
+    vault._textFiles.delete('note.md');
+    await handlers.get('delete')!(tfile('note.md'));
+
+    expect(Object.keys(plugin.settings.tombstones)).toEqual([`note.md\0${G}`]);
+
+    // 3. Geraet A war offline und liefert die Sidecar der toten Inkarnation
+    //    verspaetet nach.
+    vault._files.set(A_SIDECAR, buildSidecar(G, GEHEIM, 'note.md'));
+
+    // 4. Nutzer legt unter demselben Namen eine neue, unbeteiligte Note an.
+    vault._textFiles.set('note.md', NEUTRAL);
+
+    await plugin.onRemoteYjsUpdate('note.md');
+
+    expect(vault._textFiles.get('note.md')).toBe(NEUTRAL);
+    expect(vault._files.has(A_SIDECAR)).toBe(false);
+  });
+});
+
+// --------------------------------------------------------------------------
+// Test 9 (Review F-1, Guard): Ein IO-Fehler ist NICHT „keine GUID".
+//
+// Beide Faelle sind vor UND nach dem Fix gruen — sie sind keine RED-Tests,
+// sondern Waechter ueber der neuen Fallback-Logik. Ihr Wert steht in der
+// Mutationsprobe: laesst man den Lesefehler durchrutschen (`continue` statt
+// Abbruch), entstehen Tombstones auf Halbwissen und beide Tests fallen.
+//
+// Regel: im Zweifel KEIN Tombstone. Das ist exakt das Vorverhalten (Task-12-
+// Kommentar an `currentGuid`) — ein transienter EBUSY darf keine Inkarnation
+// beerdigen, die vielleicht noch lebt.
+// --------------------------------------------------------------------------
+describe('Test 9 - F-1-Guard: unlesbare Sidecar erzeugt keinen Tombstone', () => {
+  const G2 = 'cc'.repeat(16);
+  const A2_ID = 'beefcafe';
+
+  it('unlesbares Fremd-Sibling bricht ab, obwohl ein anderes eine GUID liefert', async () => {
+    const vault = makeVaultMock();
+    const { plugin, handlers } = await bootPlugin(vault);
+
+    const READABLE = `.qollab/note.md.${A_ID}.yjs`;
+    const BUSY = `.qollab/note.md.${A2_ID}.yjs`;
+    vault._textFiles.set('note.md', 'inhalt\n');
+    vault._files.set(READABLE, buildSidecar(G, 'inhalt\n', 'note.md'));
+    vault._files.set(BUSY, buildSidecar(G2, 'inhalt\n', 'note.md'));
+
+    const origRead = vault.adapter.readBinary;
+    vault.adapter.readBinary = async (p: string) => {
+      if (p === BUSY) throw new Error('EBUSY: resource busy or locked');
+      return origRead(p);
+    };
+
+    vault._textFiles.delete('note.md');
+    await handlers.get('delete')!(tfile('note.md'));
+
+    expect(plugin.settings.tombstones).toEqual({});
+  });
+
+  it('unlesbare EIGENE Sidecar faellt nicht auf die Fremd-Siblings durch', async () => {
+    const vault = makeVaultMock();
+    const { plugin, handlers } = await bootPlugin(vault);
+    const OWN_ID: string = plugin.clientId;
+
+    const OWN = `.qollab/note.md.${OWN_ID}.yjs`;
+    const FOREIGN = `.qollab/note.md.${A_ID}.yjs`;
+    vault._textFiles.set('note.md', 'inhalt\n');
+    vault._files.set(OWN, buildSidecar(G2, 'inhalt\n', 'note.md'));
+    vault._files.set(FOREIGN, buildSidecar(G, 'inhalt\n', 'note.md'));
+
+    const origRead = vault.adapter.readBinary;
+    vault.adapter.readBinary = async (p: string) => {
+      if (p === OWN) throw new Error('EBUSY: resource busy or locked');
+      return origRead(p);
+    };
+
+    vault._textFiles.delete('note.md');
+    await handlers.get('delete')!(tfile('note.md'));
+
+    expect(plugin.settings.tombstones).toEqual({});
+  });
+});
+
+// --------------------------------------------------------------------------
+// Test 10 (Review F-2): `switchToGuid` tauscht die Inkarnation unter einem Pfad
+// aus — die Pfad-Historie gehoert danach zur AUFGEGEBENEN Inkarnation.
+//
+// Szenario: alt.md (eigene Inkarnation G_BIG) wird nach neu.md umbenannt →
+// priorPaths['neu.md'] = ['alt.md']. Unter neu.md gewinnt danach die kleinere
+// fremde GUID W den Tie-Break, switchToGuid wechselt darauf. W hat unter alt.md
+// nie gelebt.
+//
+// RED (vor F-2): delete(neu.md) schreibt (neu.md, W) UND (alt.md, W) — ein
+//   Fix-A-Falsch-Positiv genau der Klasse, die Task 15 beseitigen wollte.
+// GREEN (nach F-2): switchToGuid leert priorPaths['neu.md'] → nur (neu.md, W).
+// --------------------------------------------------------------------------
+describe('Test 10 - F-2: switchToGuid verwirft die Pfad-Historie der aufgegebenen Inkarnation', () => {
+  it('nach dem Inkarnations-Wechsel tombstont delete nur noch den aktuellen Pfad', async () => {
+    const vault = makeVaultMock();
+    const { plugin, handlers } = await bootPlugin(vault);
+    const OWN_ID: string = plugin.clientId;
+
+    const G_BIG = 'ff'.repeat(16);
+    const W = 'aa'.repeat(16); // kleiner → gewinnt den Tie-Break
+
+    // 1. alt.md mit eigener Inkarnation G_BIG.
+    vault._files.set(`.qollab/alt.md.${OWN_ID}.yjs`, buildSidecar(G_BIG, 'alt-inhalt\n', 'alt.md'));
+    vault._textFiles.set('alt.md', 'alt-inhalt\n');
+
+    // 2. Rename alt.md → neu.md (Historie: neu.md ← alt.md).
+    vault._textFiles.delete('alt.md');
+    vault._textFiles.set('neu.md', 'alt-inhalt\n');
+    await handlers.get('rename')!(tfile('neu.md'), 'alt.md');
+
+    // 3. Fremde Sidecar mit kleinerer GUID unter neu.md → switchToGuid(W).
+    vault._files.set(`.qollab/neu.md.${A_ID}.yjs`, buildSidecar(W, 'fremd-inhalt\n', 'neu.md'));
     await plugin.onRemoteYjsUpdate('neu.md');
 
-    expect(vault._files.has(A_SIDECAR_NEU)).toBe(true);
+    // 4. Delete neu.md.
+    vault._textFiles.delete('neu.md');
+    await handlers.get('delete')!(tfile('neu.md'));
+
+    expect(Object.keys(plugin.settings.tombstones)).toEqual([`neu.md\0${W}`]);
+  });
+});
+
+// --------------------------------------------------------------------------
+// Test 11 (Review F-4): Ein Delete schreibt data.json genau EINMAL, egal wie
+// viele (Pfad, GUID)-Paare dabei getombstont werden.
+//
+// RED (vor F-4): der delete-Handler ruft `tombstoneStore.add` pro Pfad, jedes
+//   `add` ein volles `saveSettings()` → `saveData` → kompletter data.json-Write.
+// GREEN (nach F-4): Tombstones werden in-memory gesammelt, ein Write am Ende.
+// --------------------------------------------------------------------------
+describe('Test 11 - F-4: ein data.json-Write pro Delete', () => {
+  it('zwei Tombstones (aktueller Pfad + Historie) kosten genau ein saveData', async () => {
+    const vault = makeVaultMock();
+    const { plugin, handlers } = await bootPlugin(vault);
+    const OWN_ID: string = plugin.clientId;
+
+    vault._files.set(`.qollab/alt.md.${OWN_ID}.yjs`, buildSidecar(G, 'inhalt\n', 'alt.md'));
+    vault._textFiles.set('alt.md', 'inhalt\n');
+
+    vault._textFiles.delete('alt.md');
+    vault._textFiles.set('neu.md', 'inhalt\n');
+    await handlers.get('rename')!(tfile('neu.md'), 'alt.md');
+
+    let saves = 0;
+    const origSave = plugin.saveData.bind(plugin);
+    plugin.saveData = async (data: unknown) => {
+      saves++;
+      return origSave(data);
+    };
+
+    vault._textFiles.delete('neu.md');
+    await handlers.get('delete')!(tfile('neu.md'));
+
+    // Beide Pfade der Inkarnation sind getombstont …
+    expect(Object.keys(plugin.settings.tombstones).sort()).toEqual(
+      [`alt.md\0${G}`, `neu.md\0${G}`].sort()
+    );
+    // … aber data.json wurde nur einmal geschrieben.
+    expect(saves).toBe(1);
   });
 });

@@ -241,3 +241,23 @@ describe('SyncHandler', () => {
     expect(vault._writeCount.get(own) ?? 0).toBe(2);
   });
 });
+
+// Task 15 / Review F-4: Die Pfad-Historie (`priorPaths`) haengt beim Rename ohne
+// Dedup an — ein Ping-Pong a→b→a→b legt die Liste linear in der Laenge der
+// Rename-Folge an, obwohl der deduplizierte Inhalt zwei Eintraege hat.
+//
+// Bewusst White-Box: `incarnationPaths` dedupliziert selbst und kann den
+// Schreib-Dedup deshalb nicht zeigen. Die Feldgroesse ist der einzige Beleg.
+describe('SyncHandler.renameNote — Pfad-Historie waechst nicht bei Ping-Pong-Renames', () => {
+  it('dedupliziert beim Anhaengen', () => {
+    const vault = makeVaultMock() as any;
+    const handler = new SyncHandler(vault, new CrdtManager(), 'a1b2c3d4');
+
+    handler.renameNote('a.md', 'b.md');
+    handler.renameNote('b.md', 'a.md');
+    handler.renameNote('a.md', 'b.md');
+    handler.renameNote('b.md', 'a.md');
+
+    expect((handler as any).priorPaths.get('a.md')).toEqual(['a.md', 'b.md']);
+  });
+});
