@@ -40,10 +40,17 @@ export function pruneTombstones(
 //
 // Verworfen statt umgeschrieben, weil für einen Alt-Eintrag der Pfad nicht
 // rekonstruierbar ist; ihn als Wildcard zu behalten trüge genau den Bug weiter,
-// den Fix A beseitigt. Der Verlust ist harmlos: schlimmstenfalls wird eine stale
-// Sidecar einmalig gemergt — das entspricht der dokumentierten v0.1-Grenze und
-// ist kein Datenverlust. Die Einträge sind ohnehin gerätelokal und maximal
-// 90 Tage alt.
+// den Fix A beseitigt.
+//
+// Review I-3 — was das kostet, präzise statt beschönigend: Im Upgrade-Fenster
+// kann eine stale Sidecar einer bereits gelöschten Inkarnation auf eine
+// gleichnamig neu angelegte Note treffen. Ohne Tombstone adoptiert ensureDoc
+// sie, und seit Task 13 läuft die Adoption über `unionMerge` — danach steht der
+// VOLLE Text der gelöschten Note in der neuen. Kein Datenverlust, aber auch
+// nicht „einmalig mitgemergt": die frühere Formulierung beschrieb die
+// 2-Wege-setContent-Semantik aus v0.1, die es seit Task 13 nicht mehr gibt.
+// Vertretbar bleibt es, weil die Einträge gerätelokal und maximal 90 Tage alt
+// sind und das Fenster genau einen Start umfasst.
 export function migrateTombstones(
   tombstones: Record<string, number>,
   now: number = Date.now(),
