@@ -196,6 +196,11 @@ export default class CrdtSyncPlugin extends Plugin {
     // wieder auf (Befund 4/7). runAll nimmt beide Keys in einem Schritt —
     // verschachtelte run-Aufrufe würden newPath erst beim Body-Start belegen und
     // den Race offen lassen (siehe path-queue.ts).
+    //
+    // Keine verschachtelten run/runAll-Aufrufe auf `oldPath` ODER `file.path` in
+    // diesem Body — beide Keys sind hier gehalten, ein verschachtelter Aufruf
+    // wartet auf sich selbst und hängt (Review M-2: seit Fix C sind es zwei Keys
+    // statt einem, die Falle ist doppelt so breit).
     this.registerEvent(
       this.app.vault.on('rename', async (file, oldPath) => {
         if (!(file instanceof TFile)) return;

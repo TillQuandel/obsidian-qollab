@@ -42,9 +42,22 @@ export class PathQueue {
   // Task auf diesem Key zieht vorbei. Genau das ist der rename+delete-Race
   // (Befund 4/7), und genau deshalb reicht Verschachteln hier nicht.
   //
-  // Deadlock-frei by construction: es gibt kein Hold-and-Wait, weil alle Keys
-  // atomar genommen werden. Sortiert wird für eine deterministische Reihenfolge,
-  // dedupliziert, damit ein doppelter Key nicht auf sich selbst wartet.
+  // Deadlock-frei — aber NICHT, weil es kein Hold-and-Wait gäbe (Review M-1). Das
+  // gibt es sehr wohl: der eigene Tail wird unten synchron auf allen Keys
+  // veröffentlicht, während oben noch auf die Vorgänger-Tails gewartet wird. Ein
+  // danach eingereihter Task blockiert also hinter einem Lock, dessen Halter es
+  // selbst noch nicht erworben hat — genau das ist hier gewollt (es schließt den
+  // rename+delete-Race).
+  //
+  // Tragfähig ist eine andere Begründung: Snapshot und Publikation der Tails
+  // liegen im SELBEN Tick, ohne dazwischenliegendes await. Deshalb zeigt jede
+  // Wartekante ausschließlich auf strikt FRÜHER gestartete Aufrufe; der
+  // Wait-for-Graph ist nach Aufrufzeit topologisch sortiert und kann keinen
+  // Zyklus enthalten. Wer hier ein `await` vor die `tails.set`-Schleife zieht,
+  // zerstört genau diese Eigenschaft.
+  //
+  // Sortiert wird für eine deterministische Reihenfolge, dedupliziert, damit ein
+  // doppelter Key nicht auf sich selbst wartet.
   runAll<T>(keys: string[], fn: () => Promise<T>): Promise<T> {
     const unique = [...new Set(keys)].sort();
     const prev = Promise.all(unique.map((k) => this.tails.get(k) ?? Promise.resolve()));
