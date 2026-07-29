@@ -116,6 +116,30 @@ export class SyncHandler {
   // Note-Pfad → GUID der aktuell geladenen Inkarnation.
   private guids = new Map<string, string>();
 
+  // Task 15 / Review C-1: aktueller Note-Pfad → Pfade, unter denen DIESELBE
+  // Inkarnation auf DIESEM Gerät vorher gelebt hat (Rename-Historie der Sitzung).
+  //
+  // Grund: Der Tombstone ist seit Fix A an das Paar (notePath, guid) gebunden,
+  // der delete-Handler sieht aber nur den zuletzt bewohnten Pfad. Nach
+  // `alt.md → neu.md → delete` stünde der Tombstone allein auf `neu.md`; eine
+  // verspätet ankommende Fremd-Sidecar unter `alt.md` mit derselben GUID fände
+  // dort keinen — und sobald unter `alt.md` wieder eine (neue, unbeteiligte)
+  // Note liegt, adoptiert ensureDoc die tote Inkarnation und unionMerge schiebt
+  // ihren Inhalt in die fremde Note. Deshalb tombstont der delete-Handler die
+  // ganze Pfad-Historie dieser Inkarnation, nicht nur den aktuellen Pfad.
+  //
+  // Bewusst NICHT beim Rename selbst tombstont: das entwertete `alt.md` für eine
+  // LEBENDE Inkarnation und risse genau die Lücke wieder auf, die Fix A
+  // geschlossen hat, sobald der Datei-Sync die .md unter dem alten Pfad
+  // zurückspielt.
+  //
+  // Grenze: rein in-memory und damit sitzungslokal. Nach einem App-Neustart ist
+  // die Historie weg, ein Rename VOR dem Neustart und ein Delete DANACH tombstont
+  // wieder nur den neuen Pfad. Vertretbar, weil Tombstones ohnehin gerätelokal
+  // sind und der häufige Fall (Rename und Delete in derselben Sitzung) gedeckt
+  // ist; die persistente Lösung ist Löschen als CRDT-Operation (Issue #11).
+  private priorPaths = new Map<string, string[]>();
+
   constructor(
     private vault: VaultLike,
     private crdtManager: CrdtManager,
@@ -230,10 +254,22 @@ export class SyncHandler {
     return own?.guid ?? null;
   }
 
+  // Pfade, unter denen die aktuell unter `notePath` geladene Inkarnation auf
+  // diesem Gerät gelebt hat — der aktuelle Pfad zuerst, dann die Rename-Historie.
+  // Der delete-Handler tombstont sie alle (Review C-1, siehe `priorPaths`).
+  // Dedupliziert: ein Hin-und-Zurück-Rename (a → b → a) führte sonst zu einem
+  // doppelten Tombstone-Write inklusive doppeltem saveSettings.
+  incarnationPaths(notePath: string): string[] {
+    return [...new Set([notePath, ...(this.priorPaths.get(notePath) ?? [])])];
+  }
+
   // Note vergessen (delete-Handler): Doc + GUID-Map-Eintrag entfernen.
   disposeNote(notePath: string): void {
     this.guids.delete(notePath);
     this.abortedReads.delete(notePath);
+    // Die Inkarnation ist tot; ihre Pfad-Historie hat keinen Adressaten mehr.
+    // (Der delete-Handler hat sie vorher über incarnationPaths ausgelesen.)
+    this.priorPaths.delete(notePath);
     // Task 14: Die Signatur beschreibt eine Datei, die es nicht mehr gibt.
     this.ownSignatures.delete(this.stateFilePath(notePath));
     this.crdtManager.disposeDoc(notePath);
@@ -250,6 +286,14 @@ export class SyncHandler {
     const uncaptured = this.abortedReads.get(oldPath);
     this.abortedReads.delete(oldPath);
     if (uncaptured !== undefined) this.abortedReads.set(newPath, uncaptured);
+    // Review C-1: Pfad-Historie der Inkarnation mitziehen. Bewusst unabhängig
+    // davon, ob oben eine GUID gefunden wurde — sie steht oft erst im Header der
+    // Sidecar und wird erst vom delete-Handler (currentGuid) aufgelöst. Wer die
+    // Historie an eine bekannte GUID knüpfte, verlöre genau die Renames, die vor
+    // dem ersten Doc-Zugriff passieren.
+    const prior = this.priorPaths.get(oldPath) ?? [];
+    this.priorPaths.delete(oldPath);
+    this.priorPaths.set(newPath, [...prior, oldPath]);
     // Task 14 (Review I-1): Die Sidecar wandert im rename-Handler am SyncHandler
     // vorbei mit (kein saveState) — die Signatur des alten Pfads beschreibt danach
     // eine Datei, die dort nicht mehr liegt. Bliebe sie stehen, träfe sie nach einem

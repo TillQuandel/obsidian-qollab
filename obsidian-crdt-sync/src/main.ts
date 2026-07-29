@@ -221,13 +221,24 @@ export default class CrdtSyncPlugin extends Plugin {
     // die Queue, damit ein geparkter Task auf demselben Pfad nicht nach dem
     // Delete resumed und via saveState die gelöschte .yjs wieder anlegt
     // (Resurrection). Keine verschachtelten run-Aufrufe mit gleichem Key hier.
+    //
+    // Getombstont wird die ganze Pfad-Historie dieser Inkarnation (Review C-1),
+    // nicht nur der zuletzt bewohnte Pfad: nach `alt.md → neu.md → delete` muss
+    // auch eine verspätete Fremd-Sidecar unter `alt.md` als Leiche erkannt
+    // werden. Ohne lokal gesehenen Rename (Zweitgerät: der Datei-Sync stellt den
+    // Rename als delete+create zu) ist die Historie leer — dann bleibt es exakt
+    // beim aktuellen Pfad, und Fix A gilt unverändert.
     this.registerEvent(
       this.app.vault.on('delete', async (file) => {
         if (!(file instanceof TFile)) return;
         if (!file.path.endsWith('.md')) return;
         await this.pathQueue.run(file.path, async () => {
           const guid = await this.syncHandler.currentGuid(file.path);
-          if (guid) await this.tombstoneStore.add(guid, file.path);
+          if (guid) {
+            for (const p of this.syncHandler.incarnationPaths(file.path)) {
+              await this.tombstoneStore.add(guid, p);
+            }
+          }
           // Sidecars über den Adapter listen und entfernen (Index-blind).
           const sidecars = await listYjsInDir(this.sidecarAdapter, file.path);
           for (const sc of sidecars) await this.sidecarAdapter.remove(sc);
