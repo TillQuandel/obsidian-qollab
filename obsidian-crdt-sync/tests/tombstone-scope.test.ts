@@ -140,6 +140,11 @@ describe('Test 2 - Eigene Sidecar ueberlebt: Tombstone auf pfad1 greift nicht au
     const PFAD1 = 'pfad1.md';
     const PFAD2 = 'pfad2.md';
     const OWN_SIDECAR_PFAD2 = `.qollab/${PFAD2}.${OWN_ID}.yjs`;
+    // Review I-1: Die FREMDE Sidecar unter pfad2 ist die Fix-A-Sonde. Der
+    // Fix-B-Guard schuetzt ausschliesslich stateFilePath(pfad2) — auf eine fremde
+    // Datei wirkt er nicht. Faellt Fix A weg (GUID-globaler Schluessel), trifft der
+    // Tombstone von pfad1 auch hier und loescht sie.
+    const FOREIGN_SIDECAR_PFAD2 = `.qollab/${PFAD2}.${A_ID}.yjs`;
 
     // Beide Pfade tragen GUID G (Adopt-Szenario: gleiche Inkarnation, zwei Pfade).
     vault._files.set(
@@ -147,6 +152,7 @@ describe('Test 2 - Eigene Sidecar ueberlebt: Tombstone auf pfad1 greift nicht au
       buildSidecar(G, 'pfad1-inhalt', PFAD1)
     );
     vault._files.set(OWN_SIDECAR_PFAD2, buildSidecar(G, 'pfad2-inhalt', PFAD2));
+    vault._files.set(FOREIGN_SIDECAR_PFAD2, buildSidecar(G, 'fremd-pfad2', PFAD2));
     vault._textFiles.set(PFAD1, 'pfad1-inhalt');
     vault._textFiles.set(PFAD2, 'pfad2-inhalt');
 
@@ -165,8 +171,103 @@ describe('Test 2 - Eigene Sidecar ueberlebt: Tombstone auf pfad1 greift nicht au
     // loadAndMerge fuer pfad2 darf eigene Sidecar NICHT via Tombstone loeschen.
     await plugin.onRemoteYjsUpdate(PFAD2);
 
-    // Vor Fix A/B: GUID-global-Tombstone fires → removeSidecar auf eigene Sidecar von pfad2.
-    // Nach Fix A/B: pfad-spezifischer Tombstone fuer pfad1 greift nicht auf pfad2 → kein Remove.
+    // Fix-A-Sonde: pfad-spezifischer Tombstone (pfad1) greift nicht auf pfad2,
+    // die fremde Sidecar bleibt liegen. Ohne Fix A wird sie geloescht.
+    expect(vault._files.has(FOREIGN_SIDECAR_PFAD2)).toBe(true);
+    // Fix-B-Sonde: die eigene Sidecar wird ueber den Tombstone-Zweig nie geloescht.
     expect(removedPfad2Own).toBe(false);
+  });
+});
+
+// --------------------------------------------------------------------------
+// Test 6 (Review C-1): rename VOR dem delete — der Tombstone muss die ganze
+// Pfad-Historie der Inkarnation decken, nicht nur den zuletzt bewohnten Pfad.
+//
+// Szenario (nur Standard-Handler, Standard-Betriebsmodus Datei-Sync):
+//   1. alt.md lebt mit Inkarnation G, eigene Sidecar vorhanden.
+//   2. Nutzer benennt um: alt.md → neu.md (Sidecars ziehen mit, KEIN Tombstone).
+//   3. Nutzer loescht neu.md → Tombstone.
+//   4. Geraet A war offline und liefert verspaetet .qollab/alt.md.<A>.yjs (GUID G).
+//   5. Nutzer legt eine neue, inhaltlich unbeteiligte Note alt.md an.
+//
+// RED (vor C-1-Fix): Tombstone steht nur auf (neu.md, G). Unter alt.md findet
+//   decodeSiblings keinen Tombstone → ensureDoc adoptiert die Fremd-Inkarnation
+//   und unionMerge schiebt den Inhalt der GELOESCHTEN Note in die neue alt.md.
+//   Das ist eine Regression gegen master (dort griff der GUID-globale Tombstone).
+//
+// GREEN (nach C-1-Fix): der delete-Handler tombstont alle Pfade, unter denen die
+//   Inkarnation auf DIESEM Geraet gelebt hat → (neu.md, G) UND (alt.md, G).
+// --------------------------------------------------------------------------
+describe('Test 6 - C-1: rename dann delete, Fremd-Sidecar unter dem ALTEN Pfad', () => {
+  it('die neue, unbeteiligte alt.md bleibt unkontaminiert und die Leiche wird geraeumt', async () => {
+    const vault = makeVaultMock();
+    const { plugin, handlers } = await bootPlugin(vault);
+    const OWN_ID: string = plugin.clientId;
+
+    const GEHEIM = 'GEHEIM alter inhalt\n';
+    const NEUTRAL = 'brandneu und unbeteiligt\n';
+    const A_SIDECAR_ALT = `.qollab/alt.md.${A_ID}.yjs`;
+
+    // 1. alt.md lebt mit Inkarnation G.
+    vault._files.set(`.qollab/alt.md.${OWN_ID}.yjs`, buildSidecar(G, GEHEIM, 'alt.md'));
+    vault._textFiles.set('alt.md', GEHEIM);
+
+    // 2. Rename alt.md → neu.md.
+    vault._textFiles.delete('alt.md');
+    vault._textFiles.set('neu.md', GEHEIM);
+    await handlers.get('rename')!(tfile('neu.md'), 'alt.md');
+
+    // 3. Delete neu.md.
+    vault._textFiles.delete('neu.md');
+    await handlers.get('delete')!(tfile('neu.md'));
+
+    // 4. Verspaetete Fremd-Sidecar von Geraet A unter dem ALTEN Pfad, GUID G.
+    vault._files.set(A_SIDECAR_ALT, buildSidecar(G, GEHEIM, 'alt.md'));
+
+    // 5. Neue, inhaltlich unbeteiligte Note unter dem alten Namen.
+    vault._textFiles.set('alt.md', NEUTRAL);
+
+    await plugin.onRemoteYjsUpdate('alt.md');
+
+    expect(vault._textFiles.get('alt.md')).toBe(NEUTRAL);
+    expect(vault._files.has(A_SIDECAR_ALT)).toBe(false);
+  });
+});
+
+// --------------------------------------------------------------------------
+// Test 7 (Review C-1, Gegenprobe): Der C-1-Fix darf Fix A nicht zuruecknehmen.
+//
+// Zweitgeraet-Sicht auf denselben Rename: B hat NIE einen Rename gesehen, der
+// Datei-Sync stellt ihn als delete(alt.md) + create(neu.md) zu. Die Pfad-Historie
+// dieser Inkarnation ist auf B also LEER — der Tombstone darf ausschliesslich auf
+// alt.md landen, sonst entwertet er neu.md fuer eine LEBENDE Inkarnation und
+// reisst genau die Luecke wieder auf, die Fix A geschlossen hat.
+// --------------------------------------------------------------------------
+describe('Test 7 - C-1-Grenze: ohne lokalen Rename bleibt der Tombstone auf dem geloeschten Pfad', () => {
+  it('delete(alt.md) tombstont NUR alt.md; Fremd-Sidecar unter neu.md ueberlebt', async () => {
+    const vault = makeVaultMock();
+    const { plugin, handlers } = await bootPlugin(vault);
+    const OWN_ID: string = plugin.clientId;
+
+    // B kennt alt.md mit GUID G (eigene Sidecar) und hat neu.md nie umbenannt.
+    vault._files.set(`.qollab/alt.md.${OWN_ID}.yjs`, buildSidecar(G, 'alt-inhalt', 'alt.md'));
+    vault._textFiles.set('alt.md', 'alt-inhalt');
+
+    // Sync-zugestelltes delete(alt.md).
+    await handlers.get('delete')!(tfile('alt.md'));
+
+    const keys = Object.keys(plugin.settings.tombstones);
+    expect(keys).toContain(`alt.md\0${G}`);
+    expect(keys).not.toContain(`neu.md\0${G}`);
+    expect(keys).toHaveLength(1);
+
+    // Die Inkarnation laeuft unter neu.md weiter: Geraet-A-Sidecar bleibt.
+    const A_SIDECAR_NEU = `.qollab/neu.md.${A_ID}.yjs`;
+    vault._textFiles.set('neu.md', 'alt-inhalt');
+    vault._files.set(A_SIDECAR_NEU, buildSidecar(G, 'a-inhalt', 'neu.md'));
+
+    await plugin.onRemoteYjsUpdate('neu.md');
+
+    expect(vault._files.has(A_SIDECAR_NEU)).toBe(true);
   });
 });
