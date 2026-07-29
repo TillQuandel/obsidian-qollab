@@ -13,8 +13,10 @@ function makeTombstoneStore(): TombstoneStore & { _set: Set<string> } {
   const set = new Set<string>();
   return {
     has: (guid: string, notePath: string) => set.has(`${notePath}\0${guid}`),
-    add: async (guid: string, notePath: string) => {
-      set.add(`${notePath}\0${guid}`);
+    addAll: async (guids: string[], notePaths: string[]) => {
+      for (const guid of guids) {
+        for (const notePath of notePaths) set.add(`${notePath}\0${guid}`);
+      }
     },
     _set: set,
   };
@@ -58,7 +60,7 @@ describe('Doc-GUID + Tombstone', () => {
     const staleBytes = encodeStateFile(oldGuid!, staleManager.encodeState('note.md'));
 
     // 2) Delete simulieren: Tombstone + Siblings weg + dispose.
-    await tomb.add(oldGuid!, 'note.md');
+    await tomb.addAll([oldGuid!], ['note.md']);
     for (const p of await vault.listYjsFiles('note.md')) vault._files.delete(p);
     handler.disposeNote('note.md');
 

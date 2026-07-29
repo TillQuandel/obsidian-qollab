@@ -172,7 +172,7 @@ function setupDelete() {
 
 const NOOP_TOMBSTONES: TombstoneStore = {
   has: () => false,
-  add: async () => {},
+  addAll: async () => {},
 };
 
 // Delete-Handler-Arbeit (main.ts delete-Body) auf Handler-Ebene: GUID tombstonen,
@@ -183,7 +183,7 @@ async function deleteWork(
   tombstones: TombstoneStore
 ) {
   const guid = await handler.currentGuid(NOTE);
-  if (guid) await tombstones.add(guid, NOTE);
+  if (guid) await tombstones.addAll([guid], [NOTE]);
   const siblings = await vault.listYjsFiles(NOTE);
   for (const p of siblings) {
     await vault.adapter.remove(p);

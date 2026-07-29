@@ -48,8 +48,12 @@ function makeWipePlugin(vault: ReturnType<typeof makeVaultMock>) {
   plugin.crdtManager = new CrdtManager();
   plugin.syncHandler = new SyncHandler(vault as any, plugin.crdtManager, 'a1b2c3d4', {
     has: (g: string, notePath: string) => `${notePath}\0${g}` in plugin.settings.tombstones,
-    add: async (g: string, notePath: string) => {
-      plugin.settings.tombstones[`${notePath}\0${g}`] = Date.now();
+    addAll: async (gs: string[], notePaths: string[]) => {
+      for (const g of gs) {
+        for (const notePath of notePaths) {
+          plugin.settings.tombstones[`${notePath}\0${g}`] = Date.now();
+        }
+      }
     },
   });
   return plugin as any;

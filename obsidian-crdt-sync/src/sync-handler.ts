@@ -38,14 +38,19 @@ export function filterYjsFiles(allPaths: string[], notePath: string): string[] {
 // Task 15: Ein Tombstone gilt für genau ein Paar (notePath, guid). Lebt dieselbe
 // GUID unter einem anderen Pfad weiter (Rename, Adoption), ist sie dort unberührt
 // — deshalb tragen beide Methoden den Note-Pfad.
+//
+// Review F-4: Geschrieben wird das Kreuzprodukt in EINEM Zug. Ein Delete kann
+// mehrere Pfade (Rename-Historie) und mehrere GUIDs (Split-Brain-Reste unter dem
+// gelöschten Pfad) betreffen; jedes Paar einzeln zu persistieren hieß je ein
+// vollständiger `data.json`-Write.
 export interface TombstoneStore {
   has(guid: string, notePath: string): boolean;
-  add(guid: string, notePath: string): Promise<void>;
+  addAll(guids: string[], notePaths: string[]): Promise<void>;
 }
 
 const NO_TOMBSTONES: TombstoneStore = {
   has: () => false,
-  add: async () => {},
+  addAll: async () => {},
 };
 
 // Kombiniertes IO-Interface: die indizierte .md-Note läuft über die Vault-API
@@ -350,9 +355,12 @@ export class SyncHandler {
     // Sidecar und wird erst vom delete-Handler (currentGuid) aufgelöst. Wer die
     // Historie an eine bekannte GUID knüpfte, verlöre genau die Renames, die vor
     // dem ersten Doc-Zugriff passieren.
+    // Review F-4: beim Anhängen deduplizieren. Ein Ping-Pong `a→b→a→b…` legte die
+    // Liste sonst linear in der Länge der Rename-Folge an, obwohl der Inhalt zwei
+    // Einträge hat; geräumt wird erst mit `disposeNote`.
     const prior = this.priorPaths.get(oldPath) ?? [];
     this.priorPaths.delete(oldPath);
-    this.priorPaths.set(newPath, [...prior, oldPath]);
+    this.priorPaths.set(newPath, [...new Set([...prior, oldPath])]);
     // Task 14 (Review I-1): Die Sidecar wandert im rename-Handler am SyncHandler
     // vorbei mit (kein saveState) — die Signatur des alten Pfads beschreibt danach
     // eine Datei, die dort nicht mehr liegt. Bliebe sie stehen, träfe sie nach einem

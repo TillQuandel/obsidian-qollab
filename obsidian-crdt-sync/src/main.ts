@@ -48,8 +48,16 @@ export default class CrdtSyncPlugin extends Plugin {
   private tombstoneStore: TombstoneStore = {
     has: (guid: string, notePath: string) =>
       tombstoneKey(notePath, guid) in this.settings.tombstones,
-    add: async (guid: string, notePath: string) => {
-      this.settings.tombstones[tombstoneKey(notePath, guid)] = Date.now();
+    // Review F-4: alle Paare in-memory setzen, dann EIN saveSettings. Vorher lief
+    // pro Paar ein voller data.json-Write.
+    addAll: async (guids: string[], notePaths: string[]) => {
+      if (guids.length === 0 || notePaths.length === 0) return;
+      const deletedAt = Date.now();
+      for (const guid of guids) {
+        for (const notePath of notePaths) {
+          this.settings.tombstones[tombstoneKey(notePath, guid)] = deletedAt;
+        }
+      }
       await this.saveSettings();
     },
   };
@@ -245,11 +253,10 @@ export default class CrdtSyncPlugin extends Plugin {
         await this.pathQueue.run(file.path, async () => {
           const guids = await this.syncHandler.guidsToTombstone(file.path);
           if (guids) {
-            for (const guid of guids) {
-              for (const p of this.syncHandler.incarnationPaths(file.path)) {
-                await this.tombstoneStore.add(guid, p);
-              }
-            }
+            await this.tombstoneStore.addAll(
+              guids,
+              this.syncHandler.incarnationPaths(file.path)
+            );
           }
           // Sidecars über den Adapter listen und entfernen (Index-blind).
           const sidecars = await listYjsInDir(this.sidecarAdapter, file.path);
