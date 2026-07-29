@@ -31,12 +31,16 @@ export function filterYjsFiles(allPaths: string[], notePath: string): string[] {
   });
 }
 
-// Gerätelokaler Tombstone-Store, von main.ts injiziert. Merkt sich GUIDs
-// gelöschter Note-Inkarnationen, damit stale fremde .yjs derselben GUID nicht
-// wieder gemergt werden.
+// Gerätelokaler Tombstone-Store, von main.ts injiziert. Merkt sich gelöschte
+// Note-Inkarnationen, damit stale fremde .yjs derselben Inkarnation nicht wieder
+// gemergt werden.
+//
+// Task 15: Ein Tombstone gilt für genau ein Paar (notePath, guid). Lebt dieselbe
+// GUID unter einem anderen Pfad weiter (Rename, Adoption), ist sie dort unberührt
+// — deshalb tragen beide Methoden den Note-Pfad.
 export interface TombstoneStore {
-  has(guid: string): boolean;
-  add(guid: string): Promise<void>;
+  has(guid: string, notePath: string): boolean;
+  add(guid: string, notePath: string): Promise<void>;
 }
 
 const NO_TOMBSTONES: TombstoneStore = {
@@ -362,7 +366,7 @@ export class SyncHandler {
   //        Die eigene Datei kann nie fälschlich gelöscht werden: die eigene GUID
   //        landet nie im gerätelokalen Tombstone-Set (der delete-Handler tombstont
   //        nur beim Löschen der Note und entfernt dabei die eigene Datei ohnehin mit).
-  private async decodeSiblings(paths: string[]): Promise<DecodedSibling[]> {
+  private async decodeSiblings(notePath: string, paths: string[]): Promise<DecodedSibling[]> {
     // Alle Dateien lesen, dann in einem zweiten Durchlauf entscheiden.
     const decoded: Array<DecodedSibling | null> = [];
     for (const path of paths) {
@@ -377,8 +381,8 @@ export class SyncHandler {
       const d = decoded[i];
       if (!d) continue;
 
-      // Tombstone-Prüfung (C.3)
-      if (d.guid !== null && this.tombstones.has(d.guid)) {
+      // Tombstone-Prüfung (C.3) — pfadgebunden (Task 15 Fix A).
+      if (d.guid !== null && this.tombstones.has(d.guid, notePath)) {
         await this.removeSidecar(paths[i]);
         continue;
       }
@@ -445,6 +449,7 @@ export class SyncHandler {
 
     const ownPath = this.stateFilePath(notePath);
     const foreign = await this.decodeSiblings(
+      notePath,
       (await this.vault.listYjsFiles(notePath)).filter((p) => p !== ownPath)
     );
     const winner = this.pickWinnerGuid(foreign, undefined);
@@ -577,7 +582,7 @@ export class SyncHandler {
     const foreign = (await this.vault.listYjsFiles(notePath)).filter((p) => p !== ownPath);
     if (foreign.length === 0) return false;
     try {
-      return (await this.decodeSiblings(foreign)).some((s) => s.guid !== null);
+      return (await this.decodeSiblings(notePath, foreign)).some((s) => s.guid !== null);
     } catch (err) {
       // Unlesbare Sidecar (transienter IO-Fehler): Stand unbekannt → im Zweifel
       // NICHT prägen, der nächste Sweep/Trigger entscheidet erneut.
@@ -594,7 +599,7 @@ export class SyncHandler {
   private async mergePendingForeign(notePath: string): Promise<void> {
     const yjsFiles = await this.vault.listYjsFiles(notePath);
     if (yjsFiles.length === 0) return;
-    const siblings = await this.decodeSiblings(yjsFiles);
+    const siblings = await this.decodeSiblings(notePath, yjsFiles);
     this.mergeCompatible(notePath, siblings);
   }
 
@@ -711,7 +716,7 @@ export class SyncHandler {
       // bleibt er absichtlich draußen (er würde Remote-Edits zurückrollen).
       await this.ensureDoc(notePath);
 
-      const siblings = await this.decodeSiblings(yjsFiles);
+      const siblings = await this.decodeSiblings(notePath, yjsFiles);
       const ownGuid = this.guids.get(notePath);
       const winner = this.pickWinnerGuid(siblings, ownGuid);
 

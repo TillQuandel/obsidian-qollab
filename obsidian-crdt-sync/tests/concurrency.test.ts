@@ -183,7 +183,7 @@ async function deleteWork(
   tombstones: TombstoneStore
 ) {
   const guid = await handler.currentGuid(NOTE);
-  if (guid) await tombstones.add(guid);
+  if (guid) await tombstones.add(guid, NOTE);
   const siblings = await vault.listYjsFiles(NOTE);
   for (const p of siblings) {
     await vault.adapter.remove(p);

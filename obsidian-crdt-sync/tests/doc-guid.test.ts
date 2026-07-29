@@ -7,12 +7,14 @@ import { makeVaultMock, toArrayBuffer as toAB } from './helpers/vault-mock';
 // Deckt Zombie-Resurrection, Simultan-Erstkontakt-Konvergenz (identisch +
 // divergent) und Legacy-Kompatibilität ab.
 
+// Task 15: Der Store schlüsselt auf das Paar (notePath, guid) — der Mock bildet
+// das mit demselben NUL-Trenner ab wie die Produktion.
 function makeTombstoneStore(): TombstoneStore & { _set: Set<string> } {
   const set = new Set<string>();
   return {
-    has: (guid: string) => set.has(guid),
-    add: async (guid: string) => {
-      set.add(guid);
+    has: (guid: string, notePath: string) => set.has(`${notePath}\0${guid}`),
+    add: async (guid: string, notePath: string) => {
+      set.add(`${notePath}\0${guid}`);
     },
     _set: set,
   };
@@ -56,7 +58,7 @@ describe('Doc-GUID + Tombstone', () => {
     const staleBytes = encodeStateFile(oldGuid!, staleManager.encodeState('note.md'));
 
     // 2) Delete simulieren: Tombstone + Siblings weg + dispose.
-    await tomb.add(oldGuid!);
+    await tomb.add(oldGuid!, 'note.md');
     for (const p of await vault.listYjsFiles('note.md')) vault._files.delete(p);
     handler.disposeNote('note.md');
 

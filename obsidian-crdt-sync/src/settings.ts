@@ -9,8 +9,11 @@ import type CrdtSyncPlugin from './main';
 export interface CrdtSyncSettings {
   enabled: boolean;
   statusNotice: boolean;
-  // GUIDs gelöschter Note-Inkarnationen → deletedAt (epoch ms). Gerätelokal;
-  // verhindert Zombie-Resurrection stale fremder .yjs (siehe tombstones.ts).
+  // Gelöschte Note-Inkarnationen → deletedAt (epoch ms). Gerätelokal; verhindert
+  // Zombie-Resurrection stale fremder .yjs (siehe tombstones.ts). Der Schlüssel
+  // ist seit Task 15 das Paar `${notePath}\0${guid}` (tombstoneKey), nicht mehr
+  // die GUID allein: derselbe GUID unter einem anderen Pfad (Rename, Adoption)
+  // bleibt unberührt. Alt-Format-Einträge werden beim Laden verworfen.
   tombstones: Record<string, number>;
 }
 

@@ -40,13 +40,16 @@ function makeWipePlugin(vault: ReturnType<typeof makeVaultMock>) {
     enabled: true,
     statusNotice: false,
     clientId: 'a1b2c3d4', // Codex-LOW: gültige 8-hex clientId
-    tombstones: { [G]: Date.now() }, // A hat GUID G getombstoned
+    // A hat die Inkarnation G unter NOTE getombstoned. Task 15: Der Schlüssel
+    // trägt den Pfad mit — hier derselbe Pfad, unter dem B's stale Sidecar
+    // ankommt, das Szenario bleibt also unverändert.
+    tombstones: { [`${NOTE}\0${G}`]: Date.now() },
   };
   plugin.crdtManager = new CrdtManager();
   plugin.syncHandler = new SyncHandler(vault as any, plugin.crdtManager, 'a1b2c3d4', {
-    has: (g: string) => g in plugin.settings.tombstones,
-    add: async (g: string) => {
-      plugin.settings.tombstones[g] = Date.now();
+    has: (g: string, notePath: string) => `${notePath}\0${g}` in plugin.settings.tombstones,
+    add: async (g: string, notePath: string) => {
+      plugin.settings.tombstones[`${notePath}\0${g}`] = Date.now();
     },
   });
   return plugin as any;

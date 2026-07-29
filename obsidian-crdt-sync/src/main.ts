@@ -10,7 +10,7 @@ import {
 } from './sidecar-io';
 import { SidecarWatcher } from './sidecar-watcher';
 import { CrdtSyncSettings, CrdtSyncSettingTab, DEFAULT_SETTINGS, generateClientId } from './settings';
-import { pruneTombstones } from './tombstones';
+import { migrateTombstones, tombstoneKey } from './tombstones';
 import { PathQueue } from './path-queue';
 import { threeWayMerge } from './text-merge';
 
@@ -43,11 +43,13 @@ export default class CrdtSyncPlugin extends Plugin {
   private sidecarWatcher: SidecarWatcher;
   // Adapter-gestützte Sidecar-IO (.qollab/ ist für den Vault-Index unsichtbar).
   private sidecarAdapter: SidecarAdapter;
-  // Gerätelokaler Tombstone-Store (Teil der Plugin-Data).
+  // Gerätelokaler Tombstone-Store (Teil der Plugin-Data). Schlüssel ist das Paar
+  // (notePath, guid) — siehe tombstones.ts.
   private tombstoneStore: TombstoneStore = {
-    has: (guid: string) => guid in this.settings.tombstones,
-    add: async (guid: string) => {
-      this.settings.tombstones[guid] = Date.now();
+    has: (guid: string, notePath: string) =>
+      tombstoneKey(notePath, guid) in this.settings.tombstones,
+    add: async (guid: string, notePath: string) => {
+      this.settings.tombstones[tombstoneKey(notePath, guid)] = Date.now();
       await this.saveSettings();
     },
   };
@@ -216,7 +218,7 @@ export default class CrdtSyncPlugin extends Plugin {
         if (!file.path.endsWith('.md')) return;
         await this.pathQueue.run(file.path, async () => {
           const guid = await this.syncHandler.currentGuid(file.path);
-          if (guid) await this.tombstoneStore.add(guid);
+          if (guid) await this.tombstoneStore.add(guid, file.path);
           // Sidecars über den Adapter listen und entfernen (Index-blind).
           const sidecars = await listYjsInDir(this.sidecarAdapter, file.path);
           for (const sc of sidecars) await this.sidecarAdapter.remove(sc);
@@ -526,8 +528,9 @@ export default class CrdtSyncPlugin extends Plugin {
     this.legacyClientId = typeof raw.clientId === 'string' ? raw.clientId : '';
     delete raw.clientId;
     this.settings = Object.assign({}, DEFAULT_SETTINGS, raw);
-    // Tombstones > 90 Tage beim Laden entfernen (hält die Data-Datei klein).
-    this.settings.tombstones = pruneTombstones(this.settings.tombstones ?? {});
+    // Tombstones > 90 Tage beim Laden entfernen (hält die Data-Datei klein) und
+    // Alt-Format-Einträge (GUID-global, vor Task 15) verwerfen.
+    this.settings.tombstones = migrateTombstones(this.settings.tombstones ?? {});
   }
 
   async saveSettings() {
