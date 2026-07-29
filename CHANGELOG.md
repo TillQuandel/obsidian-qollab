@@ -2,6 +2,14 @@
 
 Alle nennenswerten Aenderungen an Qollab. Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/), Versionierung folgt [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **Tombstone-Scope ist pfadgebunden statt GUID-global** — ein sync-vermittelter Rename entwertete bisher die Historie einer lebenden Note. Die Lösch-Markierung war ein GUID-globaler, gerätelokaler Kill-Switch, abgeleitet aus einem Datei-*Ereignis*, das die Absicht nicht kennt: Der `delete`-Handler tombstonte bedingungslos die GUID des Pfads und konnte nicht unterscheiden, ob der Nutzer gelöscht hat oder ob der Datei-Sync eine Umbenennung als delete+create zustellt (robocopy /MIR, Syncthing, OneDrive — der dokumentierte Standard-Betriebsmodus). `decodeSiblings` löschte daraufhin **jede** Sidecar dieser GUID unter **jedem** Pfad von der Platte, inklusive der eigenen und der fremder Geräte → permanente Einweg-Divergenz. Der Schlüssel ist jetzt das Paar `(notePath, guid)` (NUL-getrennt; Leerzeichen/Slash taugen nicht, da sie in Vault-Pfaden vorkommen): Lebt dieselbe Inkarnation unter einem anderen Pfad weiter (Rename, Adoption), ist sie dort unberührt. Der dokumentierte Zweck (Zombie-Resurrection, siehe README §Grenzen) ist per Definition pfadgebunden — der alte Scope war schlicht breiter als der Zweck. Alt-Format-Einträge werden beim Laden verworfen statt umgeschrieben: für sie ist der Pfad nicht rekonstruierbar, und als Wildcard behalten trügen sie genau den Bug weiter.
+- **Eigene Sidecar wird über den Tombstone-Zweig nie mehr gelöscht** — sie ist der lebende State des Geräts. Traf ein Tombstone eine noch lebende Inkarnation, löschte `decodeSiblings` die eigene Hilfsdatei vor dem Merge, und `saveState` legte sie am Ende desselben Laufs wieder an: Sidecar-Thrash bei jedem Trigger. Sie wird jetzt nur noch vom Merge-Ergebnis ausgeschlossen (ihr Stand steckt bereits im Doc). Der Legacy-Zweig (v0.1-Dateien) bleibt unverändert.
+- **`rename` serialisiert auf beiden Pfaden** — der Task lief nur auf `oldPath`, mutiert aber ausschließlich `newPath`-Zustand (umbenannte Sidecars, GUID-Map-Eintrag, Doc). Delete- und modify-Tasks derselben Note laufen nach dem Rename auf `newPath`, also auf einer davon unabhängigen Kette: Ein paralleles `delete(newPath)` zog am Rename vorbei, fand noch keine GUID, setzte keinen Tombstone — und der Rename stellte die Sidecars danach wieder unter `newPath` auf. `PathQueue` bekommt dafür `runAll(keys, fn)`, das alle Keys in einem Schritt nimmt; verschachtelte `run`-Aufrufe belegen den zweiten Key erst beim Body-Start und lassen den Race offen (empirisch belegt).
+
 ## [0.4.0] - 2026-07-21
 
 ### Added
