@@ -32,6 +32,40 @@ export class PathQueue {
     return result;
   }
 
+  // Serialisiert über MEHRERE Keys gleichzeitig (Task 15 Fix C: der rename-Handler
+  // mutiert newPath-Zustand, muss aber auch oldPath halten, damit ein dort
+  // geparkter Task nicht parallel läuft).
+  //
+  // Alle Tails werden in EINEM Schritt genommen und gesetzt. Verschachtelte
+  // run-Aufrufe (`run(a, () => run(b, fn))`) leisten das NICHT: den zweiten Key
+  // belegen sie erst, wenn der Body startet — ein zwischenzeitlich eingereihter
+  // Task auf diesem Key zieht vorbei. Genau das ist der rename+delete-Race
+  // (Befund 4/7), und genau deshalb reicht Verschachteln hier nicht.
+  //
+  // Deadlock-frei by construction: es gibt kein Hold-and-Wait, weil alle Keys
+  // atomar genommen werden. Sortiert wird für eine deterministische Reihenfolge,
+  // dedupliziert, damit ein doppelter Key nicht auf sich selbst wartet.
+  runAll<T>(keys: string[], fn: () => Promise<T>): Promise<T> {
+    const unique = [...new Set(keys)].sort();
+    const prev = Promise.all(unique.map((k) => this.tails.get(k) ?? Promise.resolve()));
+    const result = prev.then(fn);
+
+    // Wie in run(): der Tail darf nie rejecten, sonst blockiert ein Fehler die Kette.
+    const tail = result.then(
+      () => {},
+      () => {}
+    );
+    for (const k of unique) this.tails.set(k, tail);
+
+    void tail.then(() => {
+      for (const k of unique) {
+        if (this.tails.get(k) === tail) this.tails.delete(k);
+      }
+    });
+
+    return result;
+  }
+
   // Anzahl aktuell verfolgter Keys — nur für Leak-Assertions in Tests.
   get size(): number {
     return this.tails.size;

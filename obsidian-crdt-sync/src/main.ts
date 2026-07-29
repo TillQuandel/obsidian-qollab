@@ -183,15 +183,24 @@ export default class CrdtSyncPlugin extends Plugin {
     );
 
     // Rename: .yjs-Dateien mitumbenennen. Gleiche Inkarnation → GUID bleibt,
-    // Map-Eintrag zieht auf den neuen Pfad um. Über die Queue auf oldPath, damit
-    // ein geparkter Task auf oldPath (loadAndMerge/applyLocalContent) nicht
-    // parallel zum renameNote den GUID-Map-Eintrag mutiert (Orphan-.yjs +
-    // GUID-Divergenz). Keine verschachtelten run-Aufrufe mit gleichem Key hier.
+    // Map-Eintrag zieht auf den neuen Pfad um.
+    //
+    // Über die Queue auf BEIDEN Pfaden (Task 15 Fix C). oldPath, damit ein dort
+    // geparkter Task (loadAndMerge/applyLocalContent) nicht parallel zum
+    // renameNote den GUID-Map-Eintrag mutiert (Orphan-.yjs + GUID-Divergenz).
+    // newPath, weil der Task ausschließlich newPath-Zustand mutiert (umbenannte
+    // Sidecars, guids[newPath], Doc) — delete- und modify-Tasks derselben Note
+    // laufen danach auf newPath und liefen bisher auf einer davon unabhängigen
+    // Kette: ein paralleles delete(newPath) zog am Rename vorbei, fand noch keine
+    // GUID, setzte keinen Tombstone, und der Rename stellte die Sidecars danach
+    // wieder auf (Befund 4/7). runAll nimmt beide Keys in einem Schritt —
+    // verschachtelte run-Aufrufe würden newPath erst beim Body-Start belegen und
+    // den Race offen lassen (siehe path-queue.ts).
     this.registerEvent(
       this.app.vault.on('rename', async (file, oldPath) => {
         if (!(file instanceof TFile)) return;
         if (!file.path.endsWith('.md')) return;
-        await this.pathQueue.run(oldPath, async () => {
+        await this.pathQueue.runAll([oldPath, file.path], async () => {
           // Sidecars sind für den Index unsichtbar → über den Adapter listen und
           // umziehen. Zielordner ggf. anlegen (Rename in einen anderen Ordner).
           const sidecars = await listYjsInDir(this.sidecarAdapter, oldPath);

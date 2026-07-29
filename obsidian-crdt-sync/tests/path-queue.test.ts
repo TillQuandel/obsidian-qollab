@@ -105,3 +105,49 @@ describe('PathQueue', () => {
     expect(q.size).toBe(0);
   });
 });
+
+// Task 15 Fix C: runAll nimmt mehrere Keys in EINEM Schritt. Der rename-Handler
+// braucht das, weil verschachtelte run-Aufrufe den zweiten Key erst beim
+// Body-Start belegen — ein dazwischen eingereihter Task zieht dann vorbei.
+describe('PathQueue.runAll (Mehrfach-Key)', () => {
+  it('belegt alle Keys sofort: ein danach eingereihter Task wartet, obwohl der Body noch nicht lief', async () => {
+    const q = new PathQueue();
+    let releaseA!: () => void;
+    const gateA = new Promise<void>((r) => {
+      releaseA = r;
+    });
+
+    const order: string[] = [];
+
+    // Task auf 'a' parken — runAll kommt damit gar nicht erst zum Body.
+    const parked = q.run('a', async () => {
+      order.push('parked');
+      await gateA;
+    });
+
+    const both = q.runAll(['a', 'b'], async () => {
+      order.push('runAll');
+    });
+
+    // Später auf 'b' eingereiht. 'b' ist faktisch frei (runAll-Body läuft nicht),
+    // muss aber trotzdem hinter runAll warten.
+    const onB = q.run('b', async () => {
+      order.push('b-danach');
+    });
+
+    releaseA();
+    await Promise.all([parked, both, onB]);
+
+    expect(order).toEqual(['parked', 'runAll', 'b-danach']);
+  });
+
+  it('dedupliziert doppelte Keys (kein Selbst-Deadlock) und räumt alle Keys auf', async () => {
+    const q = new PathQueue();
+
+    await q.runAll(['a', 'a'], async () => {});
+    await q.runAll(['b', 'a'], async () => {});
+
+    await tick();
+    expect(q.size).toBe(0);
+  });
+});
