@@ -160,6 +160,41 @@ describe('Doc-Vorlauf: lokaler Diff darf einen gemergten Fremd-Edit nicht lösch
     expect(vault._textFiles.get(NOTE)).toBe(doc);
   });
 
+  it('Plugin-Ebene: ein verweigerter Write-Back lässt den Fremd-Edit nicht fallen', async () => {
+    const vault = makeVaultMock();
+    vault._textFiles.set(NOTE, BASE);
+    vault._mdMtimes.set(NOTE, 1);
+    const { plugin, handlers } = await bootDevice(vault);
+    await type(vault, handlers, BASE);
+    placeForeignSidecar(vault);
+
+    // Obsidian speichert den nächsten Tastendruck, WÄHREND unser Merge in der
+    // Sidecar-IO hängt. Beim Write-Back trägt die Datei damit nicht mehr den Text,
+    // den wir gemergt haben — geschrieben wird bewusst nicht (der Edit dürfte nicht
+    // überschrieben werden). Der Doc bleibt der Datei also voraus.
+    const origProcess = vault.process.bind(vault);
+    let raced = false;
+    vault.process = async (file: { path: string }, fn: (data: string) => string) => {
+      if (!raced) {
+        raced = true;
+        vault._textFiles.set(NOTE, `${vault._textFiles.get(NOTE)}LOKAL2\n`);
+      }
+      return origProcess(file, fn);
+    };
+
+    await type(vault, handlers, `${BASE}LOKAL1\n`);
+    expect(plugin.crdtManager.getContent(NOTE)).toContain('FREMD');
+    expect(vault._textFiles.get(NOTE)).not.toContain('FREMD');
+
+    // Obsidians modify-Event für den im Rennen gespeicherten Text.
+    await type(vault, handlers, vault._textFiles.get(NOTE)!);
+
+    const doc = plugin.crdtManager.getContent(NOTE);
+    expect(count(doc, 'FREMD')).toBe(1);
+    expect(count(doc, 'LOKAL1')).toBe(1);
+    expect(count(doc, 'LOKAL2')).toBe(1);
+  });
+
   it('Handler-Ebene: der Doc-Vorlauf allein macht aus dem nächsten Diff keine Löschung', async () => {
     const vault = makeVaultMock() as any;
     const manager = new CrdtManager();
