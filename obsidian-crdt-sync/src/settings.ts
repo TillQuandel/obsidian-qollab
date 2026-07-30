@@ -67,7 +67,6 @@ export class CrdtSyncSettingTab extends PluginSettingTab {
           .onChange(async (value) => {
             const wasEnabled = this.plugin.settings.enabled;
             this.plugin.settings.enabled = value;
-            await this.plugin.saveSettings();
             // Task 17/F-5: Beim Wechsel aus → an den Sweep nachholen. Während
             // „aus" fällt jeder Edit am `enabled`-Guard des modify-Handlers ab und
             // lebt nur in der `.md`; gleichzeitig stauen sich die Remote-Trigger
@@ -78,7 +77,23 @@ export class CrdtSyncSettingTab extends PluginSettingTab {
             //
             // Das Gate in `runStartupSweep` (F-2) hält Trigger währenddessen
             // offen; deshalb genügt hier derselbe Aufruf wie beim Start.
-            if (value && !wasEnabled) await this.plugin.runStartupSweep();
+            //
+            // Task 17/R-3: Der Aufruf steht VOR `saveSettings`, und das ist die
+            // eigentliche Bedingung. `runStartupSweep` setzt `sweepRunning` in
+            // seiner ersten Zeile, also synchron im selben Tick wie die
+            // Zuweisung oben — zwischen Schalter und Gate liegt damit kein
+            // `await`. Stand `saveSettings` dazwischen (ein echter
+            // data.json-Write), war `enabled` bereits `true` und das Gate noch
+            // offen: ein in dieses Fenster fallendes Poll lief ungefiltert durch
+            // und überschrieb die Aus-Phase — der F-5-Schaden als Race.
+            //
+            // `finally`: der Schalterstand wird auch dann persistiert, wenn der
+            // Sweep wirft. Sonst zeigte die UI „an", der Speicher aber „aus".
+            try {
+              if (value && !wasEnabled) await this.plugin.runStartupSweep();
+            } finally {
+              await this.plugin.saveSettings();
+            }
           })
       );
 

@@ -104,3 +104,54 @@ describe('F-5: Wiedereinschalten holt die Aus-Phase nach', () => {
     expect(vault._textFiles.get(NOTE)).toContain('EDIT-Y');
   });
 });
+
+// Task 17 / R-3 — Der Rest von F-5 IST ein Race
+//
+// Zwischen `settings.enabled = true` und dem Gate lag ein `await` auf einen
+// echten Dateischreibvorgang (`Plugin.saveData` → data.json). In diesem Fenster
+// ist `enabled` bereits `true` und `sweepRunning` noch `false`; ein fälliges
+// Poll-Intervall (oder ein `file-open`) läuft ungefiltert durch
+// `onRemoteYjsUpdate` und arbeitet genau die aufgestauten Trigger ab, bevor der
+// Sweep die `.md`-Edits der Aus-Phase erfasst hat — wortwörtlich der
+// F-5-Schaden. Der Report beschrieb F-5 als „deterministisch, kein Race"; für
+// diesen Rest gilt das nicht.
+describe('F-5/R-3: kein Fenster zwischen Schalter und Gate', () => {
+  it('ein Poll im saveSettings-IO-Fenster löscht die Aus-Phase nicht', async () => {
+    const vault = makeVaultMock();
+    vault._textFiles.set(NOTE, BASE);
+    vault._files.set(OWN_PATH, sidecar(BASE));
+
+    const { plugin, app, layout } = await boot(vault);
+    await layout()!();
+
+    const setEnabled = syncToggle(app, plugin);
+    await setEnabled(false);
+
+    // Aus-Phase: ihr Edit lebt nur in der .md, der Peer-Stand kommt an.
+    vault._textFiles.set(NOTE, BASE_Z);
+    vault._mdMtimes.set(NOTE, 999);
+    vault._files.set(PEER_PATH, sidecar(BASE_Y));
+    vault._mtimes.set(PEER_PATH, 500);
+
+    // Der Trigger staut sich korrekt auf.
+    await plugin.sidecarWatcher.poll();
+    expect(vault._textFiles.get(NOTE)).toBe(BASE_Z);
+
+    // Das Poll-Intervall fällt genau in das IO-Fenster des Settings-Writes.
+    // `saveData` IST dieser Write (Plugin-Basisklasse); mehr braucht das Fenster
+    // nicht, um einen Tick lang offen zu stehen.
+    const origSaveData = plugin.saveData.bind(plugin);
+    let polledInWindow = false;
+    plugin.saveData = async (data: unknown) => {
+      polledInWindow = true;
+      await plugin.sidecarWatcher.poll();
+      return origSaveData(data);
+    };
+
+    await setEnabled(true);
+
+    expect(polledInWindow).toBe(true);
+    expect(vault._textFiles.get(NOTE)).toContain('EDIT-Z');
+    expect(vault._textFiles.get(NOTE)).toContain('EDIT-Y');
+  });
+});
