@@ -1,4 +1,4 @@
-import { CrdtManager, isApplicableUpdate } from './crdt-manager';
+import { CrdtManager, carriesYjsOps } from './crdt-manager';
 import { encodeStateFile, decodeStateFile, generateGuid } from './state-file';
 import type { SidecarAdapter } from './sidecar-io';
 import {
@@ -628,15 +628,16 @@ export class SyncHandler {
       }
 
       if (d.guid === null) {
-        // Task 17/F-1, Schritt 1 — INHALTS-Nachweis: Ist die Datei leer oder nicht
-        // als Yjs-Update lesbar, ist der Stand UNBEKANNT. Überspringen und melden
+        // Task 17/F-1, Schritt 1 — INHALTS-Nachweis: Trägt die Datei keine
+        // nachweisbare Yjs-Op, ist der Stand UNBEKANNT. Überspringen und melden
         // (die R2-Policy, die dieser Zweig bisher umging), aber nichts löschen und
-        // nichts in den Merge nehmen.
-        if (!isApplicableUpdate(d.update)) {
+        // nichts in den Merge nehmen. Task 17/R-1: „lesbar" war zu schwach —
+        // nullgefüllte Puffer sind lesbar und leer (siehe carriesYjsOps).
+        if (!carriesYjsOps(d.update)) {
           this.onCorruptFile?.(paths[i]);
           continue;
         }
-        // R1 (unverändert): ein nachgewiesen lesbarer headerloser State wird
+        // R1 (unverändert): ein nachgewiesen op-tragender headerloser State wird
         // ignoriert, sobald GUID-State existiert — sein Inhalt steckt dann bereits
         // darin. Ohne GUID-State bleibt es beim Erst-Import (unten mitgemergt).
         if (hasGuidState) {
@@ -698,9 +699,12 @@ export class SyncHandler {
     // Inkarnation über eine lebende Historie: Spaltung, danach Tie-Break und
     // `unionMerge` ohne gemeinsamen Vorfahren, also doppelte Zeilen in der Note.
     // Bedingung ist jetzt derselbe positive Nachweis wie in `decodeSiblings` —
-    // GUID im Header ODER lesbarer headerloser State (v0.1-Migration: der bekommt
-    // wie dokumentiert eine frische GUID, sein Inhalt ist ja gerettet).
-    if (own && (own.guid !== null || isApplicableUpdate(own.update))) {
+    // GUID im Header ODER headerloser State mit nachweisbaren Ops (v0.1-Migration:
+    // der bekommt wie dokumentiert eine frische GUID, sein Inhalt ist ja gerettet).
+    // Task 17/R-1: Auch hier reicht „parst" nicht — eine nullgefüllte eigene
+    // Sidecar nahm sonst diesen Zweig, `applyUpdate` gelang als No-op und
+    // `own.guid ?? generateGuid()` prägte die Spaltung, die der Fix verhindern soll.
+    if (own && (own.guid !== null || carriesYjsOps(own.update))) {
       // R2: korrupter eigener State → überspringen; Doc bleibt leer und wird beim
       // nächsten saveState (aus applyLocalContent) mit gültigem State überschrieben.
       try {
@@ -837,11 +841,12 @@ export class SyncHandler {
   // sie noch existiert. Wird nach saveState aufgerufen: zu dem Zeitpunkt existiert
   // GUID-tragender State, sodass die Legacy-Datei nicht mehr gebraucht wird.
   //
-  // Task 17/F-1: Gelöscht wird nur bei positivem Nachweis — die Datei muss als
-  // Yjs-Update lesbar sein. Sonst räumte genau dieser Aufruf die 0-Byte-Fassung
-  // einer noch nicht hydrierten v0.1-Datei ab, hinter dem Rücken des Guards in
-  // `decodeSiblings`. Kein zusätzlicher IO im Normalfall: existiert keine
-  // Legacy-Datei (der Regelfall), bleibt es beim einen `stat` wie bisher.
+  // Task 17/F-1: Gelöscht wird nur bei positivem Nachweis — die Datei muss
+  // nachweisbare Yjs-Ops tragen (Task 17/R-1: „lesbar" genügte nicht, siehe
+  // carriesYjsOps). Sonst räumte genau dieser Aufruf die 0-Byte- bzw.
+  // nullgefüllte Fassung einer noch nicht hydrierten v0.1-Datei ab, hinter dem
+  // Rücken des Guards in `decodeSiblings`. Kein zusätzlicher IO im Normalfall:
+  // existiert keine Legacy-Datei (der Regelfall), bleibt es beim einen `stat`.
   private async cleanupLegacyFile(notePath: string): Promise<void> {
     const path = this.legacyFilePath(notePath);
     let buffer: ArrayBuffer | null;
@@ -852,7 +857,7 @@ export class SyncHandler {
     }
     if (buffer === null) return;
     const { guid, update } = decodeStateFile(new Uint8Array(buffer));
-    if (guid !== null || !isApplicableUpdate(update)) return;
+    if (guid !== null || !carriesYjsOps(update)) return;
     await this.vault.adapter.remove(path);
   }
 

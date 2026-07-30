@@ -37,6 +37,16 @@ function headerlessGarbage(size = 64): ArrayBuffer {
   return toAB(new Uint8Array(size).fill(0xff));
 }
 
+// Task 17 / R-1: Nullfüllung ist die zweite Erscheinungsform unvollständig
+// materialisierter Dateien (fehlgeschlagene OneDrive-Hydrierung, abgebrochener
+// NTFS-Extend, Sparse-/Platzhalter-Zustände). Anders als `headerlessGarbage`
+// PARST sie fehlerfrei — als leeres Update. Ein Parse-Check hält sie deshalb für
+// einen nachgewiesenen v0.1-State; die Tests unten sind die 1:1-Gegenstücke zu
+// den 0-Byte-Fällen oben.
+function zeroFilled(size = 64): ArrayBuffer {
+  return toAB(new Uint8Array(size));
+}
+
 describe('F-1: headerlose Fremd-Sidecar wird nicht als v0.1-Legacy gelöscht', () => {
   it('0-Byte-Fremd-Sidecar bleibt nach loadAndMerge auf der Platte', async () => {
     const vault = makeVaultMock();
@@ -86,6 +96,25 @@ describe('F-1: headerlose Fremd-Sidecar wird nicht als v0.1-Legacy gelöscht', (
 
     expect(vault._files.has(LEGACY_PATH)).toBe(true);
   });
+
+  it('R-1: nullgefüllte Datei in Legacy-Pfadform wird nicht gelöscht', async () => {
+    const vault = makeVaultMock();
+    vault._files.set(OWN_PATH, guidSidecar(OWN_GUID, CONTENT));
+    vault._files.set(LEGACY_PATH, zeroFilled(64));
+    vault._textFiles.set(NOTE, CONTENT);
+
+    const corrupt: string[] = [];
+    const handler = new SyncHandler(vault as any, new CrdtManager(), 'deadbeef', undefined, (p) =>
+      corrupt.push(p)
+    );
+
+    await handler.loadAndMerge(NOTE);
+
+    // 64 Byte Nullen parsen als leeres Yjs-Update — der Parse-Check hielt das
+    // für einen nachgewiesenen v0.1-State und löschte die Datei.
+    expect(vault._files.has(LEGACY_PATH)).toBe(true);
+    expect(corrupt).toContain(LEGACY_PATH);
+  });
 });
 
 describe('F-1: eigene headerlose Sidecar prägt keine frische Inkarnation', () => {
@@ -106,5 +135,44 @@ describe('F-1: eigene headerlose Sidecar prägt keine frische Inkarnation', () =
     expect(own.guid).toBe(PEER_GUID);
     // Und die Datei des Peers steht noch.
     expect(vault._files.has(PEER_PATH)).toBe(true);
+  });
+
+  it('R-1: nullgefüllte eigene Sidecar übernimmt die GUID des Peers', async () => {
+    const vault = makeVaultMock();
+    // Eigene Sidecar nullgefüllt statt 0 Byte — sie PARST, `applyUpdate` gelingt
+    // als No-op, und `own.guid ?? generateGuid()` prägte eine frische GUID über
+    // die lebende Peer-Inkarnation: Spaltung, danach unionMerge ohne
+    // gemeinsamen Vorfahren.
+    vault._files.set(OWN_PATH, zeroFilled(64));
+    vault._files.set(PEER_PATH, guidSidecar(PEER_GUID, CONTENT));
+    vault._textFiles.set(NOTE, CONTENT);
+
+    const handler = new SyncHandler(vault as any, new CrdtManager(), 'deadbeef');
+    await handler.applyLocalContent(NOTE, CONTENT);
+
+    const own = decodeStateFile(new Uint8Array(vault._files.get(OWN_PATH)!));
+    expect(own.guid).toBe(PEER_GUID);
+    expect(vault._files.has(PEER_PATH)).toBe(true);
+  });
+});
+
+// Dritter Löschpfad: `cleanupLegacyFile` läuft NACH saveState und prüfte
+// dieselbe Bedingung eigenständig. Der Zuschnitt hier isoliert ihn — solange
+// kein GUID-State existiert, rührt `decodeSiblings` die Legacy-Datei nicht an;
+// erst der eigene, gerade geschriebene State macht sie aus Sicht des Cleanups
+// „obsolet".
+describe('F-1: cleanupLegacyFile löscht nur bei nachgewiesenem Inhalt', () => {
+  it('R-1: nullgefüllte Legacy-Datei überlebt den Cleanup nach saveState', async () => {
+    const vault = makeVaultMock();
+    vault._files.set(LEGACY_PATH, zeroFilled(64));
+    vault._textFiles.set(NOTE, CONTENT);
+
+    const handler = new SyncHandler(vault as any, new CrdtManager(), 'deadbeef');
+    await handler.applyLocalContent(NOTE, CONTENT);
+
+    // Der eigene State ist geschrieben …
+    expect(vault._files.has(OWN_PATH)).toBe(true);
+    // … die Legacy-Datei unbewiesenen Inhalts bleibt trotzdem liegen.
+    expect(vault._files.has(LEGACY_PATH)).toBe(true);
   });
 });

@@ -1,18 +1,35 @@
 import * as Y from 'yjs';
 import { diff_match_patch, DIFF_DELETE, DIFF_INSERT, DIFF_EQUAL } from 'diff-match-patch';
 
-// Task 17/F-1: Lässt sich `update` überhaupt als Yjs-Update lesen? Nötig, um einen
-// echten v0.1-State (headerlos, aber gültig) von einer nur unvollständig
+// Task 17/F-1: Trägt `update` nachweislich Yjs-Ops? Nötig, um einen echten
+// v0.1-State (headerlos, aber gültig) von einer nur unvollständig
 // materialisierten Datei zu unterscheiden — für `decodeStateFile` sehen beide
 // identisch aus (`guid: null`). Läuft auf einem Wegwerf-Doc; kein geladener
-// Zustand wird berührt. Leer zählt nie als gültig: eine 0-Byte-Datei beweist
-// nichts, und genau sie erzeugt OneDrive bei fehlgeschlagener Hydrierung.
-export function isApplicableUpdate(update: Uint8Array): boolean {
+// Zustand wird berührt.
+//
+// Task 17/R-1: „parst" genügt als Nachweis NICHT. Yjs liest `[0x00, 0x00]` als
+// „0 Struct-Clients, 0 Delete-Set-Clients" und ignoriert den Rest — jeder
+// nullgefüllte Puffer ab 2 Byte parst damit fehlerfrei zu einem leeren Doc, und
+// `zeros(20) + <echtes Update>` (genullter Kopf, intakte Nutzlast) ebenfalls.
+// Nullfüllung ist aber genau die zweite Erscheinungsform halb materialisierter
+// Dateien (fehlgeschlagene OneDrive-Hydrierung, abgebrochener NTFS-Extend,
+// Sparse-/Platzhalter-Zustände). Deshalb ist das Kriterium `clients.size > 0` —
+// dieselbe Unterscheidung, die `hasOps` unten für den geladenen Doc trifft.
+//
+// Preis der Verschärfung: Ein LEGITIMER v0.1-State kann ops-frei sein — v0.1
+// rief `saveState` auch für eine leere Note, und `encodeStateAsUpdate` eines
+// nie befüllten Docs sind exakt die zwei Nullbytes. Eine solche Datei wird ab
+// jetzt weder gelöscht noch gemergt, sondern als „Stand unbekannt" gemeldet.
+// Verloren geht dabei nichts (sie trägt per Konstruktion keine Op); es bleibt
+// eine 2-Byte-Datei liegen und eine Meldung pro Pfad und Sitzung. Umgekehrt
+// kostete das schwächere Kriterium eine nullgefüllte Datei, die den vollen
+// State trug — Löschung bzw. frische Inkarnation. Der Tausch ist einseitig.
+export function carriesYjsOps(update: Uint8Array): boolean {
   if (update.length === 0) return false;
   const probe = new Y.Doc();
   try {
     Y.applyUpdate(probe, update);
-    return true;
+    return (probe.store as any).clients.size > 0;
   } catch {
     return false;
   } finally {

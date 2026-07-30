@@ -1,4 +1,46 @@
-import { CrdtManager } from '../src/crdt-manager';
+import { CrdtManager, carriesYjsOps } from '../src/crdt-manager';
+
+// Task 17 / R-1 — Der Nachweis muss „trägt Ops" verlangen, nicht „parst"
+//
+// Yjs liest `[0x00, 0x00]` als „0 Struct-Clients, 0 Delete-Set-Clients" und
+// ignoriert den Rest. Jeder nullgefüllte Puffer ab 2 Byte parst damit
+// fehlerfrei zu einem LEEREN Doc — genau die Erscheinungsform, die eine
+// fehlgeschlagene OneDrive-Hydrierung bzw. ein abgebrochener NTFS-Extend
+// hinterlässt. Ein reiner Parse-Check hält sie für einen nachgewiesenen
+// v0.1-State.
+describe('R-1: Ops-Nachweis für Sidecar-Bytes', () => {
+  const realUpdate = () => {
+    const m = new CrdtManager();
+    m.setContent('note.md', 'Gemeinsamer Text\n');
+    return m.encodeState('note.md');
+  };
+
+  it('nullgefüllte Puffer ab 2 Byte tragen keine Ops', () => {
+    expect(carriesYjsOps(new Uint8Array(0))).toBe(false);
+    expect(carriesYjsOps(new Uint8Array(2))).toBe(false);
+    expect(carriesYjsOps(new Uint8Array(64))).toBe(false);
+    expect(carriesYjsOps(new Uint8Array(4096))).toBe(false);
+  });
+
+  it('zerschossener 20-Byte-Header vor intakter Nutzlast trägt keine Ops', () => {
+    // Der Puffer trägt den VOLLSTÄNDIGEN State — gelesen wird er trotzdem als
+    // leer, weil der genullte Kopf die Struct-Anzahl auf 0 setzt. Als
+    // „nachgewiesener Legacy-State" gewertet, wäre das die schlimmste Lage:
+    // die Datei mit den echten Daten wird gelöscht.
+    const real = realUpdate();
+    const broken = new Uint8Array(20 + real.length);
+    broken.set(real, 20);
+    expect(carriesYjsOps(broken)).toBe(false);
+  });
+
+  it('ein echter State mit Inhalt trägt Ops', () => {
+    expect(carriesYjsOps(realUpdate())).toBe(true);
+  });
+
+  it('nicht lesbare Bytes tragen keine Ops', () => {
+    expect(carriesYjsOps(new Uint8Array(64).fill(0xff))).toBe(false);
+  });
+});
 
 describe('CrdtManager', () => {
   it('speichert und liest Inhalt', () => {
