@@ -195,6 +195,44 @@ describe('Doc-Vorlauf: lokaler Diff darf einen gemergten Fremd-Edit nicht lösch
     expect(count(doc, 'LOKAL2')).toBe(1);
   });
 
+  it('Plugin-Ebene: ein GESCHEITERTER Write-Back vergiftet die Diff-Basis nicht', async () => {
+    // Review Runde 2, F-2: `vault.process` ruft den Callback und scheitert DANACH
+    // am Schreiben (EBUSY / Handle des Sync-Dienstes — das von Task 12 belegte
+    // Realumfeld; ebenso volles Volume, read-only). Die Datei trägt weiter den
+    // alten Text, die Basis stand aber schon auf dem gemergten. Der nächste
+    // `modify` difft dann „gemergt → alt", also die LÖSCHUNG des Fremd-Edits:
+    // exakt Fund 1, am Fix vorbei.
+    const vault = makeVaultMock();
+    vault._textFiles.set(NOTE, BASE);
+    vault._mdMtimes.set(NOTE, 1);
+    const { plugin, handlers } = await bootDevice(vault);
+    await type(vault, handlers, BASE);
+    placeForeignSidecar(vault);
+
+    const origProcess = vault.process.bind(vault);
+    let failNext = true;
+    vault.process = async (file: { path: string }, fn: (data: string) => string) => {
+      if (failNext) {
+        failNext = false;
+        fn(vault._textFiles.get(file.path)!); // Callback läuft …
+        throw new Error('EBUSY'); // … der Write nicht.
+      }
+      return origProcess(file, fn);
+    };
+
+    // Der Wurf darf den modify-Handler nicht als unbehandelte Rejection verlassen.
+    await expect(type(vault, handlers, `${BASE}LOKAL1\n`)).resolves.toBeUndefined();
+    // Die Datei trägt weiter den Text von vor dem Write-Back.
+    expect(vault._textFiles.get(NOTE)).toBe(`${BASE}LOKAL1\n`);
+    expect(plugin.crdtManager.getContent(NOTE)).toContain('FREMD');
+
+    await type(vault, handlers, `${BASE}LOKAL1\nLOKAL2\n`);
+
+    const doc = plugin.crdtManager.getContent(NOTE);
+    expect(count(doc, 'FREMD')).toBe(1); // RED (HEAD): 0 — als Delete-Op verworfen
+    expect(count(doc, 'LOKAL2')).toBe(1);
+  });
+
   it('Plugin-Ebene: verweigerter Write-Back, dann Sync-Overwrite — kein doppelter Fremd-Edit', async () => {
     // Review Runde 2, F-1: derselbe Einstieg wie der Test darüber (Write-Back
     // verweigert, Doc bleibt voraus, Basis steht auf dem .md-Text OHNE FREMD).
