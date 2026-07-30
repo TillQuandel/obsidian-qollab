@@ -107,6 +107,92 @@ describe('F-2: Trigger-Registrierung liegt hinter dem Sweep', () => {
   });
 });
 
+// Task 17 / R-2 — Die Reihenfolge darf nicht über eine Ausnahme erzwungen werden
+//
+// Mit `startSidecarWatcher()` hinter `await runStartupSweep()` legte ein
+// werfender Sweep den Watcher für die GANZE Sitzung stumm: kein Intervall, kein
+// `file-open`, also keinerlei Remote-Merges. Bis `5c169dc` stand `start()` in
+// `onload` und war davon unabhängig. Der Wurf verschwindet dabei lautlos —
+// Obsidian ignoriert den Rückgabewert von `onLayoutReady`.
+describe('R-2: ein werfender Sweep legt den Watcher nicht still', () => {
+  it('Watcher startet und pollt auch nach einem Sweep-Fehler', async () => {
+    const vault = makeVaultMock();
+    vault._textFiles.set(NOTE, BASE);
+    const { app, layout } = makeApp(vault);
+    const plugin: any = new (CrdtSyncPlugin as any)(app, {});
+    await plugin.onload();
+
+    const order: string[] = [];
+    jest.spyOn(plugin, 'snapshotStaleMarkdownFiles').mockImplementation(async () => {
+      order.push('sweep');
+      // Der belegte Auslöser: EBUSY beim Aufräumen einer Sidecar, durchgereicht
+      // von `hasAdoptableGuid` (fängt nur `SidecarReadError`).
+      throw new Error('EBUSY: adapter.remove');
+    });
+    jest.spyOn(plugin.sidecarWatcher, 'start').mockImplementation(() => {
+      order.push('start');
+      return undefined as any;
+    });
+    jest.spyOn(plugin.sidecarWatcher, 'poll').mockImplementation(async () => {
+      order.push('poll');
+    });
+
+    await layout()!();
+
+    // Reihenfolge bleibt erzwungen — der Watcher hängt weiter HINTER dem Sweep,
+    // er hängt nur nicht mehr an dessen Erfolg.
+    expect(order).toEqual(['sweep', 'start', 'poll']);
+    // Und das Gate ist offen, sonst wiese jeder Trigger sich selbst ab.
+    expect(plugin.sweepRunning).toBe(false);
+  });
+});
+
+// Zweite Hälfte von R-2: der Sweep soll an der Stelle gar nicht erst werfen.
+// Der bestehende `catch` (main.ts, „Einzelne Datei darf den Sweep nicht
+// abbrechen") umschloss nur den `pathQueue.run`-Block — `statSidecar` und
+// `hasAdoptableGuid` lagen davor und ungeschützt. Ein EBUSY dort riss den
+// gesamten restlichen Sweep mit, und genau dessen Vollständigkeit ist die
+// Korrektheitsbedingung von F-2.
+describe('R-2: ein Datei-IO-Fehler bricht den Sweep nicht ab', () => {
+  it('spätere Notes werden gesweept, obwohl die erste beim Aufräumen wirft', async () => {
+    const vault = makeVaultMock();
+    const BLOCKER_PEER = `.qollab/${BLOCKER}.00000001.yjs`;
+    const BLOCKER_LEGACY = `.qollab/${BLOCKER}.yjs`;
+
+    // Erste Note: keine eigene Sidecar → `hasAdoptableGuid` läuft. Peer-Sidecar
+    // (GUID) plus Legacy-Datei mit Ops ⇒ `decodeSiblings` räumt die Legacy-Form
+    // ab — und das `remove` wirft.
+    vault._textFiles.set(BLOCKER, 'egal\n');
+    const peer = new CrdtManager();
+    peer.setContent(BLOCKER, 'peer\n');
+    vault._files.set(BLOCKER_PEER, toAB(encodeStateFile(GUID, peer.encodeState(BLOCKER))));
+    const legacy = new CrdtManager();
+    legacy.setContent(BLOCKER, 'alt\n');
+    vault._files.set(BLOCKER_LEGACY, toAB(legacy.encodeState(BLOCKER)));
+
+    // Zweite Note: stale .md mit hinterherhinkender eigener Sidecar — die
+    // reguläre Sweep-Arbeit, die der Abbruch verschluckte.
+    vault._files.set(OWN_PATH, sidecar(BASE));
+    vault._textFiles.set(NOTE, BASE_Z);
+    vault._mdMtimes.set(NOTE, 999);
+
+    const origRemove = vault.adapter.remove.bind(vault.adapter);
+    vault.adapter.remove = async (p: string) => {
+      if (p === BLOCKER_LEGACY) throw Object.assign(new Error('EBUSY: ' + p), { code: 'EBUSY' });
+      return origRemove(p);
+    };
+
+    const { app } = makeApp(vault);
+    const plugin: any = new (CrdtSyncPlugin as any)(app, {});
+    await plugin.onload();
+
+    await plugin.runStartupSweep();
+
+    // Die zweite Note ist erfasst: ihr eigener Stand wurde neu geschrieben.
+    expect(vault._writeCount.get(OWN_PATH) ?? 0).toBeGreaterThan(0);
+  });
+});
+
 describe('F-2: laufender Sweep hält Trigger offen, statt sie zu bedienen', () => {
   it('file-open-Scan während des Sweeps überschreibt den nur in der .md lebenden Edit nicht', async () => {
     const vault = makeVaultMock();

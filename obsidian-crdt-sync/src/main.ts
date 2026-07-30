@@ -331,9 +331,24 @@ export default class CrdtSyncPlugin extends Plugin {
     // Die Promise wird zurückgegeben statt mit `void` verworfen: Obsidian ignoriert
     // den Rückgabewert von `onLayoutReady`, aber ein Test kann den Start-Ablauf so
     // deterministisch abwarten, statt auf Microtask-Reihenfolge zu hoffen.
+    //
+    // Task 17/R-2: Der Sweep-Aufruf ist deshalb gekapselt. Wirft er, hing bis
+    // hierher die ganze Sitzung: `startSidecarWatcher()` wurde nie erreicht, es
+    // gab weder Intervall noch `file-open` und damit KEINEN einzigen
+    // Remote-Merge mehr — lautlos, weil `onLayoutReady` den Rückgabewert
+    // ignoriert. Bis `5c169dc` stand `start()` in `onload` und war davon
+    // unabhängig; das Gate ist die Korrektheitsbedingung, nicht der Wurf. Die
+    // Reihenfolge bleibt erzwungen (der Start liegt weiter HINTER dem Sweep),
+    // nur seine Existenz hängt nicht mehr am Erfolg.
     this.app.workspace.onLayoutReady(() => {
       return (async () => {
-        await this.runStartupSweep();
+        try {
+          await this.runStartupSweep();
+        } catch (err) {
+          // Nicht still verschlucken: ohne vollständigen Sweep sind die lokalen
+          // Snapshots der nicht erfassten Notes veraltet.
+          console.error('Qollab: Startup-Sweep abgebrochen', err);
+        }
         if (this.unloaded) return;
         this.startSidecarWatcher();
         await this.sidecarWatcher.poll();
@@ -487,47 +502,57 @@ export default class CrdtSyncPlugin extends Plugin {
     for (const file of files) {
       if (this.unloaded) return;
 
-      // Sidecar-mtime über den Adapter (Index-blind für .qollab/). Ist der eigene
-      // Sidecar mindestens so neu wie die .md, ist der Snapshot aktuell.
-      const statePath = this.syncHandler.stateFilePath(file.path);
-      // Task 12 (m-3): frischer stat — eine stale Adapter-mtime würde die .md
-      // fälschlich als „Snapshot aktuell" überspringen.
-      const stat = await statSidecar(this.sidecarAdapter, statePath);
-      if (stat && stat.mtime >= file.stat.mtime) {
-        continue;
-      }
-
-      // Task 13/B: Ohne eigene Sidecar fehlt die Vergleichsbasis — „lokal
-      // geändert" ist für diese Note nicht feststellbar, jede unveränderte Note
-      // sähe wie ein Offline-Edit aus. Prägte der Sweep hier eine frische GUID,
-      // bekäme beim Zwei-Geräte-Rollout JEDE Seite ihre eigene Inkarnation
-      // derselben Note (Split-Brain); der Tie-Break-Verlierer verwirft danach
-      // seine Historie (Realtest S05 v1: 10/10 divergent). Deshalb: ohne eigene
-      // Sidecar nur dann snapshotten, wenn eine adoptierbare fremde Sidecar
-      // vorliegt — dann übernimmt ensureDoc deren GUID statt eine neue zu prägen.
-      // Sonst entsteht die GUID beim ersten echten Edit (modify-Handler), also
-      // genau einmal und auf dem Gerät, das wirklich editiert hat.
-      //
-      // Offline-Edits bleiben erfasst: sie betreffen Notes, die dieses Gerät
-      // schon kennt (eigene Sidecar vorhanden) — dort greift unverändert der
-      // mtime-Vergleich oben.
-      //
-      // Review I-3: Die Frage „gibt es etwas zu adoptieren?" beantwortet der
-      // SyncHandler auf derselben Basis wie ensureDoc (dekodierbare, nicht
-      // getombstete GUID) — reine Datei-Existenz genügt nicht: eine korrupte oder
-      // halb kopierte Fremd-Sidecar trägt keine GUID, ensureDoc prägte dann doch
-      // eine frische Inkarnation.
-      if (!stat && !(await this.syncHandler.hasAdoptableGuid(file.path))) {
-        continue;
-      }
-
-      // Pro-Datei-Arbeit über dieselbe Queue wie modify/Remote-Merge — der Sweep
-      // darf nicht parallel zu einem laufenden Merge denselben Doc mutieren.
-      //
-      // Task 16: Write-Back wie im modify-Handler. Der Sweep ist der Pfad, der beim
-      // Start eine bei geschlossener App angekommene Fremd-Sidecar in den Doc zieht;
-      // ohne Write-Back startete die Sitzung genau im Vorlauf-Zustand.
+      // Task 17/R-2: Der `try` umschließt die GANZE Pro-Datei-Arbeit, nicht mehr
+      // nur den `pathQueue.run`-Block. `statSidecar` und `hasAdoptableGuid`
+      // lagen davor und ungeschützt — `hasAdoptableGuid` fängt ausschließlich
+      // `SidecarReadError` und läuft über `decodeSiblings` → `removeSidecar` →
+      // `adapter.remove`; ein EBUSY/EPERM beim Aufräumen (das
+      // Sync-Tool-hält-ein-Handle-Szenario, um das dieser Task kreist) riss den
+      // gesamten restlichen Sweep mit. Genau dessen Vollständigkeit ist die
+      // Korrektheitsbedingung von F-2, deshalb greift die schon vorher
+      // dokumentierte Zusage „einzelne Datei bricht den Sweep nicht ab" jetzt
+      // auch für die beiden Aufrufe hier.
       try {
+        // Sidecar-mtime über den Adapter (Index-blind für .qollab/). Ist der eigene
+        // Sidecar mindestens so neu wie die .md, ist der Snapshot aktuell.
+        const statePath = this.syncHandler.stateFilePath(file.path);
+        // Task 12 (m-3): frischer stat — eine stale Adapter-mtime würde die .md
+        // fälschlich als „Snapshot aktuell" überspringen.
+        const stat = await statSidecar(this.sidecarAdapter, statePath);
+        if (stat && stat.mtime >= file.stat.mtime) {
+          continue;
+        }
+
+        // Task 13/B: Ohne eigene Sidecar fehlt die Vergleichsbasis — „lokal
+        // geändert" ist für diese Note nicht feststellbar, jede unveränderte Note
+        // sähe wie ein Offline-Edit aus. Prägte der Sweep hier eine frische GUID,
+        // bekäme beim Zwei-Geräte-Rollout JEDE Seite ihre eigene Inkarnation
+        // derselben Note (Split-Brain); der Tie-Break-Verlierer verwirft danach
+        // seine Historie (Realtest S05 v1: 10/10 divergent). Deshalb: ohne eigene
+        // Sidecar nur dann snapshotten, wenn eine adoptierbare fremde Sidecar
+        // vorliegt — dann übernimmt ensureDoc deren GUID statt eine neue zu prägen.
+        // Sonst entsteht die GUID beim ersten echten Edit (modify-Handler), also
+        // genau einmal und auf dem Gerät, das wirklich editiert hat.
+        //
+        // Offline-Edits bleiben erfasst: sie betreffen Notes, die dieses Gerät
+        // schon kennt (eigene Sidecar vorhanden) — dort greift unverändert der
+        // mtime-Vergleich oben.
+        //
+        // Review I-3: Die Frage „gibt es etwas zu adoptieren?" beantwortet der
+        // SyncHandler auf derselben Basis wie ensureDoc (dekodierbare, nicht
+        // getombstete GUID) — reine Datei-Existenz genügt nicht: eine korrupte oder
+        // halb kopierte Fremd-Sidecar trägt keine GUID, ensureDoc prägte dann doch
+        // eine frische Inkarnation.
+        if (!stat && !(await this.syncHandler.hasAdoptableGuid(file.path))) {
+          continue;
+        }
+
+        // Pro-Datei-Arbeit über dieselbe Queue wie modify/Remote-Merge — der Sweep
+        // darf nicht parallel zu einem laufenden Merge denselben Doc mutieren.
+        //
+        // Task 16: Write-Back wie im modify-Handler. Der Sweep ist der Pfad, der beim
+        // Start eine bei geschlossener App angekommene Fremd-Sidecar in den Doc zieht;
+        // ohne Write-Back startete die Sitzung genau im Vorlauf-Zustand.
         await this.pathQueue.run(file.path, async () => {
           if (this.unloaded) return;
           const content = await this.app.vault.read(file);
