@@ -22,6 +22,24 @@ export function threeWayMerge(base: string, local: string, other: string): strin
   return merged;
 }
 
+// Die Textstücke, die der Diff `from` → `to` NEU einfügt — also genau das, was ein
+// `patch_make(from, to)` als Insert-Hunk mitführt. Reine Whitespace-Stücke fallen
+// weg: sie sind in jedem Text enthalten und würden jede Enthaltensein-Prüfung
+// darauf trivial wahr machen.
+//
+// Gedacht als Entscheidungsgrundlage für die WARNUNG oben: nur der Aufrufer weiß,
+// ob eine dieser Einfügungen in `other` bereits steht. Reihenfolge und Position
+// gehen bewusst verloren — die Frage ist „welcher Text kommt hinzu", nicht „wo".
+export function insertedTexts(from: string, to: string): string[] {
+  if (from === to) return [];
+  const diffs = dmp.diff_main(from, to);
+  dmp.diff_cleanupSemantic(diffs);
+  return diffs
+    .filter(([op]) => op === diff_match_patch.DIFF_INSERT)
+    .map(([, text]) => text)
+    .filter((text) => text.trim() !== '');
+}
+
 // Vereinigt zwei Textstände OHNE gemeinsamen Vorfahren: alles, was nur eine der
 // beiden Seiten kennt, bleibt erhalten, Gemeinsames bleibt einmal stehen.
 //

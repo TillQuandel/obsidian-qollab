@@ -8,7 +8,7 @@ import {
   sidecarExists,
   statSidecar,
 } from './sidecar-io';
-import { threeWayMerge, unionMerge } from './text-merge';
+import { threeWayMerge, unionMerge, insertedTexts } from './text-merge';
 
 export const QOLLAB_DIR = '.qollab';
 
@@ -844,22 +844,26 @@ export class SyncHandler {
     // Basis nur für den own-Branch: im Adopt-Zweig gibt es keinen lokalen Diff
     // (siehe unten), dort bliebe sie ungenutzt.
     //
-    // Task 16: Basis ist der zuletzt GESEHENE .md-Text, nicht der Doc-Text. Der Doc
-    // darf dem .md voraus sein — der Fremd-Merge direkt unter dieser Zeile stellt
-    // genau diesen Zustand her, und der Aufrufer schreibt ihn erst NACH diesem
-    // Aufruf zurück (und tut es nicht, wenn die Datei sich inzwischen geändert hat).
-    // Als Basis genommen, wäre der Vorlauf von einer lokalen Löschung nicht zu
-    // unterscheiden: das Delta „Doc → .md" IST die Löschung des Fremd-Edits, und
-    // setContent macht daraus eine Delete-Op, die zum Peer propagiert (Fund 1,
-    // stiller unheilbarer Verlust auf beiden Geräten). Nur solange wir für diese
-    // Note noch keinen .md-Stand gesehen haben (frischer Prozess), ist der Doc-Text
-    // die beste verfügbare Basis — Details am Feld `localDiffBase`.
-    const base = adopted
-      ? undefined
-      : this.localDiffBase.get(notePath) ?? this.crdtManager.getContent(notePath);
+    // Task 16: Basis ist der zuletzt GESEHENE .md-Text, nicht bedingungslos der
+    // Doc-Text. Der Doc darf dem .md voraus sein — der Fremd-Merge direkt unter
+    // dieser Zeile stellt genau diesen Zustand her, und der Aufrufer schreibt ihn
+    // erst NACH diesem Aufruf zurück (und tut es nicht, wenn die Datei sich
+    // inzwischen geändert hat). Als Basis genommen, wäre der Vorlauf von einer
+    // lokalen Löschung nicht zu unterscheiden: das Delta „Doc → .md" IST die
+    // Löschung des Fremd-Edits, und setContent macht daraus eine Delete-Op, die zum
+    // Peer propagiert (Fund 1, stiller unheilbarer Verlust auf beiden Geräten).
+    //
+    // Task 16, Runde 2 (Review F-1): „nicht bedingungslos" gilt in BEIDE
+    // Richtungen — die Bedingung steht in `chooseLocalDiffBase`. Der Doc-Stand von
+    // VOR dem Fremd-Merge ist der Fallback und wird dort gebraucht, deshalb hier
+    // festgehalten.
+    const docBeforeMerge = this.crdtManager.getContent(notePath);
     await this.mergePendingForeign(notePath);
     const mergedText = this.crdtManager.getContent(notePath);
     if (content === mergedText) return mergedText;
+    const base = adopted
+      ? undefined
+      : this.chooseLocalDiffBase(notePath, content, docBeforeMerge, mergedText);
 
     // Task 13/A: Im Adopt-Zweig hat ensureDoc den .md-Text bereits mit dem
     // adoptierten Fremd-Stand VEREINIGT. Ein zusätzlicher 3-Wege-Merge würde ihn
@@ -879,6 +883,51 @@ export class SyncHandler {
     // einfügen (patch_apply dedupliziert nicht) — dieser Fall ist oben schon
     // abgefangen (content === mergedText → direkt der gemergte Stand).
     return threeWayMerge(base, content, mergedText);
+  }
+
+  // Task 16, Runde 2 (Review F-1): Welcher Text ist der gemeinsame Vorfahr des
+  // lokalen Diffs — der zuletzt gesehene .md-Stand oder der Doc-Stand?
+  //
+  // `localDiffBase` (zuletzt gesehene .md) ist richtig, solange `content` ein
+  // Nutzer-Edit AUF diesem Stand ist. Dann ist der Vorlauf des Docs per
+  // Konstruktion keine lokale Änderung — genau das behebt Fund 1.
+  //
+  // Sie ist FALSCH, sobald `content` den Vorlauf selbst schon trägt: der Datei-Sync
+  // hat die GEMERGTE Fassung des Peers abgelegt (robocopy liefert .md und Sidecar
+  // zusammen — der Task-11-Realfall). Dann enthält `patch_make(Basis, content)` die
+  // Fremd-Einfügung, die `other` bereits hat, `patch_apply` dedupliziert nicht
+  // (WARNUNG in text-merge.ts), und der Fremd-Edit steht danach zweimal in der Note.
+  // Gemessen im Review: FREMD=2 gegen FREMD=1 vor Task 16 — der Fix hätte in dieser
+  // Lage keinen Verlust verhindert, sondern nur eine Verdopplung addiert. Der
+  // Kurzschluss `content === mergedText` fängt allein die exakte Gleichheit; sobald
+  // der sync-gelieferten .md zusätzlich der lokale Edit fehlt, greift er nicht.
+  //
+  // Die Bedingung fragt deshalb genau das: trägt `content` Text, den der Doc uns
+  // gegenüber VORAUS hat? Ja → die .md hat aufgeholt, der Doc-Stand ist die richtige
+  // (und vor Task 16 einzige) Basis. Nein → der Vorlauf ist der .md unbekannt, die
+  // zuletzt gesehene .md ist der Vorfahr.
+  //
+  // Verglichen wird gegen `mergedText`, NICHT gegen den erst hier durch
+  // `mergePendingForeign` hinzugekommenen Text: im belegten Fall ist die
+  // Fremd-Sidecar bereits beim vorigen Tastendruck eingemergt und
+  // `mergePendingForeign` fügt nichts mehr hinzu. Der Vorlauf ist die Differenz zum
+  // zuletzt gesehenen .md-Stand, nicht die zum Doc von vor diesem Aufruf.
+  //
+  // Ohne Eintrag (frischer Prozess, Note erstmals angefasst) bleibt es beim
+  // Doc-Text — dort ist er der letzte von uns erfasste .md-Stand.
+  private chooseLocalDiffBase(
+    notePath: string,
+    content: string,
+    docBeforeMerge: string,
+    mergedText: string
+  ): string {
+    const lastSeen = this.localDiffBase.get(notePath);
+    if (lastSeen === undefined) return docBeforeMerge;
+    // Was der Doc gegenüber unserem letzten .md-Stand voraus hat. Leer = kein
+    // Vorlauf, dann sind beide Kandidaten gleichwertig und der billigere gewinnt.
+    const lead = insertedTexts(lastSeen, mergedText);
+    if (lead.length === 0) return lastSeen;
+    return lead.some((l) => content.includes(l)) ? docBeforeMerge : lastSeen;
   }
 
   async loadAndMerge(notePath: string): Promise<string | null> {
