@@ -174,6 +174,13 @@ export default class CrdtSyncPlugin extends Plugin {
     // Read UND applyLocalContent laufen über dieselbe Queue wie der Remote-Merge:
     // so liest die Task die .md erst, nachdem ein evtl. laufender Merge sein
     // Write-Back abgeschlossen hat, statt einen stale-Text hereinzuspielen.
+    //
+    // Task 16: Der Write-Back gehört auch hierher, nicht nur in onRemoteYjsUpdate.
+    // applyLocalContent zieht ausstehende Fremd-Sidecars ein (Task 11/12) — danach
+    // ist der Doc der Datei voraus, und bis zum 30-s-Poll bliebe er das. Genau in
+    // diesem Fenster tippt der Nutzer weiter (Obsidian feuert modify wenige Sekunden
+    // nach jedem Tippstopp), und der nächste Diff verbuchte den Vorlauf als
+    // Löschung. Es ist kein zusätzlicher Write: es ist DERSELBE, nur früher.
     this.registerEvent(
       this.app.vault.on('modify', async (file) => {
         if (!this.settings.enabled) return;
@@ -185,7 +192,9 @@ export default class CrdtSyncPlugin extends Plugin {
           if (this.unloaded) return;
           const content = await this.app.vault.read(file);
           if (this.unloaded) return;
-          await this.syncHandler.applyLocalContent(file.path, content);
+          const merged = await this.syncHandler.applyLocalContent(file.path, content);
+          if (this.unloaded) return;
+          await this.writeBackMerged(file, content, merged);
         });
       })
     );
@@ -310,6 +319,47 @@ export default class CrdtSyncPlugin extends Plugin {
     new Notice(`Qollab: Sync-Datei wiederholt nicht lesbar — Note synct nicht: ${path}`);
   }
 
+  // Task 16: Ergibt der lokale Merge einen Text, der von der .md abweicht (der Doc
+  // hat einen Fremd-Stand aufgenommen, den die Datei nicht hat), sofort
+  // zurückschreiben statt auf den 30-s-Poll zu warten. Danach entsteht der
+  // Vorlauf-Zustand im Normalbetrieb gar nicht mehr.
+  //
+  // Geschrieben wird nur, wenn die Datei noch genau den Text trägt, den wir gemergt
+  // haben — dieselbe Regel wie beim Write-Back in onRemoteYjsUpdate: hat der Nutzer
+  // während der Sidecar-IO gespeichert, würde ein blinder Write seinen Edit
+  // löschen. Dann bleibt der Doc voraus, und der Schutz liegt bei der korrekten
+  // Diff-Basis (`SyncHandler.localDiffBase`) — deshalb braucht Task 16 beide Hälften.
+  //
+  // `writingPaths` unterdrückt das modify-Event dieses Writes. Kommt es dennoch
+  // (Obsidian feuert nach dem finally), ist es ein No-op: `content === mergedText`
+  // in mergeForLocalDiff fängt es ab.
+  private async writeBackMerged(
+    file: TFile,
+    expected: string,
+    merged: string | undefined
+  ): Promise<void> {
+    if (merged === undefined || merged === expected) return;
+    this.writingPaths.add(file.path);
+    let changed = false;
+    try {
+      await this.app.vault.process(file, (data) => {
+        if (data !== expected) return data;
+        this.syncHandler.noteLocalDiffBase(file.path, merged);
+        changed = true;
+        return merged;
+      });
+    } finally {
+      this.writingPaths.delete(file.path);
+    }
+    // Dieselbe Meldung wie beim Write-Back in onRemoteYjsUpdate: für den Nutzer ist
+    // es dasselbe Ereignis („die Note wurde automatisch zusammengeführt"), nur
+    // ausgelöst vom eigenen Tippen statt vom Poll. Ohne sie verschwände das Signal
+    // genau in den Fällen, die dieser Write-Back dem Poll vorwegnimmt.
+    if (changed && this.settings.statusNotice) {
+      new Notice(`CRDT Sync: ${file.name} automatisch gemergt.`);
+    }
+  }
+
   private async snapshotStaleMarkdownFiles(): Promise<void> {
     if (!this.settings.enabled) return;
 
@@ -353,12 +403,18 @@ export default class CrdtSyncPlugin extends Plugin {
 
       // Pro-Datei-Arbeit über dieselbe Queue wie modify/Remote-Merge — der Sweep
       // darf nicht parallel zu einem laufenden Merge denselben Doc mutieren.
+      //
+      // Task 16: Write-Back wie im modify-Handler. Der Sweep ist der Pfad, der beim
+      // Start eine bei geschlossener App angekommene Fremd-Sidecar in den Doc zieht;
+      // ohne Write-Back startete die Sitzung genau im Vorlauf-Zustand.
       try {
         await this.pathQueue.run(file.path, async () => {
           if (this.unloaded) return;
           const content = await this.app.vault.read(file);
           if (this.unloaded) return;
-          await this.syncHandler.applyLocalContent(file.path, content);
+          const merged = await this.syncHandler.applyLocalContent(file.path, content);
+          if (this.unloaded) return;
+          await this.writeBackMerged(file, content, merged);
         });
       } catch {
         // Einzelne Datei darf den Sweep nicht abbrechen
@@ -454,6 +510,15 @@ export default class CrdtSyncPlugin extends Plugin {
         return data;
       });
 
+      // Task 16: Der nächste lokale Diff setzt ab hier auf `merged` auf, nicht mehr
+      // auf dem .md-Stand von vor dem Merge. In den beiden Nicht-pending-Fällen ist
+      // das auch der Dateiinhalt (geschrieben oder schon so vorgefunden). Im
+      // pending-Fall trägt die Datei noch `pending`, der Aufruf unten reicht aber
+      // `threeWay` herein — einen Text, der auf genau diesem `merged` aufsetzt; für
+      // dessen Diff ist `merged` also die richtige Basis. Der zweite Write-Back
+      // korrigiert sie danach auf den echten Dateiinhalt.
+      this.syncHandler.noteLocalDiffBase(notePath, merged);
+
       // Fix A: Ein Edit ist im Merge-Fenster gelandet. Ihn als 3-Wege-Merge
       // (Basis = preMerge, lokal = pending) auf den gemergten Remote-Stand
       // anwenden und via applyLocalContent ins CRDT bringen — so überleben beide
@@ -474,12 +539,20 @@ export default class CrdtSyncPlugin extends Plugin {
         if (!this.unloaded) {
           const merged2 = this.crdtManager.getContent(notePath);
           await this.app.vault.process(file, (data) => {
-            if (data === merged2) return data;
-            if (data === pending) {
-              changed = true;
-              return merged2;
-            }
-            return data;
+            const next = ((): string => {
+              if (data === merged2) return data;
+              if (data === pending) {
+                changed = true;
+                return merged2;
+              }
+              return data;
+            })();
+            // Task 16: Was dieser Callback zurückgibt, steht danach in der .md. Das
+            // applyLocalContent(threeWay) darüber hat die Basis auf einen Text
+            // gesetzt, der so nie in der Datei stand — hier steht sie wieder auf dem
+            // echten Dateiinhalt.
+            this.syncHandler.noteLocalDiffBase(notePath, next);
+            return next;
           });
         }
       }

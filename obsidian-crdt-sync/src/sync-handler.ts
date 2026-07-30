@@ -175,6 +175,41 @@ export class SyncHandler {
   // als korrekt berechnet wurde; ihn erneut anzuwenden ist idempotent.
   private abortedReads = new Map<string, string>();
 
+  // Task 16: Note-Pfad → gemeinsamer Vorfahr des nächsten lokalen .md-Diffs. Im
+  // Normalfall ist das der .md-Text, wie dieses Plugin ihn zuletzt gesehen hat
+  // (Read im modify-Handler/Sweep, eigener Write-Back).
+  //
+  // Warum nicht weiter der Doc-Text: `applyLocalContent` zieht ausstehende
+  // Fremd-Sidecars in den Doc, schreibt die .md aber nicht zurück (das tut allein
+  // der Write-Back in onRemoteYjsUpdate, ausgelöst vom 30-s-Poll). Zwischen
+  // Fremd-Merge und Poll ist der Doc der Datei also legitim VORAUS. Nimmt der
+  // nächste Tastendruck den Doc als Basis, ist das Delta „Basis → .md" genau die
+  // Löschung des Fremd-Edits — als Delete-Op persistiert und zum Peer propagiert
+  // (fund-endzustaende.md Fund 1: stiller, unheilbarer Verlust auf beiden Geräten).
+  // Gegen den zuletzt gesehenen .md-Text gediffed, ist der Vorlauf per Konstruktion
+  // keine lokale Änderung.
+  //
+  // Fehlt ein Eintrag (frischer Prozess, Note erstmals angefasst), bleibt es beim
+  // Doc-Text: dort ist er der letzte von uns erfasste .md-Stand und die Basis
+  // korrekt. Grenze: rein in-memory. Ging die App zwischen Fremd-Merge und
+  // Write-Back aus, ist der aus der eigenen Sidecar rekonstruierte Doc weiterhin
+  // voraus und der Fallback wieder falsch — dieses Fenster schließt der Initial-Scan
+  // des Watchers (Write-Back vor dem ersten modify), nicht diese Map.
+  private localDiffBase = new Map<string, string>();
+
+  // Setzt die Basis explizit. Zwei Anlässe in onRemoteYjsUpdate: nach dem
+  // Write-Back (die Datei trägt jetzt den gemergten Stand) und vor dem
+  // `applyLocalContent(threeWay)` des pending-Zweigs (dessen Text setzt auf dem
+  // gemergten Doc auf, nicht auf dem alten .md-Stand).
+  //
+  // Ohne diesen Kanal bliebe die Basis nach einem Write-Back auf dem ALTEN .md-Text
+  // stehen; das Delta enthielte dann die Fremd-Einfügung, die der Doc bereits hat,
+  // und `threeWayMerge` fügte sie ein zweites Mal ein (patch_apply dedupliziert
+  // nicht — siehe WARNUNG in text-merge.ts).
+  noteLocalDiffBase(notePath: string, content: string): void {
+    this.localDiffBase.set(notePath, content);
+  }
+
   // True, solange für diese Note ein abgebrochener Lauf nachzuholen ist.
   hasAbortedRead(notePath: string): boolean {
     return this.abortedReads.has(notePath);
@@ -331,6 +366,10 @@ export class SyncHandler {
   disposeNote(notePath: string): void {
     this.guids.delete(notePath);
     this.abortedReads.delete(notePath);
+    // Task 16: Die Datei ist weg; ihr letzter gesehener Inhalt beschreibt nichts
+    // mehr. Bliebe er stehen, wäre er die Diff-Basis einer gleichnamig NEU
+    // angelegten Note — deren Text hätte mit ihm nichts zu tun.
+    this.localDiffBase.delete(notePath);
     // Die Inkarnation ist tot; ihre Pfad-Historie hat keinen Adressaten mehr.
     // (Der delete-Handler hat sie vorher über incarnationPaths ausgelesen.)
     this.priorPaths.delete(notePath);
@@ -350,6 +389,12 @@ export class SyncHandler {
     const uncaptured = this.abortedReads.get(oldPath);
     this.abortedReads.delete(oldPath);
     if (uncaptured !== undefined) this.abortedReads.set(newPath, uncaptured);
+    // Task 16: Der Inhalt zieht beim Rename mit — es ist dieselbe Datei unter neuem
+    // Namen. Bliebe der Eintrag auf dem alten Pfad, wäre die Basis unter dem neuen
+    // Pfad leer und fiele auf den Doc-Text zurück (der Vorlauf wäre wieder blind).
+    const seen = this.localDiffBase.get(oldPath);
+    this.localDiffBase.delete(oldPath);
+    if (seen !== undefined) this.localDiffBase.set(newPath, seen);
     // Review C-1: Pfad-Historie der Inkarnation mitziehen. Bewusst unabhängig
     // davon, ob oben eine GUID gefunden wurde — sie steht oft erst im Header der
     // Sidecar und wird erst vom delete-Handler (currentGuid) aufgelöst. Wer die
@@ -748,14 +793,14 @@ export class SyncHandler {
   // `abortedReads` markiert; onRemoteYjsUpdate holt den Lauf vor einem Write-Back
   // nach und schreibt gar nicht, solange die Markierung steht. Das ist der
   // minimale Rückkanal, kein Re-Queue-Mechanismus.
-  async applyLocalContent(notePath: string, content: string): Promise<void> {
+  async applyLocalContent(notePath: string, content: string): Promise<string | undefined> {
     let finalText: string;
     try {
       finalText = await this.mergeForLocalDiff(notePath, content);
     } catch (err) {
       if (err instanceof SidecarReadError) {
         this.abortedReads.set(notePath, content);
-        return;
+        return undefined;
       }
       throw err;
     }
@@ -766,6 +811,20 @@ export class SyncHandler {
     await this.cleanupLegacyFile(notePath);
     // Lokaler Stand ist erfasst und persistiert — Markierung fällt weg.
     this.abortedReads.delete(notePath);
+    // Task 16: `content` IST der .md-Inhalt (der Aufrufer hat ihn gerade gelesen)
+    // und bleibt es — dieser Pfad schreibt die Datei nicht. Damit ist er die Basis
+    // des nächsten lokalen Diffs, auch wenn `finalText` dem Doc einen Fremd-Stand
+    // hinzugefügt hat. Im Abbruch-Zweig oben bewusst NICHT gesetzt: dort ist nichts
+    // erfasst, und der gemerkte alte Stand ist für den Nachholversuch die richtige
+    // Basis. Ruft ein Aufrufer mit einem Text, der NICHT in der Datei steht
+    // (onRemoteYjsUpdate, pending-Zweig), korrigiert sein Write-Back die Basis
+    // unmittelbar danach über `noteLocalDiffBase`.
+    this.localDiffBase.set(notePath, content);
+    // Task 16: Der gemergte Stand für den Aufrufer. Weicht er von `content` ab, ist
+    // der Doc der Datei voraus — der Aufrufer schreibt ihn dann sofort zurück
+    // (main.ts writeBackMerged), statt den Zustand bis zum 30-s-Poll stehen zu
+    // lassen. `undefined` heißt „abgebrochen, nichts erfasst" (siehe abortedReads).
+    return finalText;
   }
 
   // Doc-Aufbau + Fremd-Merge + 3-Wege-Merge des lokalen .md-Texts. Getrennt von
@@ -784,7 +843,20 @@ export class SyncHandler {
     // ist dann idempotent und der lokale Diff unten entfällt (siehe `adopted`).
     // Basis nur für den own-Branch: im Adopt-Zweig gibt es keinen lokalen Diff
     // (siehe unten), dort bliebe sie ungenutzt.
-    const base = adopted ? undefined : this.crdtManager.getContent(notePath);
+    //
+    // Task 16: Basis ist der zuletzt GESEHENE .md-Text, nicht der Doc-Text. Der Doc
+    // darf dem .md voraus sein — der Fremd-Merge direkt unter dieser Zeile stellt
+    // genau diesen Zustand her, und der Aufrufer schreibt ihn erst NACH diesem
+    // Aufruf zurück (und tut es nicht, wenn die Datei sich inzwischen geändert hat).
+    // Als Basis genommen, wäre der Vorlauf von einer lokalen Löschung nicht zu
+    // unterscheiden: das Delta „Doc → .md" IST die Löschung des Fremd-Edits, und
+    // setContent macht daraus eine Delete-Op, die zum Peer propagiert (Fund 1,
+    // stiller unheilbarer Verlust auf beiden Geräten). Nur solange wir für diese
+    // Note noch keinen .md-Stand gesehen haben (frischer Prozess), ist der Doc-Text
+    // die beste verfügbare Basis — Details am Feld `localDiffBase`.
+    const base = adopted
+      ? undefined
+      : this.localDiffBase.get(notePath) ?? this.crdtManager.getContent(notePath);
     await this.mergePendingForeign(notePath);
     const mergedText = this.crdtManager.getContent(notePath);
     if (content === mergedText) return mergedText;
