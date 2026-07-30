@@ -25,7 +25,22 @@ Funktioniert mit OneDrive, Dropbox, Google Drive, iCloud, Syncthing — und jede
 
 **Voraussetzung: Obsidian 1.8.7 oder neuer.** Qollab legt seine Geräte-ID im vault-spezifischen Profilspeicher ab, den Obsidian erst ab dieser Version bereitstellt.
 
-**Die Geräte-ID liegt nicht im Vault.** Jede Installation bekommt beim ersten Start eine eigene, zufällige Geräte-ID (sichtbar in den Plugin-Einstellungen). Sie steht im Obsidian-Profil des jeweiligen Geräts, nicht in der mitsynchronisierten `data.json` — ihr könnt den Vault-Ordner also komplett synchronisieren, `.obsidian/` eingeschlossen. Bis v0.4.0 stand sie in `.obsidian/plugins/qollab/data.json`: wurde die mitsynchronisiert, trugen beide Geräte dieselbe ID, schrieben dieselbe Hilfsdatei und der automatische Merge fand **nie** statt. Beim ersten Start nach dem Update wandert eine vorhandene ID automatisch ins Geräteprofil und wird aus `data.json` entfernt.
+**Geräte-ID, Sync-Schalter und Lösch-Markierungen liegen nicht im Vault.** Jede Installation bekommt beim ersten Start eine eigene, zufällige Geräte-ID (sichtbar in den Plugin-Einstellungen). Sie steht — wie der Schalter „Sync aktiviert" und die Lösch-Markierungen — im Obsidian-Profil des jeweiligen Geräts, nicht in der mitsynchronisierten `data.json`. Bis v0.4.0 stand die ID in `.obsidian/plugins/qollab/data.json`: wurde die mitsynchronisiert, trugen beide Geräte dieselbe ID, schrieben dieselbe Hilfsdatei und der automatische Merge fand **nie** statt. Schalter und Markierungen standen bis v0.4.1 dort — mit der Folge, dass ein „Sync aus" auf einem Gerät das andere still mit abschaltete. Beim ersten Start nach dem Update wandern vorhandene Werte automatisch ins Geräteprofil und werden aus `data.json` entfernt.
+
+> **Richtigstellung.** Bis einschließlich v0.4.0 stand hier „ihr könnt den Vault-Ordner also komplett synchronisieren, `.obsidian/` eingeschlossen". Das war falsch, und zwar unabhängig von Qollab.
+
+**`.obsidian/` gehört nur teilweise in den Sync.** Nehmt diese Dateien aus dem Sync-Scope (OneDrive & Co. können Unterordner selektiv ausschließen):
+
+| Datei | Warum |
+| --- | --- |
+| `workspace*.json` | Fensteranordnung und offene Notes, von Obsidian dauernd geschrieben — gerätespezifisch |
+| `vault-stats.json` | wird beim Tippen fortlaufend geschrieben |
+| `graph.json`, `appearance.json`, `hotkeys.json` | Ansichts- und Eingabepräferenzen der Person, nicht des Vaults |
+| `plugins/*/data.json`, sofern sie Zugangsdaten, Geräte-IDs oder Sync-Wasserstände tragen | Secrets gehören nicht auf zwei Rechner, geteilte Wasserstände erzeugen doppelte oder verpasste Einträge |
+
+Diese Dateien haben zwei Schreiber und keine Merge-Semantik: der Sync-Dienst legt dafür Konflikt-Kopien an, und die schützt Qollab nicht — es kümmert sich ausschließlich um `.md`-Notes.
+
+**Ein Update wandert mit.** `main.js` und `manifest.json` liegen selbst unter `.obsidian/plugins/qollab/`. Synchronisiert ihr diesen Ordner, ist ein Update auf einem Gerät ein unfreiwilliges auf dem anderen — wirksam beim nächsten Obsidian-Start dort. Aktualisiert entweder bewusst gemeinsam, oder nehmt auch den Plugin-Ordner aus dem Sync und kopiert die Dateien auf beiden Geräten von Hand.
 
 ## Mit GitHub teilen
 
@@ -42,12 +57,12 @@ Wenn ihr euren Vault über ein privates GitHub-Repository teilt (z.B. mit dem [O
 
 ## Was passiert im Hintergrund?
 
-Qollab legt zu einer Note eine kleine Hilfsdatei an (`note.md.yjs`), **sobald die Note zum ersten Mal bearbeitet wird** — oder sobald die Hilfsdatei eines anderen Geräts für sie ankommt (die wird dann übernommen).
+Qollab legt zu einer Note eine kleine Hilfsdatei an (für `note.md` also `.qollab/note.md.a1b2c3d4.yjs`, wobei `a1b2c3d4` die Geräte-ID ist), **sobald die Note zum ersten Mal bearbeitet wird** — oder sobald die Hilfsdatei eines anderen Geräts für sie ankommt (die wird dann übernommen).
 Diese Datei enthält die Änderungshistorie der Note auf eine Art, die automatisch zusammengeführt werden kann — egal in welcher Reihenfolge die Änderungen ankommen.
 
 **Unveränderte Notes bekommen bewusst keine Hilfsdatei.** Grund: Wer sie blind für jede Note anlegt, gibt derselben Note auf jedem Gerät eine eigene Historie — beim Rollout auf zwei Geräten entstehen dann zwei konkurrierende Historien für dieselbe Datei, von denen eine beim ersten Kontakt aufgegeben werden muss. So entsteht die Historie genau einmal: auf dem Gerät, das zuerst editiert; alle anderen Geräte übernehmen sie. Praktische Folge: Bis zum ersten Edit in Obsidian schützt Qollab eine Note nicht — bearbeiten in dieser Zeit zwei Geräte dieselbe Note, greift wie gehabt die Konfliktkopie-Sicherung eures Sync-Dienstes.
 
-Wenn deine Sync-Lösung die `.yjs`-Datei deiner Kollegin synchronisiert, erkennt Qollab das sofort und aktualisiert die Note. Du siehst eine kurze Meldung oben rechts.
+Wenn deine Sync-Lösung die `.yjs`-Datei deiner Kollegin synchronisiert, erkennt Qollab das innerhalb einer halben Minute und aktualisiert die Note — beim Öffnen einer Note sofort. Du siehst eine kurze Meldung oben rechts. Wartet also nicht vor der offenen Note darauf, dass etwas passiert, und tippt vor allem nicht selbst nach: Qollab prüft im 30-Sekunden-Takt, und ein Edit genau in diesem Fenster fällt unter die weiter unten beschriebenen Merge-Grenzen.
 
 Die `.yjs`-Dateien siehst du im Vault-Explorer nicht — Obsidian blendet sie aus.
 
@@ -64,11 +79,13 @@ Die `.yjs`-Dateien siehst du im Vault-Explorer nicht — Obsidian blendet sie au
 
 **Simultan-Erstkontakt — gelöst.** Wenn zwei Geräte dieselbe Note unabhängig anlegen, *bevor* sie die Hilfsdatei des anderen sehen, bekam früher jede Seite eine eigene Historie und der Sync spaltete sich dauerhaft. Jede Note-Inkarnation trägt jetzt eine Doc-GUID; beim Erstkontakt gewinnt deterministisch die (bytewise) kleinere GUID, das unterlegene Gerät wechselt auf dieselbe Basis. Beide Seiten konvergieren ohne Konflikt-Kopie. Wichtig: Bei *identischem* Text konvergieren beide Seiten verlustfrei; bei *divergentem* Text werden beim Wechsel **beide Stände vereinigt** (zeilenweise, Gewinner-Beitrag zuerst) — vorher setzte sich der Volltext einer Seite durch und die Abweichungen der anderen gingen verloren. Drei Konsequenzen der fehlenden gemeinsamen Wurzel: Die Reihenfolge kann überraschen (kein echter 3-Wege-Merge möglich); eine Zeile, die nur eine Seite gelöscht hat, kommt beim Wechsel zurück; und hat eine Seite Zeilen **umsortiert**, steht die verschobene Zeile danach zweimal da (ein Verschieben ist ohne Vergleichsbasis nicht von „gelöscht und woanders eingefügt" zu unterscheiden). Bewusst so gewählt: sichtbares Zuviel statt stillem Verlust. Die Änderungshistorie *einzelner Zeichen* der aufgegebenen Inkarnation geht dabei verloren; ihr Text zählt danach als frische Eingabe dieses Geräts.
 
-**Zombie-Resurrection — behoben.** Eine gelöschte und gleichnamig neu angelegte Note wird nicht mehr durch eine verspätet ankommende alte Hilfsdatei „wiederbelebt": Beim Löschen wird die GUID der alten Inkarnation lokal getombstoned; stale Hilfsdateien dieser GUID werden erkannt, ignoriert und aufgeräumt. v0.1-Legacy-Dateien (kein QLB1-Header, keine GUID) werden ausschließlich für den einmaligen Erst-Import akzeptiert; sobald GUID-tragender State existiert, werden sie ignoriert und gelöscht.
+**Zombie-Resurrection — behoben.** Eine gelöschte und gleichnamig neu angelegte Note wird nicht mehr durch eine verspätet ankommende alte Hilfsdatei „wiederbelebt": Beim Löschen wird die GUID der alten Inkarnation lokal getombstoned; stale Hilfsdateien dieser GUID werden erkannt, ignoriert und aufgeräumt. v0.1-Legacy-Dateien werden ausschließlich für den einmaligen Erst-Import akzeptiert; sobald GUID-tragender State existiert, werden sie ignoriert und gelöscht. Als Legacy gilt dabei nur, was es nachweislich ist: die Datei muss lesbar sein **und** die alte Namensform ohne Geräte-ID tragen. Eine Hilfsdatei, die euer Sync-Dienst leer oder unvollständig auf die Platte legt (bei OneDrive ein dokumentierter Fall), wird übersprungen und gemeldet — nicht gelöscht. Bis v0.4.0 galt sie als Altlast und wurde entfernt; traf es die Datei des anderen Geräts, trug der Sync die Löschung dorthin zurück.
 
 Wenn zwei Personen **gleichzeitig dieselbe Zeile** ändern, entscheidet Qollab automatisch welche Version vorne steht — beide Texte bleiben erhalten, aber die Reihenfolge kann überraschend sein.
 
 **Erstkontakt bei ungeordnetem Datei-Sync.** Trackt ein Gerät eine Note zum ersten Mal und kommt die fremde Hilfsdatei *vor* der neueren `.md` an, wird der lokale Dateistand mit dem übernommenen Fremd-Stand vereinigt statt darüber gelegt. Das frühere kurzzeitige Zurückspringen einer frischen Remote-Änderung entfällt damit; im Gegenzug kann eine remote gelöschte Zeile, die der lokale Dateistand noch führt, wieder auftauchen (siehe oben). Kommt die Hilfsdatei ganz **ohne** zugehörige `.md` an (Note gibt es hier noch nicht), rührt Qollab sie nicht an: keine eigene Historie, keine eigene Hilfsdatei — sie wird erst verwendet, wenn die `.md` nachsynct.
+
+> **Richtigstellung.** Der folgende Absatz behauptete bis einschließlich v0.4.0, die Lösch-Markierungen lägen „nur auf dem Gerät, das die Löschung durchführt". Das war falsch: sie standen in `.obsidian/plugins/qollab/data.json`, also in dem Ordner, den derselbe README zum Mitsynchronisieren empfahl. Über diese Datei sprang eine Markierung auf das andere Gerät und traf dort womöglich eine lebende Note; außerdem überschrieb jedes Speichern die komplette Liste der Gegenseite. Seit v0.4.1 stimmt die Aussage — die Markierungen liegen im Geräteprofil, wie die Geräte-ID.
 
 **Gerätelokale Tombstones (bewusste Grenze).** Die Lösch-Markierungen liegen nur auf dem Gerät, das die Löschung durchführt. Ein anderes Gerät, das während Löschung + Neuanlage geschlossen/offline war, kann mit seiner alten Historie weiterlaufen und nimmt am CRDT-Merge der neuen Inkarnation nicht mehr teil (sein Tie-Break bevorzugt womöglich die alte GUID). Durch zwei Schutz-Guards kann ein zurückkehrender leerer State die Note nicht mehr leeren: Qollab startet keinen Merge ohne existierende `.md` (Guard 1), und ein historienloser Frisch-Doc ohne Ops überschreibt keine vorhandene `.md` (Guard 2). Bei Delete-vs-Offline-Edit überlebt der Inhalt über den normalen Datei-Sync; die CRDT-Historie der Offline-Edits geht dabei verloren (die Note startet mit frischer Historie). Die vollständige Lösung — Löschen als CRDT-Operation mit Add-wins-Semantik — ist für v0.5 geplant.
 
@@ -83,6 +100,10 @@ Zwei Grenzen bleiben. Erstens: Trägt die eigene, lebende Hilfsdatei noch eine a
 - Bei Löschung ganzer Absätze remote können einzelne Textreste verschmelzen.
 
 Zusätzlich existiert ein sehr kleines Zeitfenster (Millisekunden um den Write-Back), in dem ein Edit sein modify-Event verliert und beim nächsten Remote-Merge überschrieben werden kann. Für diese Randfälle gilt die Empfehlung in der WARNING oben: Lasst die Konflikt-Kopie-Sicherung eures Sync-Dienstes aktiv.
+
+**Was „Sync aktiviert: aus" bedeutet.** Ausgeschaltet erfasst Qollab keine Bearbeitungen, führt nichts zusammen, setzt keine Lösch-Markierungen und vergibt keine neue Geräte-ID. Was weiterläuft, ist reines Aufräumen: Benennt ihr eine Note um oder löscht sie, ziehen die Hilfsdateien mit bzw. verschwinden — sonst blieben sie als Waisen liegen. Beim Wieder-Einschalten holt Qollab die Aus-Phase in einem Durchlauf nach, bevor es wieder auf Änderungen der Gegenseite reagiert; bis v0.4.0 fehlte dieser Durchlauf, und der erste Abgleich nach dem Einschalten überschrieb alles, was in der Aus-Phase entstanden war.
+
+**Wenn eine Hilfsdatei nicht geschrieben werden kann.** Hält der Sync-Dienst gerade ein Handle, ist das Volume voll oder der Pfad zu lang, scheitert das Speichern des internen Stands. Die Bearbeitung selbst ist nicht verloren — sie steht in der Note und im Arbeitsspeicher —, und der nächste Durchlauf wiederholt den Schreibversuch. Hält der Fehler an, meldet Qollab das nach dem dritten Versuch einmalig. Bis v0.4.0 gab es dafür kein Signal: „meine Änderungen kommen nicht an" war von „alles in Ordnung" nicht unterscheidbar.
 
 **Veralteter Stand beim Nachhol-Versuch nach einem Lesefehler.** Ist eine Hilfsdatei kurzzeitig nicht lesbar (Sync-Tool hält gerade ein Handle), bricht Qollab den laufenden Schritt ab und merkt sich den Text, der dabei nicht erfasst wurde; beim nächsten Durchlauf wird genau dieser Text nachgespielt. Wird die Note im Sub-Sekunden-Fenster zwischen Abbruch und Nachhol-Versuch extern editiert, ohne dass dazwischen ein modify-Event verarbeitet wurde, spielt der Nachhol-Versuch den älteren Stand ein. In allen anderen Reihenfolgen fängt der reguläre modify-/Merge-Fenster-Pfad den Edit ab.
 
