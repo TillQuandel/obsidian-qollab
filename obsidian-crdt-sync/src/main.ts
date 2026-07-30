@@ -223,6 +223,12 @@ export default class CrdtSyncPlugin extends Plugin {
     // diesem Body — beide Keys sind hier gehalten, ein verschachtelter Aufruf
     // wartet auf sich selbst und hängt (Review M-2: seit Fix C sind es zwei Keys
     // statt einem, die Falle ist doppelt so breit).
+    //
+    // Task 17/F-4: Dieser Handler läuft bewusst AUCH bei `enabled: false`. Er tut
+    // nichts als Housekeeping — Sidecars mitziehen und den GUID-Map-Eintrag
+    // umhängen; er schreibt keine Markierung und legt nichts Neues an. Stillgelegt
+    // blieben die Sidecars unter dem alten Pfad als Waisen liegen, für die es
+    // keinen Aufräumpfad gibt (`enabled-off-switch.test.ts` pinnt das).
     this.registerEvent(
       this.app.vault.on('rename', async (file, oldPath) => {
         if (!(file instanceof TFile)) return;
@@ -265,7 +271,15 @@ export default class CrdtSyncPlugin extends Plugin {
         if (!(file instanceof TFile)) return;
         if (!file.path.endsWith('.md')) return;
         await this.pathQueue.run(file.path, async () => {
-          const guids = await this.syncHandler.guidsToTombstone(file.path);
+          // Task 17/F-4: „aus" heißt keine neuen Markierungen. Ein Tombstone ist
+          // eine Zustandsänderung mit 90 Tagen Halbwertszeit, und ein
+          // sync-vermittelter Rename kommt als delete+create an — das
+          // ausgeschaltete Plugin beerdigte damit eine LEBENDE Inkarnation. Das
+          // Sidecar-Housekeeping darunter läuft weiter: unterbliebe es, blieben
+          // Waisen liegen, die niemand mehr aufräumt.
+          const guids = this.settings.enabled
+            ? await this.syncHandler.guidsToTombstone(file.path)
+            : null;
           if (guids) {
             await this.tombstoneStore.addAll(
               guids,
@@ -722,6 +736,14 @@ export default class CrdtSyncPlugin extends Plugin {
     cur: { mtime: number; size: number }
   ): Promise<boolean> {
     if (this.unloaded) return false;
+    // Task 17/F-4: Bei ausgeschaltetem Sync wird keine neue Geräte-ID vergeben und
+    // keine Kollision gemeldet — der anschließende Merge fiele ohnehin am
+    // `enabled`-Guard ab, die neue ID bliebe aber. Die Prüfung läuft nach dem
+    // Wieder-Einschalten erneut: der Watcher hat `lastSeen` für den eigenen Pfad
+    // zwar fortgeschrieben, aber jeder weitere Fremd-Write ändert (mtime,size)
+    // erneut. Bewusst kein `false`-Rückkanal wie bei den Merge-Triggern: hier gibt
+    // es nichts nachzuholen, nur nichts anzurichten.
+    if (!this.settings.enabled) return false;
     if (!(await this.syncHandler.isForeignSidecarWrite(path, cur))) return false;
 
     this.reprovisionClientId();
