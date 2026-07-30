@@ -65,8 +65,11 @@ class PluginSettingTab {
 }
 
 class Setting {
-  constructor(_containerEl) {}
-  setName() {
+  constructor(_containerEl) {
+    this._name = '';
+  }
+  setName(name) {
+    this._name = name;
     return this;
   }
   setDesc() {
@@ -75,18 +78,27 @@ class Setting {
   setHeading() {
     return this;
   }
+  // Task 17/F-5: Der registrierte onChange-Handler wird mitgeschnitten, damit ein
+  // Test den Schalter wirklich umlegen kann statt nur `settings.enabled` zu
+  // setzen — die Logik, die am Wechsel hängt, sitzt genau in diesem Handler.
   addToggle(cb) {
     const toggle = {
-      setValue() {
+      _value: undefined,
+      _onChange: undefined,
+      setValue(v) {
+        toggle._value = v;
         return toggle;
       },
-      onChange() {
+      onChange(fn) {
+        toggle._onChange = fn;
         return toggle;
       },
     };
     cb(toggle);
+    Setting.toggles.push({ name: this._name, toggle });
     return this;
   }
 }
+Setting.toggles = [];
 
 module.exports = { TFile, Plugin, Notice, PluginSettingTab, Setting };

@@ -65,8 +65,20 @@ export class CrdtSyncSettingTab extends PluginSettingTab {
         toggle
           .setValue(this.plugin.settings.enabled)
           .onChange(async (value) => {
+            const wasEnabled = this.plugin.settings.enabled;
             this.plugin.settings.enabled = value;
             await this.plugin.saveSettings();
+            // Task 17/F-5: Beim Wechsel aus → an den Sweep nachholen. Während
+            // „aus" fällt jeder Edit am `enabled`-Guard des modify-Handlers ab und
+            // lebt nur in der `.md`; gleichzeitig stauen sich die Remote-Trigger
+            // korrekt auf (`onRemoteYjsUpdate` gibt `false`, `lastSeen` bleibt
+            // stehen). Ohne diesen Aufruf arbeitete der erste Poll nach dem
+            // Einschalten sie ab und überschriebe die ganze Aus-Phase —
+            // deterministisch binnen eines Poll-Intervalls, nicht als Race.
+            //
+            // Das Gate in `runStartupSweep` (F-2) hält Trigger währenddessen
+            // offen; deshalb genügt hier derselbe Aufruf wie beim Start.
+            if (value && !wasEnabled) await this.plugin.runStartupSweep();
           })
       );
 
