@@ -28,6 +28,20 @@ function toArrayBuffer(data: ArrayBuffer | Uint8Array): ArrayBuffer {
 // suchen: zwei Geräte mit derselben ID schreiben denselben Sidecar-Pfad, und der
 // Self-Ignore des Watchers legt den automatischen Remote-Merge still lahm.
 const CLIENT_ID_KEY = 'qollab-client-id';
+// Task 17/F-3: Schlüssel der gerätelokalen Einstellungen — `enabled` und die
+// Tombstone-Map. Dieselbe Begründung wie bei der clientId: `data.json` liegt in
+// `<vault>/.obsidian/plugins/qollab/`, also im Sync-Scope des dokumentierten
+// Standard-Aufbaus. Der Kommentar in settings.ts stellte das für die clientId
+// fest und zog die Konsequenz nur dort; die Tombstone-Map hieß trotzdem
+// „Gerätelokal", war es aber nicht. Konkret ging dabei kaputt: `saveSettings`
+// schreibt die GANZE Map, also Last-Writer-Wins statt Vereinigung; ein Tombstone
+// des einen Geräts trifft auf dem anderen womöglich eine lebende Inkarnation;
+// und `enabled: false` schaltet das andere Gerät still ab.
+//
+// `statusNotice` bleibt bewusst in `data.json`: eine reine Anzeigepräferenz ohne
+// Zustandssemantik. Falsch geteilt kostet sie höchstens eine nicht angezeigte
+// Meldung — sie kann weder Dateien löschen noch den Sync stilllegen.
+const DEVICE_SETTINGS_KEY = 'qollab-device-settings';
 // Das Sidecar-Dateiformat (`<note>.<clientId>.yjs`) verlangt exakt 8 Hex-Zeichen.
 // Alles andere aus dem Speicher wird verworfen statt in Dateinamen weitergereicht.
 const CLIENT_ID_RE = /^[0-9a-f]{8}$/;
@@ -723,13 +737,56 @@ export default class CrdtSyncPlugin extends Plugin {
     const raw = ((await this.loadData()) ?? {}) as Record<string, unknown>;
     this.legacyClientId = typeof raw.clientId === 'string' ? raw.clientId : '';
     delete raw.clientId;
+
+    // Task 17/F-3: dieselbe Trennung für `enabled` und die Tombstone-Map. Was in
+    // data.json steht, ist ab jetzt ausschließlich Migrationsquelle für den
+    // ersten Start; danach lebt beides gerätelokal.
+    const legacyEnabled = typeof raw.enabled === 'boolean' ? raw.enabled : undefined;
+    const legacyTombstones =
+      typeof raw.tombstones === 'object' && raw.tombstones !== null
+        ? (raw.tombstones as Record<string, number>)
+        : undefined;
+    const migrated = legacyEnabled !== undefined || legacyTombstones !== undefined;
+    delete raw.enabled;
+    delete raw.tombstones;
+
     this.settings = Object.assign({}, DEFAULT_SETTINGS, raw);
-    // Tombstones > 90 Tage beim Laden entfernen (hält die Data-Datei klein) und
+
+    const device = (this.app.loadLocalStorage(DEVICE_SETTINGS_KEY) ?? {}) as {
+      enabled?: unknown;
+      tombstones?: unknown;
+    };
+    // Der Geräte-Speicher schlägt die Migrationsquelle: existiert er, ist die
+    // Migration längst gelaufen und ein noch herumliegender data.json-Wert (vom
+    // anderen Gerät nachgesynct) darf sie nicht überstimmen.
+    this.settings.enabled =
+      typeof device.enabled === 'boolean'
+        ? device.enabled
+        : (legacyEnabled ?? DEFAULT_SETTINGS.enabled);
+    const tombstones =
+      typeof device.tombstones === 'object' && device.tombstones !== null
+        ? (device.tombstones as Record<string, number>)
+        : (legacyTombstones ?? {});
+    // Tombstones > 90 Tage beim Laden entfernen (hält den Speicher klein) und
     // Alt-Format-Einträge (GUID-global, vor Task 15) verwerfen.
-    this.settings.tombstones = migrateTombstones(this.settings.tombstones ?? {});
+    this.settings.tombstones = migrateTombstones(tombstones);
+
+    // Einmalig: die migrierten Schlüssel aus data.json entfernen. Ohne diesen
+    // Save bliebe die Datei die Transportschicht, die der Fix beseitigt.
+    if (migrated) await this.saveSettings();
   }
 
+  // Task 17/F-3: Geteiltes und Gerätelokales gehen an getrennte Ablagen. Das
+  // Settings-Objekt bleibt der eine In-Memory-Zustand — nur die Persistenz ist
+  // gesplittet, damit kein Aufrufer sich merken muss, welches Feld wohin gehört.
   async saveSettings() {
-    await this.saveData(this.settings);
+    this.app.saveLocalStorage(DEVICE_SETTINGS_KEY, {
+      enabled: this.settings.enabled,
+      tombstones: this.settings.tombstones,
+    });
+    const { enabled, tombstones, ...shared } = this.settings;
+    void enabled;
+    void tombstones;
+    await this.saveData(shared);
   }
 }
