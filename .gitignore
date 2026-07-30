@@ -1,3 +1,9 @@
 node_modules/
 main.js
 *.js.map
+
+# Generierte Analyse-Artefakte (graphify-Codegraph)
+graphify-out/
+
+# Arbeitsverzeichnis von Claude Code (Worktrees, lokale Konfiguration)
+.claude/
