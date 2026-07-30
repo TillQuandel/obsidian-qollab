@@ -367,8 +367,23 @@ export class SyncHandler {
     this.guids.delete(notePath);
     this.abortedReads.delete(notePath);
     // Task 16: Die Datei ist weg; ihr letzter gesehener Inhalt beschreibt nichts
-    // mehr. Bliebe er stehen, wäre er die Diff-Basis einer gleichnamig NEU
-    // angelegten Note — deren Text hätte mit ihm nichts zu tun.
+    // mehr.
+    //
+    // Runde 2 (Review F-4), Richtigstellung: Die ursprüngliche Begründung („sonst
+    // wäre er die Diff-Basis einer gleichnamig NEU angelegten Note") hält NICHT
+    // stand. Nach `disposeNote` ist der Doc verworfen und der eigene State weg;
+    // eine gleichnamige Neuanlage läuft deshalb in den Adopt-Zweig von
+    // `ensureDoc`, und dort wird die Basis gar nicht gelesen (`adopted ?
+    // undefined`). Bleibt der eigene State ausnahmsweise liegen, baut `ensureDoc`
+    // den Doc aus ihm neu auf — und der ist genau der zuletzt gesehene .md-Text,
+    // die Basis also identisch. Es gibt folglich keinen erreichbaren Pfad, auf dem
+    // dieses `delete` das Ergebnis ändert; eine Mutationsprobe (Zeile entfernt,
+    // volle Suite) bleibt grün.
+    //
+    // Die Zeile bleibt trotzdem stehen: sie hält die Aufräum-Symmetrie zu
+    // `guids`/`abortedReads`/`priorPaths`/`ownSignatures` in dieser Methode, und
+    // ein Eintrag, der eine gelöschte Datei beschreibt, ist Ballast, sobald ein
+    // künftiger Pfad `ensureDoc` doch mit `adopted === false` erreicht.
     this.localDiffBase.delete(notePath);
     // Die Inkarnation ist tot; ihre Pfad-Historie hat keinen Adressaten mehr.
     // (Der delete-Handler hat sie vorher über incarnationPaths ausgelesen.)
