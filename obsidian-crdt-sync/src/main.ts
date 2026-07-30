@@ -85,6 +85,8 @@ export default class CrdtSyncPlugin extends Plugin {
   // erfahren — sonst ist „synct nicht mehr" nicht von „alles in Ordnung"
   // unterscheidbar.
   private unreadableCounts = new Map<string, number>();
+  // Task 17/F-6: derselbe Zähler für den Schreibpfad (siehe noteUnwritable).
+  private unwritableCounts = new Map<string, number>();
   private static readonly UNREADABLE_NOTICE_AFTER = 3;
   // Serialisiert ALLE Doc-Mutationen pro Note-Pfad (Remote-Merge, lokale
   // Änderung, Startup-Sweep) — verhindert verschränkte Mutationen desselben
@@ -156,7 +158,9 @@ export default class CrdtSyncPlugin extends Plugin {
       },
       // Task 12: unlesbare (nicht korrupte) Sidecar → erst nach mehreren Versuchen
       // melden, damit ein transienter EBUSY nicht sofort nervt.
-      (path: string) => this.noteUnreadable(path)
+      (path: string) => this.noteUnreadable(path),
+      // Task 17/F-6: dasselbe für den Schreibpfad.
+      (path: string) => this.noteUnwritable(path)
     );
 
     // Eigener Wächter statt Vault-Events: Obsidian feuert für .qollab nie. Poll-Scan
@@ -390,6 +394,22 @@ export default class CrdtSyncPlugin extends Plugin {
     if (this.corruptNoticePaths.has(path)) return;
     this.corruptNoticePaths.add(path);
     new Notice(`Qollab: Sync-Datei wiederholt nicht lesbar — Note synct nicht: ${path}`);
+  }
+
+  // Task 17/F-6: Gegenstück für den Schreibpfad — dieselbe Schwelle, dieselbe
+  // Dedup-Menge. Ein einzelner fehlgeschlagener Write ist transient (das Sync-Tool
+  // hält kurz ein Handle) und wird vom nächsten Trigger nachgeholt; hält er an, ist
+  // die Note faktisch vom Sync abgeschnitten, und genau das war bisher von „alles
+  // in Ordnung" nicht unterscheidbar. Eigener Zähler, damit sich Lese- und
+  // Schreibfehler nicht gegenseitig über die Schwelle heben — es sind zwei
+  // verschiedene Störungen.
+  private noteUnwritable(path: string): void {
+    const count = (this.unwritableCounts.get(path) ?? 0) + 1;
+    this.unwritableCounts.set(path, count);
+    if (count < CrdtSyncPlugin.UNREADABLE_NOTICE_AFTER) return;
+    if (this.corruptNoticePaths.has(path)) return;
+    this.corruptNoticePaths.add(path);
+    new Notice(`Qollab: Sync-Datei kann nicht geschrieben werden — Note synct nicht: ${path}`);
   }
 
   // Task 16: Ergibt der lokale Merge einen Text, der von der .md abweicht (der Doc
@@ -675,7 +695,12 @@ export default class CrdtSyncPlugin extends Plugin {
     if (changed && this.settings.statusNotice) {
       new Notice(`CRDT Sync: ${file.name} automatisch gemergt.`);
     }
-    return true;
+    // Task 17/F-6: Der Merge selbst ist durch und steht in der Datei — aber unser
+    // Stand kam nicht auf die Platte. `false` heißt „Trigger nicht verbraucht":
+    // derselbe Sidecar-Stand löst beim nächsten Poll erneut aus, und das ist der
+    // Wiederholungsversuch. Ohne diese Zeile bliebe der Schreibfehler folgenlos
+    // stehen, bis zufällig ein anderer Trigger dieselbe Note trifft.
+    return !this.syncHandler.hasUnpersistedState(notePath);
   }
 
   onunload() {

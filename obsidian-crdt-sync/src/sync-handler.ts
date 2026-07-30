@@ -158,8 +158,24 @@ export class SyncHandler {
     private onCorruptFile?: (path: string) => void,
     // Task 12: optionaler Callback für UNLESBARE (nicht korrupte) Dateien. Feuert
     // bei jedem Abbruch; die Schwellen-/Notice-Logik liegt beim Aufrufer.
-    private onUnreadableFile?: (path: string) => void
+    private onUnreadableFile?: (path: string) => void,
+    // Task 17/F-6: Gegenstück für den SCHREIBpfad. Feuert bei jedem
+    // fehlgeschlagenen Sidecar-Write; Schwelle und Notice liegen wie oben beim
+    // Aufrufer.
+    private onUnwritableFile?: (path: string) => void
   ) {}
+
+  // Task 17/F-6: Notes, deren Stand beim letzten `saveState` NICHT auf die Platte
+  // kam. Der Doc trägt ihn weiter, es fehlt nur die Persistenz — deshalb genügt es,
+  // die Note zu markieren und den nächsten Trigger den Write wiederholen zu lassen.
+  // Der Aufrufer nutzt die Markierung, um den Trigger unverbraucht zu lassen
+  // (`onRemoteYjsUpdate` gibt dann `false`), damit dieser nächste Trigger auch
+  // kommt.
+  private unpersisted = new Set<string>();
+
+  hasUnpersistedState(notePath: string): boolean {
+    return this.unpersisted.has(notePath);
+  }
 
   // Notes, deren letzter applyLocalContent wegen eines IO-Fehlers abgebrochen ist,
   // samt dem Text, der dabei NICHT in den CRDT kam. Solange ein Eintrag steht, darf
@@ -460,6 +476,7 @@ export class SyncHandler {
       // Der Disk-Stand IST unser Stand — Signatur trotzdem auffrischen, sonst
       // hinge die Kollisionserkennung an einer veralteten mtime.
       await this.rememberOwnSidecar(stateFile, state);
+      this.unpersisted.delete(notePath);
       return;
     }
     // Task 14: Das Schreibfenster ausnehmen, damit ein parallel laufender Poll den
@@ -472,6 +489,20 @@ export class SyncHandler {
       // index-basierte Split war in echten Vaults ein Silent-No-Op).
       await this.vault.adapter.writeBinary(stateFile, state);
       await this.rememberOwnSidecar(stateFile, state);
+      this.unpersisted.delete(notePath);
+    } catch {
+      // Task 17/F-6: Der Write ist gescheitert (OneDrive hält ein Handle, Pfad zu
+      // lang, Volume voll). Bisher verließ der Wurf `saveState` ungefiltert und
+      // endete als unbehandelte Promise im modify-Handler bzw. im leeren `catch`
+      // des Sweeps: keine Markierung, kein Zähler, keine Notice, kein Retry.
+      //
+      // Nicht weiterwerfen: der Doc trägt den Stand, alles nach `saveState`
+      // (Legacy-Cleanup, `abortedReads`-Freigabe, Diff-Basis) ist korrekt und
+      // würde sonst übersprungen — ein Wurf hier ließe also mehr kaputt als er
+      // meldet. Stattdessen markieren, melden und den nächsten Trigger den Write
+      // wiederholen lassen. Das ist der minimale Rückkanal, kein Retry-Scheduler.
+      this.unpersisted.add(notePath);
+      this.onUnwritableFile?.(stateFile);
     } finally {
       this.writingSidecars.delete(stateFile);
     }
