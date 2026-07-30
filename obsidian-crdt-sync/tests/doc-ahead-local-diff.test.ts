@@ -195,6 +195,69 @@ describe('Doc-Vorlauf: lokaler Diff darf einen gemergten Fremd-Edit nicht lösch
     expect(count(doc, 'LOKAL2')).toBe(1);
   });
 
+  it('Plugin-Ebene: verweigerter Write-Back, dann Sync-Overwrite — kein doppelter Fremd-Edit', async () => {
+    // Review Runde 2, F-1: derselbe Einstieg wie der Test darüber (Write-Back
+    // verweigert, Doc bleibt voraus, Basis steht auf dem .md-Text OHNE FREMD).
+    // Danach überschreibt der Datei-Sync die .md mit der GEMERGTEN Fassung des
+    // Peers — sie trägt FREMD also schon. Nimmt der Diff jetzt die alte Basis,
+    // enthält `patch_make` die Fremd-Einfügung, die `other` bereits hat, und
+    // `patch_apply` dedupliziert nicht (WARNUNG in text-merge.ts) → FREMD zweimal.
+    const vault = makeVaultMock();
+    vault._textFiles.set(NOTE, BASE);
+    vault._mdMtimes.set(NOTE, 1);
+    const { plugin, handlers } = await bootDevice(vault);
+    await type(vault, handlers, BASE);
+    placeForeignSidecar(vault);
+
+    const origProcess = vault.process.bind(vault);
+    let raced = false;
+    vault.process = async (file: { path: string }, fn: (data: string) => string) => {
+      if (!raced) {
+        raced = true;
+        vault._textFiles.set(NOTE, `${vault._textFiles.get(NOTE)}LOKAL2\n`);
+      }
+      return origProcess(file, fn);
+    };
+
+    await type(vault, handlers, `${BASE}LOKAL1\n`);
+    expect(plugin.crdtManager.getContent(NOTE)).toContain('FREMD');
+    expect(vault._textFiles.get(NOTE)).not.toContain('FREMD');
+
+    // Der Datei-Sync legt die gemergte Fassung des Peers ab (robocopy liefert .md
+    // und Sidecar zusammen — der Task-11-Realfall). LOKAL1/LOKAL2 fallen dabei aus
+    // der Datei heraus; das ist die noch offene Rückwärtsbewegung (README §Grenzen)
+    // und NICHT Gegenstand dieses Tests.
+    await type(vault, handlers, WITH_FOREIGN);
+
+    const doc = plugin.crdtManager.getContent(NOTE);
+    expect(count(doc, 'FREMD')).toBe(1); // RED (HEAD): 2 — Basis ohne FREMD, content mit
+  });
+
+  it('Handler-Ebene: eine .md, die den Doc-Vorlauf schon trägt, verdoppelt ihn nicht', async () => {
+    // Review Runde 2, F-1 isoliert: die Basis (zuletzt gesehener .md-Text) kennt
+    // FREMD nicht, der Doc und der neue .md-Inhalt kennen es beide. Der Kurzschluss
+    // `content === mergedText` greift NICHT, weil sich die beiden zusätzlich um
+    // LOKAL1 unterscheiden.
+    const vault = makeVaultMock() as any;
+    const manager = new CrdtManager();
+    const handler = new SyncHandler(vault, manager, OWN_ID);
+
+    vault._textFiles.set(NOTE, BASE);
+    await handler.applyLocalContent(NOTE, BASE);
+    placeForeignSidecar(vault);
+
+    // Tastendruck: FREMD kommt in den Doc, die .md behält LOKAL1 (kein Write-Back).
+    vault._textFiles.set(NOTE, `${BASE}LOKAL1\n`);
+    await handler.applyLocalContent(NOTE, `${BASE}LOKAL1\n`);
+    expect(count(manager.getContent(NOTE), 'FREMD')).toBe(1);
+
+    // Sync-Overwrite mit der gemergten Peer-Fassung (trägt FREMD, nicht LOKAL1).
+    vault._textFiles.set(NOTE, WITH_FOREIGN);
+    await handler.applyLocalContent(NOTE, WITH_FOREIGN);
+
+    expect(count(manager.getContent(NOTE), 'FREMD')).toBe(1); // RED (HEAD): 2
+  });
+
   it('Handler-Ebene: der Doc-Vorlauf allein macht aus dem nächsten Diff keine Löschung', async () => {
     const vault = makeVaultMock() as any;
     const manager = new CrdtManager();
