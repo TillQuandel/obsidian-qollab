@@ -17,7 +17,7 @@
 //     Vorlauf darf nie als lokale Löschung verbucht werden, unabhängig davon, ob
 //     ein Aufrufer die .md zwischendurch zurückschreibt.
 
-import { TFile } from 'obsidian';
+import { Notice, TFile } from 'obsidian';
 import CrdtSyncPlugin from '../src/main';
 import { SyncHandler } from '../src/sync-handler';
 import { CrdtManager } from '../src/crdt-manager';
@@ -467,6 +467,53 @@ describe('Doc-Vorlauf: lokaler Diff darf einen gemergten Fremd-Edit nicht lösch
     // Diff leer und der Fremd-Edit bleibt.
     await type(vault, handlers, `${BASE}EDIT2\n`);
 
+    expect(count(plugin.crdtManager.getContent(NOTE), 'FREMD')).toBe(1);
+  });
+
+  it('Plugin-Ebene: eine Meldung pro ankommendem Fremd-Edit, nicht pro Tastendruck', async () => {
+    // Review Runde 2, F-7: Der Write-Back im modify-Pfad meldet mit derselben
+    // `Notice` wie der Poll-Write-Back, und `statusNotice` ist per Default an. Die
+    // Sorge wäre eine Meldung pro Tastendruck. Gemessen: nein — nach dem ersten
+    // Tastendruck trägt die .md den Fremd-Stand, `merged === expected`, und
+    // `writeBackMerged` kehrt vor dem Write zurück. Die Obergrenze ist also die
+    // Ankunftsrate fremder Hilfsdateien, nicht die Tipprate.
+    (Notice as any).messages = [];
+    const vault = makeVaultMock();
+    vault._textFiles.set(NOTE, BASE);
+    vault._mdMtimes.set(NOTE, 1);
+    const storage = makeLocalStorage();
+    storage.saveLocalStorage('qollab-client-id', OWN_ID);
+    const handlers = new Map<string, (...args: any[]) => any>();
+    const vaultWithEvents = Object.assign(vault, {
+      on: (event: string, cb: (...args: any[]) => any) => {
+        handlers.set(event, cb);
+        return { __event: event };
+      },
+      offref: () => {},
+    });
+    const plugin = new (CrdtSyncPlugin as any)(
+      {
+        vault: vaultWithEvents,
+        workspace: { on: () => ({}), offref: () => {}, onLayoutReady: () => {} },
+        loadLocalStorage: storage.loadLocalStorage,
+        saveLocalStorage: storage.saveLocalStorage,
+      },
+      {}
+    );
+    // Default-Einstellung, nicht die Test-Abschaltung.
+    plugin._data = { enabled: true, statusNotice: true, tombstones: {} };
+    await plugin.onload();
+
+    await type(vault, handlers, BASE);
+    placeForeignSidecar(vault);
+
+    // Fünf Tastendrücke nach der Ankunft EINER Fremd-Sidecar.
+    for (let i = 1; i <= 5; i += 1) {
+      await type(vault, handlers, `${vault._textFiles.get(NOTE)}LOKAL${i}\n`);
+    }
+
+    const merges = (Notice as any).messages.filter((m: string) => /automatisch gemergt/.test(m));
+    expect(merges).toHaveLength(1);
     expect(count(plugin.crdtManager.getContent(NOTE), 'FREMD')).toBe(1);
   });
 

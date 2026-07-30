@@ -333,6 +333,17 @@ export default class CrdtSyncPlugin extends Plugin {
   // `writingPaths` unterdrückt das modify-Event dieses Writes. Kommt es dennoch
   // (Obsidian feuert nach dem finally), ist es ein No-op: `content === mergedText`
   // in mergeForLocalDiff fängt es ab.
+  //
+  // Review F-7 (latent, heute unerreichbar): Das `delete` im `finally` prüft nicht,
+  // ob DIESER Aufruf den Guard gesetzt hat. Beide heutigen Aufrufer (modify-Handler,
+  // Startup-Sweep) halten ihn nicht selbst, und die PathQueue serialisiert sie pro
+  // Pfad — der Fall tritt also nicht ein. Käme ein Aufrufer dazu, der `writingPaths`
+  // schon hält (wie `onRemoteYjsUpdate` es um seine beiden Writes tut), höbe dieses
+  // `delete` den äußeren Guard mitten im Write auf, und Obsidians modify-Event
+  // liefe als fremder Edit in den Handler. Dieselbe Klasse wie der bereits
+  // dokumentierte Verschachtelungs-Hazard der PathQueue: wer hier einen dritten
+  // Aufrufer ergänzt, muss den Besitz mitführen (setzen nur, wenn nicht schon
+  // gesetzt; löschen nur, wenn selbst gesetzt).
   private async writeBackMerged(
     file: TFile,
     expected: string,
