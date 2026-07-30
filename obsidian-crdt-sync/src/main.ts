@@ -77,6 +77,9 @@ export default class CrdtSyncPlugin extends Plugin {
   // Y.Doc und damit verlorene Updates.
   private pathQueue = new PathQueue();
   private unloaded = false;
+  // Task 17/F-2: Läuft gerade ein Startup-Sweep? Solange ja, werden Remote-Trigger
+  // abgewiesen statt bedient (siehe runStartupSweep).
+  private sweepRunning = false;
 
   async onload() {
     await this.loadSettings();
@@ -155,20 +158,8 @@ export default class CrdtSyncPlugin extends Plugin {
       // Task 14: Änderungen an der EIGENEN Sidecar prüfen (Kollisionserkennung).
       (notePath, path, cur) => this.onOwnSidecarChanged(notePath, path, cur)
     );
-    this.sidecarWatcher.start({
-      registerInterval: (fn, ms) => {
-        const id = window.setInterval(fn, ms);
-        this.registerInterval(id);
-        return () => window.clearInterval(id);
-      },
-      onFileOpen: (cb) => {
-        const ref = this.app.workspace.on('file-open', (file) =>
-          cb(file instanceof TFile ? file.path : null)
-        );
-        this.registerEvent(ref);
-        return () => this.app.workspace.offref(ref);
-      },
-    });
+    // Task 17/F-2: `sidecarWatcher.start` läuft NICHT hier, sondern in
+    // onLayoutReady hinter dem Sweep — siehe dort.
 
     // Wenn Nutzer eine .md-Note bearbeitet → CRDT-State aktualisieren + speichern.
     // Read UND applyLocalContent laufen über dieselbe Queue wie der Remote-Merge:
@@ -293,13 +284,67 @@ export default class CrdtSyncPlugin extends Plugin {
     // würde man mergen, bevor die lokalen Snapshots aktuell sind — der Initial-
     // Scan schließt die Lücke, dass bei geschlossener App angekommene Remote-
     // Stände sonst nie gemergt wurden.
+    //
+    // Task 17/F-2: Deshalb werden Poll-Intervall und `file-open`-Listener auch erst
+    // HIER registriert, nach dem Sweep. Bis Task 17 standen sie in `onload` — und
+    // zwischen `onload` und `onLayoutReady` liegt der ganze Layout-Restore, in dem
+    // Obsidian `file-open` für die zuletzt offene Note feuert. Ein Trigger auf eine
+    // noch nicht gesweepte Note lief in `loadAndMerge` (own-Branch, der den
+    // `.md`-Text bewusst nicht einspielt), und der Write-Back schrieb über
+    // `data === preMerge` den nur in der Datei lebenden Inhalt weg — in Datei UND
+    // CRDT, auf beiden Geräten. Der frühere Reihenfolge-Kommentar galt nur für den
+    // einen awaiteten `poll()`-Aufruf; die zwei ungebundenen Pfade waren nirgends
+    // erzwungen.
+    //
+    // Die Promise wird zurückgegeben statt mit `void` verworfen: Obsidian ignoriert
+    // den Rückgabewert von `onLayoutReady`, aber ein Test kann den Start-Ablauf so
+    // deterministisch abwarten, statt auf Microtask-Reihenfolge zu hoffen.
     this.app.workspace.onLayoutReady(() => {
-      void (async () => {
-        await this.snapshotStaleMarkdownFiles();
+      return (async () => {
+        await this.runStartupSweep();
         if (this.unloaded) return;
+        this.startSidecarWatcher();
         await this.sidecarWatcher.poll();
       })();
     });
+  }
+
+  // Registriert die beiden Trigger-Quellen des Watchers. Getrennt von `onload`,
+  // damit die Reihenfolge „erst Sweep, dann Trigger" ablesbar ist (Task 17/F-2).
+  private startSidecarWatcher(): void {
+    this.sidecarWatcher.start({
+      registerInterval: (fn, ms) => {
+        const id = window.setInterval(fn, ms);
+        this.registerInterval(id);
+        return () => window.clearInterval(id);
+      },
+      onFileOpen: (cb) => {
+        const ref = this.app.workspace.on('file-open', (file) =>
+          cb(file instanceof TFile ? file.path : null)
+        );
+        this.registerEvent(ref);
+        return () => this.app.workspace.offref(ref);
+      },
+    });
+  }
+
+  // Task 17/F-2: Der Sweep als aufrufbare Operation mit Gate. Solange er läuft,
+  // beantwortet `onRemoteYjsUpdate` jeden Trigger mit `false` — der Watcher
+  // verbucht ihn dann nicht (`sidecar-watcher.ts:137`), hält ihn offen und
+  // wiederholt ihn. Das ist eine Korrektheitsbedingung, keine Performance-Frage:
+  // vor Sweep-Ende sind die lokalen Snapshots nicht aktuell, und ein Merge auf
+  // dieser Grundlage löscht nie erfassten `.md`-Inhalt.
+  //
+  // Die Registrierung in onLayoutReady schließt das Startfenster strukturell; das
+  // Gate deckt die Fälle ab, in denen der Watcher bereits läuft — heute das
+  // Wieder-Einschalten des Sync-Schalters (Task 17/F-5).
+  async runStartupSweep(): Promise<void> {
+    this.sweepRunning = true;
+    try {
+      await this.snapshotStaleMarkdownFiles();
+    } finally {
+      this.sweepRunning = false;
+    }
   }
 
   // Zählt Lesefehler pro Sidecar-Pfad und meldet einmalig, sobald die Datei
@@ -454,6 +499,11 @@ export default class CrdtSyncPlugin extends Plugin {
   private async onRemoteYjsUpdate(notePath: string): Promise<boolean> {
     if (this.unloaded) return false;
     if (!this.settings.enabled) return false;
+    // Task 17/F-2: Gate. Vor Sweep-Ende sind die lokalen Snapshots nicht aktuell —
+    // ein Merge jetzt würde nie erfassten `.md`-Inhalt löschen. `false` heißt
+    // „Trigger nicht verbraucht": der Watcher lässt `lastSeen` stehen und liefert
+    // denselben Stand nach dem Sweep erneut.
+    if (this.sweepRunning) return false;
 
     // Fix A: den .md-Inhalt VOR dem Merge festhalten. Er ist die Basis, um beim
     // Write-Back einen lokalen User-Edit zu erkennen, der zwischen Merge-
