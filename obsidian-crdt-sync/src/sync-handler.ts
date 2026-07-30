@@ -1,4 +1,4 @@
-import { CrdtManager } from './crdt-manager';
+import { CrdtManager, isApplicableUpdate } from './crdt-manager';
 import { encodeStateFile, decodeStateFile, generateGuid } from './state-file';
 import type { SidecarAdapter } from './sidecar-io';
 import {
@@ -533,19 +533,41 @@ export class SyncHandler {
   //   C.3: Eine für DIESEN Pfad getombstonte GUID → Datei als stale Leiche
   //        löschen und ausschließen. Der Tombstone gilt seit Task 15 pro Paar
   //        (notePath, guid), deshalb braucht die Prüfung den Pfad.
-  //   R1:  Legacy-Dateien (guid null, kein QLB1-Header) dienen nur dem Erst-Import.
-  //        Existiert unter den übergebenen Pfaden mindestens ein GUID-tragender
-  //        Sidecar, werden Legacy-Dateien ignoriert und sofort gelöscht.
+  //   R1:  Legacy-Dateien (v0.1) dienen nur dem Erst-Import. Existiert unter den
+  //        übergebenen Pfaden mindestens ein GUID-tragender Sidecar, werden sie
+  //        ignoriert und gelöscht.
+  //
+  // Task 17/F-1: „Legacy" verlangt einen POSITIVEN Nachweis, nicht mehr den
+  // Negativbefund „trägt keine GUID". `hasMagic` (state-file.ts) liefert für jede
+  // Datei unter 20 Byte `false` — auch für 0 Byte —, und `decodeStateFile` meldet
+  // dann `guid: null`. Damit galt jede unvollständig materialisierte Fremd-Datei
+  // als v0.1-Leiche und wurde von der Platte gelöscht; der bidirektionale Sync
+  // trug die Löschung zurück und vernichtete dort den echten State. Auslöser sind
+  // real (fehlgeschlagene OneDrive-Hydrierung, abgebrochener Transfer,
+  // Sicherheitssoftware), und die Asymmetrie war das eigentliche Ärgernis: eine
+  // Datei AB 20 Byte mit kaputtem Inhalt wurde schonend behandelt (übersprungen,
+  // `onCorruptFile`), die harmlosere darunter gelöscht.
+  //
+  // Der Nachweis läuft über die PFADFORM, nicht über den Inhalt: v0.1 schrieb
+  // `.qollab/<note>.yjs` ohne clientId-Segment (`legacyFilePath`). Das clientId-
+  // Segment und der QLB1-Header kamen gemeinsam in v0.4.0 (Commit `9095f3c` ist in
+  // keinem Tag außer `v0.4.0` enthalten, und der trägt auch `e2dd21c`) — eine
+  // Datei mit gültigem `<8-hex>.yjs`-Namen ohne Header ist deshalb NIE eine
+  // v0.1-Datei, sondern unfertig oder korrupt. Zusätzlich muss der Inhalt als
+  // Yjs-Update lesbar sein, sonst ist auch eine Datei in Legacy-Pfadform nur
+  // „Stand unbekannt". Alles ohne Nachweis: überspringen, melden, NIE löschen.
+  //
+  // Damit erübrigt sich der `ownPath`-Schutz, den der Tombstone-Zweig unten trägt:
+  // `ownPath` hat per Konstruktion ein clientId-Segment und kann den Legacy-Zweig
+  // nicht mehr erreichen. Kein toter Vergleich, sondern eine stärkere Zusage.
   //
   // Die frühere Begründung, die eigene Datei könne nie fälschlich gelöscht werden
   // („die eigene GUID landet nie im Tombstone-Set"), war nachweislich falsch: ein
   // sync-vermittelter Rename stellt eine Umbenennung als delete+create zu und
   // tombstont damit eine LEBENDE Inkarnation, und im Adopt-Zweig hängt dieselbe
-  // GUID ohnehin an mehreren Pfaden. Stattdessen gilt jetzt hart: über den
+  // GUID ohnehin an mehreren Pfaden. Stattdessen gilt hart: über den
   // Tombstone-Zweig wird die eigene Sidecar nie gelöscht, nur vom Ergebnis
-  // ausgeschlossen (siehe unten). Der Legacy-Zweig (R1) bleibt unverändert — dort
-  // ist das Löschen der eigenen Legacy-Datei gewollt, weil ihr Inhalt zu dem
-  // Zeitpunkt bereits im GUID-tragenden State steht.
+  // ausgeschlossen (siehe unten).
   private async decodeSiblings(notePath: string, paths: string[]): Promise<DecodedSibling[]> {
     // Alle Dateien lesen, dann in einem zweiten Durchlauf entscheiden.
     const decoded: Array<DecodedSibling | null> = [];
@@ -557,6 +579,7 @@ export class SyncHandler {
     const hasGuidState = decoded.some((d) => d !== null && d.guid !== null);
 
     const ownPath = this.stateFilePath(notePath);
+    const legacyPath = this.legacyFilePath(notePath);
     const result: DecodedSibling[] = [];
     for (let i = 0; i < paths.length; i++) {
       const d = decoded[i];
@@ -573,10 +596,27 @@ export class SyncHandler {
         continue;
       }
 
-      // R1: Legacy ignorieren und löschen, sobald GUID-State existiert.
-      if (d.guid === null && hasGuidState) {
-        await this.removeSidecar(paths[i]);
-        continue;
+      if (d.guid === null) {
+        // Task 17/F-1, Schritt 1 — INHALTS-Nachweis: Ist die Datei leer oder nicht
+        // als Yjs-Update lesbar, ist der Stand UNBEKANNT. Überspringen und melden
+        // (die R2-Policy, die dieser Zweig bisher umging), aber nichts löschen und
+        // nichts in den Merge nehmen.
+        if (!isApplicableUpdate(d.update)) {
+          this.onCorruptFile?.(paths[i]);
+          continue;
+        }
+        // R1 (unverändert): ein nachgewiesen lesbarer headerloser State wird
+        // ignoriert, sobald GUID-State existiert — sein Inhalt steckt dann bereits
+        // darin. Ohne GUID-State bleibt es beim Erst-Import (unten mitgemergt).
+        if (hasGuidState) {
+          // Task 17/F-1, Schritt 2 — PFADFORM-Nachweis, und zwar erst vor dem
+          // destruktiven Teil: Gelöscht wird ausschließlich die v0.1-Form ohne
+          // clientId-Segment. Ein per-Client benannter headerloser Sidecar ist
+          // keine v0.1-Datei — ihn zu löschen hieße, fremden State auf Verdacht zu
+          // vernichten. Er wird nur ignoriert und bleibt liegen.
+          if (paths[i] === legacyPath) await this.removeSidecar(paths[i]);
+          continue;
+        }
       }
 
       result.push(d);
@@ -621,7 +661,15 @@ export class SyncHandler {
     }
 
     const own = await this.readStateFile(this.stateFilePath(notePath));
-    if (own) {
+    // Task 17/F-1, zweite Schadensrichtung: Der own-Branch lief bisher für JEDE
+    // vorhandene eigene Datei — auch für eine 0-Byte-Datei. `applyUpdate` warf,
+    // wurde gefangen, und `own.guid ?? generateGuid()` prägte eine FRISCHE
+    // Inkarnation über eine lebende Historie: Spaltung, danach Tie-Break und
+    // `unionMerge` ohne gemeinsamen Vorfahren, also doppelte Zeilen in der Note.
+    // Bedingung ist jetzt derselbe positive Nachweis wie in `decodeSiblings` —
+    // GUID im Header ODER lesbarer headerloser State (v0.1-Migration: der bekommt
+    // wie dokumentiert eine frische GUID, sein Inhalt ist ja gerettet).
+    if (own && (own.guid !== null || isApplicableUpdate(own.update))) {
       // R2: korrupter eigener State → überspringen; Doc bleibt leer und wird beim
       // nächsten saveState (aus applyLocalContent) mit gültigem State überschrieben.
       try {
@@ -631,6 +679,15 @@ export class SyncHandler {
       }
       this.guids.set(notePath, own.guid ?? generateGuid());
       return false;
+    }
+    if (own) {
+      // Nicht lesbar und ohne Header → „Stand unbekannt". Behandeln, als gäbe es
+      // keinen eigenen State: der Adopt-Zweig unten übernimmt die GUID der
+      // lebenden Fremd-Inkarnation, statt eine zu erfinden. Der Text ist dabei
+      // nicht in Gefahr — er liegt in der `.md` und wird dort vereinigt. Erst wenn
+      // es gar nichts zu adoptieren gibt, entsteht eine neue GUID; dann gibt es
+      // aber auch keine Inkarnation, von der sie sich abspalten könnte.
+      this.onCorruptFile?.(own.path);
     }
 
     const ownPath = this.stateFilePath(notePath);
@@ -745,11 +802,27 @@ export class SyncHandler {
     return `${QOLLAB_DIR}/${notePath}.yjs`;
   }
 
-  // R1: Löscht die Legacy-Datei (kein QLB1-Header) einer Note, falls sie noch
-  // existiert. Wird nach saveState aufgerufen: zu dem Zeitpunkt existiert
+  // R1: Löscht die Legacy-Datei (v0.1-Form ohne clientId-Segment) einer Note, falls
+  // sie noch existiert. Wird nach saveState aufgerufen: zu dem Zeitpunkt existiert
   // GUID-tragender State, sodass die Legacy-Datei nicht mehr gebraucht wird.
+  //
+  // Task 17/F-1: Gelöscht wird nur bei positivem Nachweis — die Datei muss als
+  // Yjs-Update lesbar sein. Sonst räumte genau dieser Aufruf die 0-Byte-Fassung
+  // einer noch nicht hydrierten v0.1-Datei ab, hinter dem Rücken des Guards in
+  // `decodeSiblings`. Kein zusätzlicher IO im Normalfall: existiert keine
+  // Legacy-Datei (der Regelfall), bleibt es beim einen `stat` wie bisher.
   private async cleanupLegacyFile(notePath: string): Promise<void> {
-    await this.removeSidecar(this.legacyFilePath(notePath));
+    const path = this.legacyFilePath(notePath);
+    let buffer: ArrayBuffer | null;
+    try {
+      buffer = await readSidecar(this.vault.adapter, path);
+    } catch {
+      return; // unlesbar → Stand unbekannt, liegen lassen
+    }
+    if (buffer === null) return;
+    const { guid, update } = decodeStateFile(new Uint8Array(buffer));
+    if (guid !== null || !isApplicableUpdate(update)) return;
+    await this.vault.adapter.remove(path);
   }
 
   // Review I-3: Entscheidungsgrundlage für den Startup-Sweep — könnte ensureDoc

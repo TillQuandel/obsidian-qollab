@@ -1,6 +1,25 @@
 import * as Y from 'yjs';
 import { diff_match_patch, DIFF_DELETE, DIFF_INSERT, DIFF_EQUAL } from 'diff-match-patch';
 
+// Task 17/F-1: Lässt sich `update` überhaupt als Yjs-Update lesen? Nötig, um einen
+// echten v0.1-State (headerlos, aber gültig) von einer nur unvollständig
+// materialisierten Datei zu unterscheiden — für `decodeStateFile` sehen beide
+// identisch aus (`guid: null`). Läuft auf einem Wegwerf-Doc; kein geladener
+// Zustand wird berührt. Leer zählt nie als gültig: eine 0-Byte-Datei beweist
+// nichts, und genau sie erzeugt OneDrive bei fehlgeschlagener Hydrierung.
+export function isApplicableUpdate(update: Uint8Array): boolean {
+  if (update.length === 0) return false;
+  const probe = new Y.Doc();
+  try {
+    Y.applyUpdate(probe, update);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    probe.destroy();
+  }
+}
+
 export class CrdtManager {
   private dmp = new diff_match_patch();
   private docs = new Map<string, Y.Doc>();
