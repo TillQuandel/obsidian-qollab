@@ -818,6 +818,36 @@ export class SyncHandler {
         }
       }
     }
+    // Task 18 — HASH-GATE. Sind der Gewinner-Doc und der lokale Stand hier
+    // byte-identisch, gibt es nichts zu vereinigen: der Wechsel ist verlustfrei,
+    // der Doc trägt danach ausschließlich Gewinner-Ops, und genau das ist die
+    // gewünschte Lage. Jede eigene Op, die wir stattdessen einbrächten, wäre eine
+    // zweite Kette für denselben Text — und die ist nach Task 18/Teil 1 die
+    // Ursache der Erstkontakt-Verdopplung (Yjs dedupliziert nach Item-ID, nicht
+    // nach Inhalt; sichtbar wird sie erst beim nächsten `mergeCompatible`).
+    // Dieselbe Prüfung haben vier Systeme unabhängig erfunden: synch
+    // (`hashMatches`), obsidian-livesync (`isSame`), Relay (`remapIfHashMatches`),
+    // Git über den Blob-SHA.
+    //
+    // WIRKUNG, gemessen statt vermutet: keine. `unionMerge` gibt bei Gleichheit
+    // den Eingabestand unverändert zurück, und `setContent` bricht bei
+    // `current === content` vor der ersten Op ab — beide Kurzschlüsse zusammen
+    // taten das hier bereits. Die gepaarte Fuzz-Messung (40 Seeds × 3 Modi) ist
+    // vorher wie nachher identisch, und die Tests in `hash-gate.test.ts` sind
+    // auch ohne diese Zeilen grün. Sie stehen trotzdem hier, weil die Invariante
+    // damit an ihrem Ort steht statt als Nebenwirkung zweier fremder Guards: wer
+    // künftig einen dieser Kurzschlüsse anfasst, bricht sie sonst still.
+    //
+    // NICHT übersprungen wird der `saveState` des Aufrufers. Der Doc hat die
+    // Inkarnation gewechselt, unsere eigene Sidecar trägt aber noch die
+    // aufgegebene GUID; bliebe sie stehen, baute `ensureDoc` beim nächsten Start
+    // die tote Inkarnation aus ihr wieder auf, und bis dahin bewürbe unsere Datei
+    // eine GUID, gegen die andere Geräte weiter Tie-Breaks fahren. Der Write ist
+    // also der Preis des Wechsels, nicht der überflüssige Schreibvorgang, den ein
+    // Gate einsparen könnte (Gegenprobe in `hash-gate.test.ts`).
+    const winnerText = this.crdtManager.getContent(notePath);
+    if (winnerText === localText) return;
+
     // Task 13/A: Früher `setContent(mdText)` — ein 2-Wege-Diff, der den frisch
     // aufgebauten Gewinner-Doc exakt auf die lokale Datei zwang. Inhalt, der nur
     // im Verlierer-Doc lebte, verschwand ersatzlos; Gewinner-Inhalt, den die
@@ -826,10 +856,7 @@ export class SyncHandler {
     // divergent). Beide Inkarnationen haben keinen gemeinsamen Vorfahren →
     // unionMerge. Auf Op-Ebene bleibt der Wechsel prinzipbedingt verlustbehaftet:
     // der lokale Beitrag zählt danach als frische Einfügung dieses Geräts.
-    this.crdtManager.setContent(
-      notePath,
-      unionMerge(this.crdtManager.getContent(notePath), localText)
-    );
+    this.crdtManager.setContent(notePath, unionMerge(winnerText, localText));
   }
 
   // Pfad der clientId-losen Legacy-Datei (v0.1-Ära).
