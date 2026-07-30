@@ -151,3 +151,92 @@ describe('PathQueue.runAll (Mehrfach-Key)', () => {
     expect(q.size).toBe(0);
   });
 });
+
+// Review M-3: Der Identitäts-Check im Cleanup (`tails.get(key) === tail`) trägt die
+// Serialisierung, war aber von keinem Test gedeckt — ihn zu entfernen ließ die
+// gesamte Suite grün. Ohne ihn räumt der Cleanup eines FERTIGEN Tasks den Tail
+// eines noch laufenden Nachrückers weg; der nächste Aufruf findet dann keinen Tail
+// mehr und läuft parallel zu ihm. Genau das prüfen die beiden Tests hier: Sie
+// reihen den dritten Task erst ein, NACHDEM der Cleanup des ersten gelaufen ist,
+// während der zweite noch arbeitet.
+describe('PathQueue: Cleanup räumt keinen fremden Tail weg', () => {
+  it('run: dritter Aufruf wartet auf den noch laufenden zweiten', async () => {
+    const q = new PathQueue();
+    const order: string[] = [];
+
+    let releaseA!: () => void;
+    let releaseB!: () => void;
+    const gateA = new Promise<void>((r) => {
+      releaseA = r;
+    });
+    const gateB = new Promise<void>((r) => {
+      releaseB = r;
+    });
+
+    const pA = q.run('k', async () => {
+      order.push('a-start');
+      await gateA;
+      order.push('a-end');
+    });
+    const pB = q.run('k', async () => {
+      order.push('b-start');
+      await gateB;
+      order.push('b-end');
+    });
+
+    releaseA();
+    await pA;
+    // A ist durch, sein Cleanup-Microtask läuft jetzt — B hängt noch am Gate.
+    await tick();
+
+    const pC = q.run('k', async () => {
+      order.push('c-start');
+    });
+
+    releaseB();
+    await Promise.all([pB, pC]);
+
+    // Ohne den Identitäts-Check hätte As Cleanup Bs Tail gelöscht, C wäre sofort
+    // gestartet und 'c-start' stünde vor 'b-end'.
+    expect(order).toEqual(['a-start', 'a-end', 'b-start', 'b-end', 'c-start']);
+  });
+
+  it('runAll: dritter Aufruf wartet auf den noch laufenden zweiten', async () => {
+    const q = new PathQueue();
+    const order: string[] = [];
+
+    let releaseA!: () => void;
+    let releaseB!: () => void;
+    const gateA = new Promise<void>((r) => {
+      releaseA = r;
+    });
+    const gateB = new Promise<void>((r) => {
+      releaseB = r;
+    });
+
+    const pA = q.runAll(['x', 'y'], async () => {
+      order.push('a-start');
+      await gateA;
+      order.push('a-end');
+    });
+    const pB = q.runAll(['x', 'y'], async () => {
+      order.push('b-start');
+      await gateB;
+      order.push('b-end');
+    });
+
+    releaseA();
+    await pA;
+    await tick();
+
+    // Auf EINEM der beiden Keys eingereiht — er muss trotzdem hinter B warten.
+    const pC = q.run('y', async () => {
+      order.push('c-start');
+    });
+
+    releaseB();
+    await Promise.all([pB, pC]);
+
+    expect(order).toEqual(['a-start', 'a-end', 'b-start', 'b-end', 'c-start']);
+  });
+});
