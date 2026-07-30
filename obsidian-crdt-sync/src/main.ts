@@ -344,13 +344,29 @@ export default class CrdtSyncPlugin extends Plugin {
     try {
       await this.app.vault.process(file, (data) => {
         if (data !== expected) return data;
-        this.syncHandler.noteLocalDiffBase(file.path, merged);
         changed = true;
         return merged;
       });
+    } catch {
+      // Review F-2 (Nebenbefund): Der Write kann werfen (EBUSY durch den
+      // Sync-Dienst, volles Volume, read-only). Vor Task 16 schrieb dieser Pfad die
+      // .md nicht und konnte hier nicht werfen — ohne `catch` verlässt der Wurf den
+      // modify-Handler als unbehandelte Promise-Rejection. Verschluckt wird er
+      // bewusst: der lokale Stand ist bereits erfasst und persistiert
+      // (`applyLocalContent`), und der Write-Back in `onRemoteYjsUpdate` holt den
+      // Schreibversuch beim nächsten Poll nach. Ein Rückkanal an die Nutzerin ist
+      // ausdrücklich Task 17 (Schreibfehler-Rückkanal).
+      changed = false;
     } finally {
       this.writingPaths.delete(file.path);
     }
+    // Review F-2: Die Basis erst NACH dem bestätigten Write setzen. Im Callback
+    // gesetzt, stand sie auf `merged`, während die Datei nach einem gescheiterten
+    // Write weiter `expected` trug — der nächste `modify` difft dann „merged →
+    // expected", also genau die Löschung des Fremd-Edits, die dieser Task
+    // verhindern soll (gemessen: FREMD=0). `changed` ist nur true, wenn der Callback
+    // `merged` zurückgegeben hat UND `process` durchgelaufen ist.
+    if (changed) this.syncHandler.noteLocalDiffBase(file.path, merged);
     // Dieselbe Meldung wie beim Write-Back in onRemoteYjsUpdate: für den Nutzer ist
     // es dasselbe Ereignis („die Note wurde automatisch zusammengeführt"), nur
     // ausgelöst vom eigenen Tippen statt vom Poll. Ohne sie verschwände das Signal
@@ -538,6 +554,7 @@ export default class CrdtSyncPlugin extends Plugin {
         if (this.syncHandler.hasAbortedRead(notePath)) return false;
         if (!this.unloaded) {
           const merged2 = this.crdtManager.getContent(notePath);
+          let written: string | undefined;
           await this.app.vault.process(file, (data) => {
             const next = ((): string => {
               if (data === merged2) return data;
@@ -547,13 +564,19 @@ export default class CrdtSyncPlugin extends Plugin {
               }
               return data;
             })();
-            // Task 16: Was dieser Callback zurückgibt, steht danach in der .md. Das
-            // applyLocalContent(threeWay) darüber hat die Basis auf einen Text
-            // gesetzt, der so nie in der Datei stand — hier steht sie wieder auf dem
-            // echten Dateiinhalt.
-            this.syncHandler.noteLocalDiffBase(notePath, next);
+            written = next;
             return next;
           });
+          // Task 16: Was der Callback zurückgegeben hat, steht jetzt in der .md. Das
+          // applyLocalContent(threeWay) darüber hat die Basis auf einen Text gesetzt,
+          // der so nie in der Datei stand — hier steht sie wieder auf dem echten
+          // Dateiinhalt.
+          //
+          // Review F-2: NACH dem `await`, nicht im Callback. Scheitert `process`
+          // nach dem Callback am Schreiben, trägt die Datei weiter `data`; eine Basis
+          // auf `next` wäre dann ein Text, der nie in der Datei stand, und der
+          // nächste lokale Diff verbuchte die Differenz als Löschung.
+          if (written !== undefined) this.syncHandler.noteLocalDiffBase(notePath, written);
         }
       }
     } finally {
