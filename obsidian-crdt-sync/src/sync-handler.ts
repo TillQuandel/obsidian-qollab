@@ -1,6 +1,6 @@
 import { CrdtManager, carriesYjsOps, isEmptyYjsState } from './crdt-manager';
 import { encodeStateFile, decodeStateFile, generateGuid } from './state-file';
-import type { SidecarAdapter } from './sidecar-io';
+import type { SidecarAdapter, DirListingCache } from './sidecar-io';
 import {
   ensureSidecarFolder,
   dirname,
@@ -64,8 +64,9 @@ interface VaultLike {
   // Sidecars (.qollab/…) — nur über den Adapter erreichbar.
   adapter: SidecarAdapter;
   // Adapter-gestütztes Listen der .yjs-Siblings dieser Note (async, weil
-  // adapter.list async ist).
-  listYjsFiles(notePath: string): Promise<string[]>;
+  // adapter.list async ist). Der optionale Cache gilt für die Dauer eines
+  // Startup-Sweeps (Task 19/B, siehe DirListingCache in sidecar-io).
+  listYjsFiles(notePath: string, cache?: DirListingCache): Promise<string[]>;
 }
 
 interface DecodedSibling {
@@ -923,9 +924,15 @@ export class SyncHandler {
   // .md über loadAndMerge fährt — der Sweep muss dafür nicht blind prägen.
   // Nebeneffekt wie in ensureDoc: getombstete und obsolete Legacy-Dateien werden
   // dabei aufgeräumt.
-  async hasAdoptableGuid(notePath: string): Promise<boolean> {
+  //
+  // Task 19/B (Hebel 3): `cache` bündelt die Verzeichnis-Listings eines
+  // Sweep-Durchlaufs. Nur diese ENTSCHEIDUNG wird daraus bedient; der
+  // Arbeitspfad darunter (ensureDoc, loadAndMerge, mergePendingForeign) listet
+  // unverändert frisch — er mutiert Zustand und darf das nie auf einer
+  // gepufferten Sicht tun.
+  async hasAdoptableGuid(notePath: string, cache?: DirListingCache): Promise<boolean> {
     const ownPath = this.stateFilePath(notePath);
-    const foreign = (await this.vault.listYjsFiles(notePath)).filter((p) => p !== ownPath);
+    const foreign = (await this.vault.listYjsFiles(notePath, cache)).filter((p) => p !== ownPath);
     if (foreign.length === 0) return false;
     try {
       return (await this.decodeSiblings(notePath, foreign)).some((s) => s.guid !== null);

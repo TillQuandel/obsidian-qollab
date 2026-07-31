@@ -3,6 +3,8 @@ import { CrdtManager } from './crdt-manager';
 import { SyncHandler, TombstoneStore, QOLLAB_DIR } from './sync-handler';
 import {
   SidecarAdapter,
+  DirListingCache,
+  createDirListingCache,
   listYjsInDir,
   ensureSidecarFolder,
   dirname,
@@ -141,7 +143,8 @@ export default class CrdtSyncPlugin extends Plugin {
       getAbstractFileByPath: (p: string) => vault.getAbstractFileByPath(p),
       read: (file: { path: string }) => vault.read(file as TFile),
       adapter,
-      listYjsFiles: (notePath: string) => listYjsInDir(adapter, notePath),
+      listYjsFiles: (notePath: string, cache?: DirListingCache) =>
+        listYjsInDir(adapter, notePath, cache),
     };
 
     this.syncHandler = new SyncHandler(
@@ -499,6 +502,10 @@ export default class CrdtSyncPlugin extends Plugin {
     if (!this.settings.enabled) return;
 
     const files = this.app.vault.getMarkdownFiles();
+    // Task 19/B (Hebel 3): EIN Verzeichnis-Listing je Ordner statt je Note.
+    // Lebt genau für die Dauer dieses Aufrufs und wird ausschließlich an die
+    // Adoptionsfrage weitergereicht (siehe hasAdoptableGuid).
+    const dirCache = createDirListingCache();
     for (const file of files) {
       if (this.unloaded) return;
 
@@ -543,7 +550,7 @@ export default class CrdtSyncPlugin extends Plugin {
         // getombstete GUID) — reine Datei-Existenz genügt nicht: eine korrupte oder
         // halb kopierte Fremd-Sidecar trägt keine GUID, ensureDoc prägte dann doch
         // eine frische Inkarnation.
-        if (!stat && !(await this.syncHandler.hasAdoptableGuid(file.path))) {
+        if (!stat && !(await this.syncHandler.hasAdoptableGuid(file.path, dirCache))) {
           continue;
         }
 

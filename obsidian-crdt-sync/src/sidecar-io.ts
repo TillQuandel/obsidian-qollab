@@ -177,20 +177,55 @@ async function listDirFresh(
   }
 }
 
+// Task 19/B (Hebel 3): Verzeichnis → Dateipfade darin, für die Dauer EINES
+// Sweeps. Die Sidecars aller Notes eines Ordners liegen in demselben
+// Verzeichnis; ohne diesen Cache liest der Sweep es einmal je Note neu, also
+// quadratisch in der Notenzahl je Ordner und multiplikativ in der Gerätezahl.
+//
+// Bewusst ein Parameter statt eines Modul-Zustands: Der Cache lebt genau so
+// lange, wie sein Erzeuger ihn hält (`snapshotStaleMarkdownFiles`). Alles
+// andere — Poll, file-open, jeder Merge — listet unverändert frisch. Ein
+// dauerhafter Cache wäre in dieser Codebasis der Rückschritt schlechthin: Task
+// 12 hat belegt, dass eine veraltete Sicht auf `.qollab/` einen Merge auf
+// Halbwissen und damit permanente Duplikate erzeugt.
+export type DirListingCache = Map<string, string[]>;
+
+export function createDirListingCache(): DirListingCache {
+  return new Map();
+}
+
 // Listet die .yjs-Siblings EXAKT dieser Note. Die Sidecars einer Note liegen alle
 // direkt im Verzeichnis dirname('.qollab/' + notePath) — daher genügt ein
 // nicht-rekursives Listing dieses einen Ordners, gefiltert über filterYjsFiles.
 // Existiert der Ordner nicht, ist die Liste leer.
+//
+// Mit `cache` wird das Verzeichnis höchstens einmal gelesen (siehe
+// DirListingCache). Dass ein Aufrufer zwischendurch eine Sidecar LÖSCHT
+// (decodeSiblings räumt getombstete und obsolete Legacy-Dateien ab), macht den
+// Eintrag nicht gefährlich: gelöscht wird ausschließlich unter den Siblings der
+// gerade bearbeiteten Note, und jede Note wird im Sweep genau einmal besucht.
+// Ein danach noch gelisteter Pfad führt lediglich zu einem `readStateFile`, das
+// „existiert nicht" liefert.
 export async function listYjsInDir(
   adapter: SidecarAdapter,
-  notePath: string
+  notePath: string,
+  cache?: DirListingCache
 ): Promise<string[]> {
   const dir = dirname(`${QOLLAB_DIR}/${notePath}`) || QOLLAB_DIR;
-  const fresh = await listDirFresh(adapter, dir);
-  if (fresh) return filterYjsFiles(fresh.files, notePath);
-  if (!(await adapter.exists(dir))) return [];
-  const { files } = await adapter.list(dir);
+  const cached = cache?.get(dir);
+  if (cached !== undefined) return filterYjsFiles(cached, notePath);
+  const files = await listDirFiles(adapter, dir);
+  cache?.set(dir, files);
   return filterYjsFiles(files, notePath);
+}
+
+// Alle Dateipfade eines Verzeichnisses — fs-frisch, mit dem Adapter als Rückfall.
+// Ein fehlendes Verzeichnis ist die leere Liste.
+async function listDirFiles(adapter: SidecarAdapter, dir: string): Promise<string[]> {
+  const fresh = await listDirFresh(adapter, dir);
+  if (fresh) return fresh.files;
+  if (!(await adapter.exists(dir))) return [];
+  return (await adapter.list(dir)).files;
 }
 
 // Listet den gesamten .qollab-Baum rekursiv (alle Sidecar-Dateipfade). Für den

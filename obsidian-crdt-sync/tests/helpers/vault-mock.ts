@@ -11,7 +11,12 @@
 // Produktions-Helper listYjsInDir über dem Adapter — der reale Listing-Pfad.
 
 import { TFile } from 'obsidian';
-import { listYjsInDir, dirname, type SidecarAdapter } from '../../src/sidecar-io';
+import {
+  listYjsInDir,
+  dirname,
+  type SidecarAdapter,
+  type DirListingCache,
+} from '../../src/sidecar-io';
 
 export function toArrayBuffer(data: ArrayBuffer | Uint8Array): ArrayBuffer {
   return (data instanceof Uint8Array
@@ -29,7 +34,7 @@ export interface VaultMock {
   read(file: { path: string }): Promise<string>;
   process(file: { path: string }, fn: (data: string) => string): Promise<string>;
   adapter: SidecarAdapter;
-  listYjsFiles(notePath: string): Promise<string[]>;
+  listYjsFiles(notePath: string, cache?: DirListingCache): Promise<string[]>;
   _files: Map<string, ArrayBuffer>;
   _textFiles: Map<string, string>;
   _mtimes: Map<string, number>;
@@ -149,7 +154,8 @@ export function makeVaultMock(): VaultMock {
       return next;
     },
     adapter,
-    listYjsFiles: (notePath: string) => listYjsInDir(adapter, notePath),
+    listYjsFiles: (notePath: string, cache?: DirListingCache) =>
+      listYjsInDir(adapter, notePath, cache),
     _files: files,
     _textFiles: textFiles,
     _mtimes: mtimes,
