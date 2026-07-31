@@ -125,6 +125,50 @@ describe('Task 20: der Gewinner meldet die verworfene Fassung', () => {
     expect(verworfen).toEqual([]);
   });
 
+  // Nachtrag aus der Szenariosuche (adversariale Linse, 2026-07-31): Der erste
+  // Wurf prüfte nur, OB die verworfene Fassung Operationen trägt — nicht, ob ihr
+  // Text hier überhaupt fehlt. Beim Erstkontakt ist genau das der Regelfall:
+  // Beide Geräte materialisieren denselben `.md`-Text als je eigene Kette. Die
+  // Meldung forderte dann zum Übertragen von Text auf, der bereits dasteht — und
+  // wer ihr folgt, erzeugt die Dopplung, gegen die das ganze Projekt arbeitet.
+  // Die Verlierer-Seite prüft das längst (`switchToGuid`, Gate `winnerText ===
+  // localText`); dieser Seite fehlte es.
+  it('verworfene Fassung mit identischem Text meldet nicht', async () => {
+    const vault = makeVaultMock();
+    vault._files.set(OWN_PATH, sidecar(OWN_GUID_GEWINNT, 'Milch\n'));
+    vault._files.set(PEER_PATH, sidecar(FREMD_GROSS, 'Milch\n'));
+    vault._textFiles.set(NOTE, 'Milch\n');
+
+    const { handler, verworfen } = handlerWith(vault);
+    await handler.loadAndMerge(NOTE);
+
+    expect(verworfen).toEqual([]);
+  });
+
+  it('verworfene Fassung, die im eigenen Stand enthalten ist, meldet nicht', async () => {
+    const vault = makeVaultMock();
+    vault._files.set(OWN_PATH, sidecar(OWN_GUID_GEWINNT, 'Milch\nBrot\n'));
+    vault._files.set(PEER_PATH, sidecar(FREMD_GROSS, 'Milch\n'));
+    vault._textFiles.set(NOTE, 'Milch\nBrot\n');
+
+    const { handler, verworfen } = handlerWith(vault);
+    await handler.loadAndMerge(NOTE);
+
+    expect(verworfen).toEqual([]);
+  });
+
+  it('verworfene Fassung mit echtem Zusatztext meldet weiterhin', async () => {
+    const vault = makeVaultMock();
+    vault._files.set(OWN_PATH, sidecar(OWN_GUID_GEWINNT, 'Milch\n'));
+    vault._files.set(PEER_PATH, sidecar(FREMD_GROSS, 'Milch\nBrot\n'));
+    vault._textFiles.set(NOTE, 'Milch\n');
+
+    const { handler, verworfen } = handlerWith(vault);
+    await handler.loadAndMerge(NOTE);
+
+    expect(verworfen).toEqual([NOTE]);
+  });
+
   it('eine Fassung ohne Operationen hat nichts zu verlieren und meldet nicht', async () => {
     const vault = makeVaultMock();
     vault._files.set(OWN_PATH, sidecar(OWN_GUID_GEWINNT, 'Milch\n'));

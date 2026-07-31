@@ -1,4 +1,4 @@
-import { CrdtManager, carriesYjsOps, isEmptyYjsState } from './crdt-manager';
+import { CrdtManager, carriesYjsOps, isEmptyYjsState, textFromUpdate } from './crdt-manager';
 import { encodeStateFile, decodeStateFile, generateGuid } from './state-file';
 import type { SidecarAdapter, DirListingCache } from './sidecar-io';
 import {
@@ -831,9 +831,22 @@ export class SyncHandler {
   private reportDiscarded(notePath: string, siblings: DecodedSibling[]): void {
     if (!this.onDiscardedIncarnation) return;
     const guid = this.guids.get(notePath);
+    const eigenerText = this.crdtManager.getContent(notePath);
     for (const s of siblings) {
       if (s.guid === null || s.guid === guid) continue;
       if (!carriesYjsOps(s.update)) continue;
+      // Dritte Engführung (Nachtrag aus der Szenariosuche): Operationen zu tragen
+      // heisst nicht, dass uns etwas fehlt. Beim Erstkontakt ist der Regelfall
+      // sogar, dass beide Geräte denselben `.md`-Text als je eigene Kette
+      // materialisiert haben — dann ist nichts verloren, und eine Meldung
+      // „bitte von Hand übertragen" führte geradewegs zur Dopplung.
+      //
+      // Die Verlierer-Seite stellt dieselbe Frage längst (`switchToGuid`:
+      // `winnerText === localText` → kein `unite`); hier fehlte sie. Gemessen
+      // wird mit derselben Vereinigung, die auch den Merge macht: Fügt der
+      // fremde Text unserem Stand nichts hinzu, gibt es nichts zu melden.
+      const fremderText = textFromUpdate(s.update);
+      if (unionMerge(eigenerText, fremderText) === eigenerText) continue;
       // Eine Meldung je Vorgang, nicht je verworfener Datei: Für den Nutzer ist
       // die Aussage „von dieser Notiz gibt es eine andere Fassung" — wie viele
       // Geräte daran hängen, ändert daran nichts.

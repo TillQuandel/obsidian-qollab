@@ -41,6 +41,24 @@ export function carriesYjsOps(update: Uint8Array): boolean {
   }
 }
 
+// Task 20 (Nachtrag): Der Text, den ein fremder State trägt — ohne ihn in einen
+// lebenden Doc zu mergen. Gebraucht für die Frage „fehlt uns aus dieser
+// verworfenen Fassung überhaupt etwas?"; ein Merge wäre dafür die falsche
+// Antwort, weil er den Zustand verändert, den wir gerade beurteilen.
+// Unlesbares gilt als leer — der Aufrufer hat die Lesbarkeit über
+// `carriesYjsOps` bereits festgestellt.
+export function textFromUpdate(update: Uint8Array): string {
+  const probe = new Y.Doc();
+  try {
+    Y.applyUpdate(probe, update);
+    return probe.getText('content').toString();
+  } catch {
+    return '';
+  } finally {
+    probe.destroy();
+  }
+}
+
 // Task 19/A (Merge-Review M-1): Ist `update` der Yjs-State eines Docs, das nie
 // befüllt wurde? `Y.encodeStateAsUpdate(new Y.Doc())` liefert dafür EXAKT zwei
 // Nullbytes — „0 Struct-Clients, 0 Delete-Set-Clients" und sonst nichts.
