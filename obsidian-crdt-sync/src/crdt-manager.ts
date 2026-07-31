@@ -1,6 +1,90 @@
 import * as Y from 'yjs';
 import { diff_match_patch, DIFF_DELETE, DIFF_INSERT, DIFF_EQUAL } from 'diff-match-patch';
 
+type Diff = [number, string];
+
+const istHoch = (c: number): boolean => c >= 0xd800 && c <= 0xdbff;
+const istNiedrig = (c: number): boolean => c >= 0xdc00 && c <= 0xdfff;
+
+// Richtet Diff-Grenzen auf ganze Zeichen aus.
+//
+// Der Grund, gemessen (Szenariosuche 2026-07-31): `diff-match-patch` UND
+// `Y.Text` arbeiten beide auf UTF-16-Einheiten. Ein Zeichen ausserhalb der
+// Basisebene — jedes Emoji, seltene CJK-Zeichen, mathematische Symbole — besteht
+// dort aus zwei Einheiten (einem Surrogatpaar), und der Diff setzt die Op-Grenze
+// bereitwillig mitten hinein:
+//
+//   'Stimmung: 😀' → 'Stimmung: 😁'
+//   EQUAL "\uD83D" · DELETE "\uDE00" · INSERT "\uDE01"
+//
+// `Y.Text` splittet den ContentString an dieser Grenze und ersetzt das verwaiste
+// Halbzeichen durch U+FFFD. Der Doc ist danach dauerhaft kaputt; die `.md` sieht
+// zunaechst noch richtig aus, bis irgendein spaeterer Edit den Stand
+// zurueckschreibt. Auf der Platte stehen dann `ef bf bd` statt `f0 9f 98 81` —
+// nicht wiederherstellbar, und der Sync traegt es zum anderen Geraet. Es braucht
+// dafuer kein zweites Geraet.
+//
+// Die Regel ist bewusst konservativ: Endet ein unveraenderter Abschnitt mit
+// einer hohen Haelfte, wandert sie in die Aenderung; beginnt der folgende
+// unveraenderte Abschnitt mit einer niedrigen Haelfte, ebenfalls. Damit liegt
+// jedes betroffene Paar vollstaendig innerhalb einer Aenderung und wird nie
+// gesplittet. Preis: Ein Zeichen am Rand einer Aenderung bekommt neue Item-IDs,
+// obwohl es unveraendert bleibt — ein paar Byte, und nur bei Nicht-BMP-Zeichen.
+// Die Op-Sparsamkeit fuer alles andere bleibt unberuehrt (Test dazu in
+// `surrogate-pairs.test.ts`).
+export function alignSurrogateBoundaries(roh: Diff[]): Diff[] {
+  const aus: Diff[] = [];
+  let i = 0;
+  while (i < roh.length) {
+    if (roh[i][0] === DIFF_EQUAL) {
+      aus.push([roh[i][0], roh[i][1]]);
+      i++;
+      continue;
+    }
+    // Zusammenhaengende Aenderung einsammeln: dmp liefert DELETE und INSERT als
+    // Paar, die Reihenfolge ist nicht garantiert.
+    let entfernt = '';
+    let eingefuegt = '';
+    while (i < roh.length && roh[i][0] !== DIFF_EQUAL) {
+      if (roh[i][0] === DIFF_DELETE) entfernt += roh[i][1];
+      else eingefuegt += roh[i][1];
+      i++;
+    }
+
+    // Der unveraenderte Abschnitt davor endet mit einer hohen Haelfte: Sie
+    // gehoert zum Zeichen, das die Aenderung anfasst.
+    const davor = aus.length > 0 ? aus[aus.length - 1] : undefined;
+    if (davor && davor[0] === DIFF_EQUAL && davor[1].length > 0) {
+      const letzte = davor[1].charCodeAt(davor[1].length - 1);
+      if (istHoch(letzte)) {
+        const zeichen = davor[1][davor[1].length - 1];
+        davor[1] = davor[1].slice(0, -1);
+        entfernt = zeichen + entfernt;
+        eingefuegt = zeichen + eingefuegt;
+      }
+    }
+
+    // Der unveraenderte Abschnitt danach beginnt mit einer niedrigen Haelfte:
+    // dasselbe von der anderen Seite.
+    const danach = i < roh.length ? roh[i] : undefined;
+    if (danach && danach[0] === DIFF_EQUAL && danach[1].length > 0) {
+      const erste = danach[1].charCodeAt(0);
+      if (istNiedrig(erste)) {
+        const zeichen = danach[1][0];
+        danach[1] = danach[1].slice(1);
+        entfernt = entfernt + zeichen;
+        eingefuegt = eingefuegt + zeichen;
+      }
+    }
+
+    if (entfernt.length > 0) aus.push([DIFF_DELETE, entfernt]);
+    if (eingefuegt.length > 0) aus.push([DIFF_INSERT, eingefuegt]);
+  }
+  // Leergelaufene Abschnitte fallen raus, damit die Anwendungsschleife nichts
+  // Sinnloses transportiert.
+  return aus.filter((d) => d[1].length > 0);
+}
+
 // Task 17/F-1: Trägt `update` nachweislich Yjs-Ops? Nötig, um einen echten
 // v0.1-State (headerlos, aber gültig) von einer nur unvollständig
 // materialisierten Datei zu unterscheiden — für `decodeStateFile` sehen beide
@@ -105,7 +189,7 @@ export class CrdtManager {
     const current = text.toString();
     if (current === content) return;
 
-    const diffs = this.dmp.diff_main(current, content);
+    const diffs = alignSurrogateBoundaries(this.dmp.diff_main(current, content));
     doc.transact(() => {
       let pos = 0;
       for (const [op, data] of diffs) {
