@@ -168,7 +168,13 @@ export class SyncHandler {
     // vereinigt, und BEIDE haben etwas beigetragen — der Nutzer hat jetzt
     // womöglich doppelte Absätze in der Datei. Feuert bei jedem Vorkommnis;
     // Dedup und Wortlaut liegen wie bei den anderen Kanälen beim Aufrufer.
-    private onUnrelatedMerge?: (notePath: string) => void
+    private onUnrelatedMerge?: (notePath: string) => void,
+    // Task 20: Das Gegenstück — eine getrennt entstandene Fassung wurde NICHT
+    // übernommen. Der Realtest (r25/r27) hat gezeigt, dass `onUnrelatedMerge`
+    // systematisch die falsche Seite erreicht: Es meldet nur, wo vereinigt wird,
+    // also beim Wechsel auf die fremde Kette. Gewinnt die eigene Kette, wird die
+    // fremde still verworfen — und genau dort fehlt dem Nutzer hinterher Text.
+    private onDiscardedIncarnation?: (notePath: string) => void
   ) {}
 
   // Task 17/F-6: Notes, deren Stand beim letzten `saveState` NICHT auf die Platte
@@ -776,6 +782,9 @@ export class SyncHandler {
     const winner = this.pickWinnerGuid(foreign, undefined);
     this.guids.set(notePath, winner ?? generateGuid());
     this.mergeCompatible(notePath, foreign);
+    // Task 20: Beim Adoptieren gewinnt genau eine fremde Kette; liegen mehrere
+    // getrennt entstandene vor, werden die übrigen hier endgültig verworfen.
+    this.reportDiscarded(notePath, foreign);
 
     // Adopt-Fall (KEIN eigener State): Nach dem Adoptieren der fremden Basis den
     // lokalen .md-Text als Diff einspielen — analog zu switchToGuid. Asymmetrie
@@ -803,6 +812,34 @@ export class SyncHandler {
       this.unite(notePath, this.crdtManager.getContent(notePath), mdText)
     );
     return true;
+  }
+
+  // Task 20: Meldet EINMAL, wenn unter den Siblings eine Fassung liegt, die
+  // gerade endgültig verworfen wurde — abweichende Kennung und tatsächlich
+  // Operationen an Bord.
+  //
+  // Bewusst NICHT in `mergeCompatible` selbst: die Funktion läuft auch aus
+  // `mergePendingForeign` (modify-Pfad), und dort ist das Übergehen einer
+  // fremden Kennung ausdrücklich vorläufig — der Tie-Break entscheidet erst im
+  // Poll. Eine Meldung dort wäre ein Fehlalarm für eine Lage, die sich Sekunden
+  // später von selbst auflöst (und die dann `onUnrelatedMerge` korrekt meldet).
+  //
+  // `carriesYjsOps` ist die zweite Engführung: Eine leere oder halb
+  // materialisierte Datei trägt nichts, was verloren gehen könnte. Ohne diese
+  // Prüfung meldete jede 0-Byte-Sidecar aus dem OneDrive-Hauptauslöser einen
+  // Verlust, den es nicht gibt.
+  private reportDiscarded(notePath: string, siblings: DecodedSibling[]): void {
+    if (!this.onDiscardedIncarnation) return;
+    const guid = this.guids.get(notePath);
+    for (const s of siblings) {
+      if (s.guid === null || s.guid === guid) continue;
+      if (!carriesYjsOps(s.update)) continue;
+      // Eine Meldung je Vorgang, nicht je verworfener Datei: Für den Nutzer ist
+      // die Aussage „von dieser Notiz gibt es eine andere Fassung" — wie viele
+      // Geräte daran hängen, ändert daran nichts.
+      this.onDiscardedIncarnation(notePath);
+      return;
+    }
   }
 
   // Merged alle Siblings, deren GUID der aktuellen entspricht oder die Legacy
@@ -1193,6 +1230,8 @@ export class SyncHandler {
         // Eigene Inkarnation gewinnt (oder alle kompatibel): kompatible mergen,
         // Verlierer-GUIDs ignorieren. Kein Einspielen des lokalen .md-Texts.
         this.mergeCompatible(notePath, siblings);
+        // Task 20: Hier ist der Verwurf endgültig — der Tie-Break ist gefallen.
+        this.reportDiscarded(notePath, siblings);
       }
     } catch (err) {
       // Der Abbruch wird hier NICHT als abortedReads markiert: die Markierung

@@ -178,7 +178,9 @@ export default class CrdtSyncPlugin extends Plugin {
       // Task 17/F-6: dasselbe für den Schreibpfad.
       (path: string) => this.noteUnwritable(path),
       // Task 19/C: zwei unverwandte Änderungsketten vereinigt → melden.
-      (notePath: string) => this.noteUnrelatedMerge(notePath)
+      (notePath: string) => this.noteUnrelatedMerge(notePath),
+      // Task 20: eine getrennt entstandene Fassung wurde verworfen → melden.
+      (notePath: string) => this.noteDiscardedIncarnation(notePath)
     );
 
     // Eigener Wächter statt Vault-Events: Obsidian feuert für .qollab nie. Poll-Scan
@@ -486,6 +488,53 @@ export default class CrdtSyncPlugin extends Plugin {
     );
     // Für die Fehlersuche: der volle Pfad, den die Meldung bewusst weglässt.
     console.warn(`Qollab: unverwandte Stände vereinigt in ${notePath}`);
+  }
+
+  // Task 20 — das Gegenstück zu `noteUnrelatedMerge`.
+  //
+  // Warum es das braucht: Die Meldung oben feuert nur, wo tatsächlich VEREINIGT
+  // wird, also auf dem Gerät, das seine Kette aufgibt. Gewinnt die eigene Kette
+  // den Tie-Break, wird die fremde still verworfen — auf genau diesem Gerät
+  // fehlt danach der Text des anderen, und bisher sagte niemand etwas. Im
+  // Realtest (2026-07-31, r25/r27) schwieg das Plugin dort über beide Kanäle,
+  // während der fremde Beitrag verschwand; welche Seite es trifft, entscheidet
+  // der Vergleich zweier Zufallskennungen.
+  //
+  // Anderer Wortlaut als oben, weil es die umgekehrte Lage ist: Dort stehen
+  // beide Fassungen untereinander (zu viel), hier fehlt eine (zu wenig).
+  private discardedNoticePaths = new Set<string>();
+  private discardedSummaryShown = false;
+  // Erste Meldungen einzeln, danach gesammelt. Ein frisch geteilter Vault kann
+  // Dutzende betroffene Notizen auf einmal haben — einzeln gemeldet wäre das
+  // eine Meldungsflut, die niemand liest und die den Hinweis entwertet.
+  private static readonly DISCARDED_NOTICE_MAX = 3;
+  private noteDiscardedIncarnation(notePath: string): void {
+    if (this.discardedNoticePaths.has(notePath)) return;
+    this.discardedNoticePaths.add(notePath);
+    console.warn(`Qollab: getrennt entstandene Fassung verworfen in ${notePath}`);
+
+    if (this.discardedNoticePaths.size <= CrdtSyncPlugin.DISCARDED_NOTICE_MAX) {
+      const name = (notePath.split('/').pop() ?? notePath).replace(/\.md$/, '');
+      new Notice(
+        `Qollab: Von „${name}" gibt es eine zweite, getrennt entstandene Fassung. ` +
+          `Sie wurde hier nicht übernommen — steht dort Text, der hier fehlt, ` +
+          `muss er von Hand übertragen werden.`,
+        15000
+      );
+      return;
+    }
+    // Ab hier genau eine Sammelmeldung. Bewusst ohne laufende Zählung: Die
+    // genaue Zahl stünde erst fest, wenn alle Notes durch sind, und dafür
+    // müsste die Meldung aus dem laufenden Merge herausgelöst und nachgezogen
+    // werden. Der Nutzen rechtfertigt das nicht — wie viele es genau sind, steht
+    // vollständig im Log, und die Handlung ist in jedem Fall dieselbe.
+    if (this.discardedSummaryShown) return;
+    this.discardedSummaryShown = true;
+    new Notice(
+      `Qollab: Auch von weiteren Notizen gibt es getrennt entstandene Fassungen, ` +
+        `die hier nicht übernommen wurden. Die vollständige Liste steht in der Konsole.`,
+      15000
+    );
   }
 
   // Task 16: Ergibt der lokale Merge einen Text, der von der .md abweicht (der Doc
