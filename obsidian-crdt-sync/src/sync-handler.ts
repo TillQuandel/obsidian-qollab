@@ -1,4 +1,4 @@
-import { CrdtManager, carriesYjsOps } from './crdt-manager';
+import { CrdtManager, carriesYjsOps, isEmptyYjsState } from './crdt-manager';
 import { encodeStateFile, decodeStateFile, generateGuid } from './state-file';
 import type { SidecarAdapter } from './sidecar-io';
 import {
@@ -633,7 +633,21 @@ export class SyncHandler {
         // (die R2-Policy, die dieser Zweig bisher umging), aber nichts löschen und
         // nichts in den Merge nehmen. Task 17/R-1: „lesbar" war zu schwach —
         // nullgefüllte Puffer sind lesbar und leer (siehe carriesYjsOps).
-        if (!carriesYjsOps(d.update)) {
+        //
+        // Task 19/A (Merge-Review M-1): Eine Ausnahme, und zwar genau eine. v0.1
+        // rief `saveState` auch für eine NIE BEFÜLLTE Note; das Ergebnis ist der
+        // leere State (`[0x00, 0x00]`, siehe isEmptyYjsState). Die Datei ist
+        // gesund und vollständig — sie trägt nur nichts. Ohne die Ausnahme meldet
+        // dieser Zweig sie als „beschädigt", und `cleanupLegacyFile` weigert sich
+        // dauerhaft, sie abzuräumen: eine Falschmeldung pro Sitzung, unbegrenzt.
+        //
+        // Gebunden an die v0.1-PFADFORM, nicht nur an die Bytes: Das
+        // clientId-Segment kam gemeinsam mit dem QLB1-Header (siehe die
+        // Begründung oben), eine per-Client benannte 2-Byte-Datei kann deshalb
+        // keine v0.1-Datei sein. Für sie bleibt es bei „Stand unbekannt" — sonst
+        // wertete man eine unfertige Fremd-Datei als gültigen leeren Stand.
+        const legitimatelyEmpty = paths[i] === legacyPath && isEmptyYjsState(d.update);
+        if (!carriesYjsOps(d.update) && !legitimatelyEmpty) {
           this.onCorruptFile?.(paths[i]);
           continue;
         }
@@ -884,7 +898,11 @@ export class SyncHandler {
     }
     if (buffer === null) return;
     const { guid, update } = decodeStateFile(new Uint8Array(buffer));
-    if (guid !== null || !carriesYjsOps(update)) return;
+    // Task 19/A: Dieselbe Ausnahme wie in `decodeSiblings` — der Pfad IST hier
+    // per Konstruktion die v0.1-Form. Eine nie befüllte v0.1-Note hinterlässt den
+    // leeren State; er trägt nichts, was noch zu importieren wäre, und ist ab dem
+    // eigenen GUID-State genauso obsolet wie ein gefüllter.
+    if (guid !== null || !(carriesYjsOps(update) || isEmptyYjsState(update))) return;
     await this.vault.adapter.remove(path);
   }
 

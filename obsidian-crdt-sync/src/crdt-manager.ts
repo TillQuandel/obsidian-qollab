@@ -24,6 +24,10 @@ import { diff_match_patch, DIFF_DELETE, DIFF_INSERT, DIFF_EQUAL } from 'diff-mat
 // eine 2-Byte-Datei liegen und eine Meldung pro Pfad und Sitzung. Umgekehrt
 // kostete das schwächere Kriterium eine nullgefüllte Datei, die den vollen
 // State trug — Löschung bzw. frische Inkarnation. Der Tausch ist einseitig.
+//
+// Task 19/A (Merge-Review M-1): Genau dieser Preis wird unten von
+// `isEmptyYjsState` zurückgekauft — für die eine Byte-Folge, die beweisbar der
+// leere State ist.
 export function carriesYjsOps(update: Uint8Array): boolean {
   if (update.length === 0) return false;
   const probe = new Y.Doc();
@@ -35,6 +39,28 @@ export function carriesYjsOps(update: Uint8Array): boolean {
   } finally {
     probe.destroy();
   }
+}
+
+// Task 19/A (Merge-Review M-1): Ist `update` der Yjs-State eines Docs, das nie
+// befüllt wurde? `Y.encodeStateAsUpdate(new Y.Doc())` liefert dafür EXAKT zwei
+// Nullbytes — „0 Struct-Clients, 0 Delete-Set-Clients" und sonst nichts.
+//
+// Die Länge ist der ganze Trick, und sie trennt sauber gegen die zwei
+// Erscheinungsformen halb materialisierter Dateien, die `carriesYjsOps` oben
+// abwehrt:
+//   - Nullfüllung erhält die GRÖSSE (OneDrive-Platzhalter, NTFS-Extend). Eine
+//     nullgefüllte Datei von 2 Byte Länge kann nur aus einer 2-Byte-Datei
+//     entstanden sein — und die war der leere State.
+//   - Trunkierung schneidet einen echten State ab, und der beginnt mit
+//     `[0x01, …]` (mindestens ein Struct-Client). Seine 2-Byte-Fassung ist
+//     `[0x01, x]`, nie `[0x00, 0x00]`.
+// `[0x00, 0x00]` ist deshalb kein Zweifelsfall, sondern ein Nachweis.
+//
+// KEIN Ersatz für `carriesYjsOps`: der Aufrufer muss zusätzlich wissen, dass die
+// Datei aus einer Quelle stammt, die leere States überhaupt schreibt (v0.1 tat
+// das, siehe `decodeSiblings`). Deshalb zwei Prädikate statt eines gelockerten.
+export function isEmptyYjsState(update: Uint8Array): boolean {
+  return update.length === 2 && update[0] === 0 && update[1] === 0;
 }
 
 export class CrdtManager {
