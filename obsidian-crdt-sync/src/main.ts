@@ -44,6 +44,19 @@ const CLIENT_ID_KEY = 'qollab-client-id';
 // Zustandssemantik. Falsch geteilt kostet sie höchstens eine nicht angezeigte
 // Meldung — sie kann weder Dateien löschen noch den Sync stilllegen.
 const DEVICE_SETTINGS_KEY = 'qollab-device-settings';
+// Task 19/B (Hebel 1): Fortschrittsmerker des Startup-Sweeps. Note-Pfad →
+// [mtime, size] der `.md`, wie sie beim letzten Sweep aussah, als er „eigener
+// Snapshot ist aktuell" festgestellt hat. Beim nächsten Start genügt der
+// Vergleich gegen `TFile.stat` (In-Memory-Property, kostet nichts), um dieselbe
+// Feststellung ohne einen einzigen Dateizugriff zu treffen.
+//
+// Gerätelokal aus demselben Grund wie DEVICE_SETTINGS_KEY: `data.json` liegt im
+// Sync-Scope. Ein geteilter Merker beschriebe den Zustand des anderen Geräts und
+// liesse den Sweep genau die Notes überspringen, die hier noch nie erfasst
+// wurden — der Snapshot bliebe veraltet, und der erste Merge darauf löschte nie
+// erfassten `.md`-Inhalt. 1 625 Einträge kosten rund 100 KB im Electron-Profil.
+const SWEEP_CURSOR_KEY = 'qollab-sweep-cursor';
+type SweepCursor = Record<string, [number, number]>;
 // Das Sidecar-Dateiformat (`<note>.<clientId>.yjs`) verlangt exakt 8 Hex-Zeichen.
 // Alles andere aus dem Speicher wird verworfen statt in Dateinamen weitergereicht.
 const CLIENT_ID_RE = /^[0-9a-f]{8}$/;
@@ -498,6 +511,31 @@ export default class CrdtSyncPlugin extends Plugin {
     }
   }
 
+  // Task 19/B (Hebel 1): Merker lesen. Alles, was nicht exakt die erwartete Form
+  // hat, wird verworfen statt repariert — ein verlorener Merker kostet genau
+  // einen vollen Sweep (das heutige Verhalten), ein fehlinterpretierter kostet
+  // einen übersprungenen Offline-Edit.
+  private loadSweepCursor(): SweepCursor {
+    const raw = this.app.loadLocalStorage(SWEEP_CURSOR_KEY);
+    if (typeof raw !== 'object' || raw === null) return {};
+    const out: SweepCursor = {};
+    for (const [path, value] of Object.entries(raw as Record<string, unknown>)) {
+      if (
+        Array.isArray(value) &&
+        value.length === 2 &&
+        typeof value[0] === 'number' &&
+        typeof value[1] === 'number'
+      ) {
+        out[path] = [value[0], value[1]];
+      }
+    }
+    return out;
+  }
+
+  private saveSweepCursor(cursor: SweepCursor): void {
+    this.app.saveLocalStorage(SWEEP_CURSOR_KEY, cursor);
+  }
+
   private async snapshotStaleMarkdownFiles(): Promise<void> {
     if (!this.settings.enabled) return;
 
@@ -506,7 +544,17 @@ export default class CrdtSyncPlugin extends Plugin {
     // Lebt genau für die Dauer dieses Aufrufs und wird ausschließlich an die
     // Adoptionsfrage weitergereicht (siehe hasAdoptableGuid).
     const dirCache = createDirListingCache();
+    // Task 19/B (Hebel 1): Fortschrittsmerker. `previous` ist der Stand des
+    // letzten vollständigen Sweeps dieses Geräts, `next` wird währenddessen neu
+    // aufgebaut — dadurch fallen gelöschte und umbenannte Notes von selbst
+    // heraus, ohne eigenen Aufräumpfad.
+    const previous = this.loadSweepCursor();
+    const next: SweepCursor = {};
     for (const file of files) {
+      // Bricht der Sweep hier ab, wird `next` NICHT geschrieben: er beschriebe
+      // sonst nur das bereits besuchte Präfix, und alles danach verlöre seinen
+      // Merker. Der alte Stand bleibt stehen und ist weiterhin korrekt — er sagt
+      // ja nur aus, was beim letzten VOLLSTÄNDIGEN Lauf aktuell war.
       if (this.unloaded) return;
 
       // Task 17/R-2: Der `try` umschließt die GANZE Pro-Datei-Arbeit, nicht mehr
@@ -520,6 +568,28 @@ export default class CrdtSyncPlugin extends Plugin {
       // dokumentierte Zusage „einzelne Datei bricht den Sweep nicht ab" jetzt
       // auch für die beiden Aufrufe hier.
       try {
+        // Task 19/B (Hebel 1): Sah die `.md` beim letzten vollständigen Sweep
+        // genau so aus und war der Snapshot damals aktuell, ist er es immer noch
+        // — der einzige Weg, den eigenen Sidecar seither zu VERALTEN, führt über
+        // eine Änderung der `.md`, und die ändert (mtime, size).
+        //
+        // `TFile.stat` ist eine synchrone In-Memory-Property (Obsidian füllt sie
+        // beim Vault-Scan aus einem echten lstat und hält sie über den
+        // File-Watcher aktuell). Dieser Zweig macht also NULL IO.
+        //
+        // Preis, bewusst bezahlt: Wird der eigene Sidecar extern gelöscht, ohne
+        // dass die `.md` sich ändert, bemerkt der Sweep das nicht mehr. Der Stand
+        // ist deshalb nicht verloren — er wird beim nächsten Edit (modify) neu
+        // geschrieben, und liegt eine Fremd-Sidecar vor, holt ihn der Poll über
+        // `loadAndMerge` zurück. Der Merker deckt bewusst NUR diese eine
+        // Feststellung ab; über fremde Sidecars sagt er nichts aus, weil deren
+        // Ankunft die `.md` nicht anfasst.
+        const seen = previous[file.path];
+        if (seen && seen[0] === file.stat.mtime && seen[1] === file.stat.size) {
+          next[file.path] = seen;
+          continue;
+        }
+
         // Sidecar-mtime über den Adapter (Index-blind für .qollab/). Ist der eigene
         // Sidecar mindestens so neu wie die .md, ist der Snapshot aktuell.
         const statePath = this.syncHandler.stateFilePath(file.path);
@@ -527,6 +597,8 @@ export default class CrdtSyncPlugin extends Plugin {
         // fälschlich als „Snapshot aktuell" überspringen.
         const stat = await statSidecar(this.sidecarAdapter, statePath);
         if (stat && stat.mtime >= file.stat.mtime) {
+          // Genau diese Feststellung merkt sich der Merker — und nur sie.
+          next[file.path] = [file.stat.mtime, file.stat.size];
           continue;
         }
 
@@ -569,9 +641,11 @@ export default class CrdtSyncPlugin extends Plugin {
           await this.writeBackMerged(file, content, merged);
         });
       } catch {
-        // Einzelne Datei darf den Sweep nicht abbrechen
+        // Einzelne Datei darf den Sweep nicht abbrechen. Sie bekommt dann auch
+        // keinen Merker — der nächste Sweep sieht sie wieder voll an.
       }
     }
+    this.saveSweepCursor(next);
   }
 
   // Rückgabe: false = der Merge lief NICHT durch (abgebrochen/übersprungen), der

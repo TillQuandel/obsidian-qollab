@@ -79,7 +79,10 @@ export function makeVaultMock(): VaultMock {
     const f = new TFile();
     f.path = p;
     f.name = p.split('/').pop() ?? p;
-    f.stat = { mtime: mdMtimes.get(p) ?? 0, ctime: 0, size: 0 };
+    // Task 19/B: `size` folgt dem Inhalt, wie in Obsidian (`TFile.stat` wird aus
+    // einem echten `lstat` gefüllt). Vorher stand hier fest 0 — damit war die
+    // zweite Hälfte der (mtime, size)-Heuristik im Mock nicht prüfbar.
+    f.stat = { mtime: mdMtimes.get(p) ?? 0, ctime: 0, size: (textFiles.get(p) ?? '').length };
     return f;
   };
 
