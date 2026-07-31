@@ -176,7 +176,9 @@ export default class CrdtSyncPlugin extends Plugin {
       // melden, damit ein transienter EBUSY nicht sofort nervt.
       (path: string) => this.noteUnreadable(path),
       // Task 17/F-6: dasselbe für den Schreibpfad.
-      (path: string) => this.noteUnwritable(path)
+      (path: string) => this.noteUnwritable(path),
+      // Task 19/C: zwei unverwandte Änderungsketten vereinigt → melden.
+      (notePath: string) => this.noteUnrelatedMerge(notePath)
     );
 
     // Eigener Wächter statt Vault-Events: Obsidian feuert für .qollab nie. Poll-Scan
@@ -441,6 +443,49 @@ export default class CrdtSyncPlugin extends Plugin {
     if (this.corruptNoticePaths.has(path)) return;
     this.corruptNoticePaths.add(path);
     new Notice(`Qollab: Sync-Datei kann nicht geschrieben werden — Note synct nicht: ${path}`);
+  }
+
+  // Task 19/C — die Note wurde auf zwei Geräten getrennt weiterentwickelt, und
+  // beide Fassungen stecken jetzt untereinander in der Datei.
+  //
+  // Warum überhaupt eine Meldung: Bis hierher war der einzige Hinweis in dieser
+  // Lage die Routine-Meldung „automatisch gemergt" — dieselbe, die auch ein
+  // gewöhnlicher, sauber aufgelöster Merge auslöst. Sie ist damit weder
+  // unterscheidbar noch aussagekräftig, und über `statusNotice` abschaltbar. Der
+  // nicht automatisch auflösbare Fall wäre dann vollständig stumm gewesen.
+  //
+  // Warum sie NICHT an `statusNotice` hängt: Der Schalter heißt „Meldung bei
+  // automatischem Merge" und regelt den Routinefall. Hier ist gerade nichts
+  // routinemäßig aufgegangen; wer die Routine-Meldungen abstellt, hat damit nicht
+  // entschieden, auch die Konfliktanzeige abzustellen.
+  //
+  // Warum eine Meldung und keine Konfliktkopie: Beide Fassungen sind bereits in
+  // der Datei (das ist der Sinn der Vereinigung). Eine zusätzliche Kopie
+  // dupliziert, was ohnehin dasteht, erzeugt eine zweite zu synchronisierende
+  // Datei samt eigener Hilfsdatei und beantwortet die einzige offene Frage —
+  // „was davon ist doppelt?" — auch nicht. Ein Vermerk IM Text scheidet aus: er
+  // wäre auf jedem Gerät ein anderer Text und damit selbst eine Änderung, die
+  // synchronisiert und wieder vereinigt werden müsste (gemessen in
+  // `task-19-report.md`).
+  //
+  // Wortlaut ohne Fachbegriffe: keine „Inkarnation", kein „CRDT", keine
+  // „Hilfsdatei" — die Empfängerin soll wissen, was passiert ist und was sie tun
+  // kann, nicht wie es intern heißt. Dedup wie bei den anderen Kanälen: höchstens
+  // eine Meldung je Notiz und Sitzung, sonst meldet ein Startup-Sweep über einen
+  // frisch geteilten Vault hundertfach.
+  private unrelatedNoticePaths = new Set<string>();
+  private noteUnrelatedMerge(notePath: string): void {
+    if (this.unrelatedNoticePaths.has(notePath)) return;
+    this.unrelatedNoticePaths.add(notePath);
+    const name = (notePath.split('/').pop() ?? notePath).replace(/\.md$/, '');
+    new Notice(
+      `Qollab: „${name}" wurde auf zwei Geräten getrennt bearbeitet. ` +
+        `Beide Fassungen stehen jetzt untereinander in der Notiz — ` +
+        `bitte einmal durchsehen, Absätze können doppelt vorkommen.`,
+      15000
+    );
+    // Für die Fehlersuche: der volle Pfad, den die Meldung bewusst weglässt.
+    console.warn(`Qollab: unverwandte Stände vereinigt in ${notePath}`);
   }
 
   // Task 16: Ergibt der lokale Merge einen Text, der von der .md abweicht (der Doc

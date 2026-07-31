@@ -163,7 +163,12 @@ export class SyncHandler {
     // Task 17/F-6: Gegenstück für den SCHREIBpfad. Feuert bei jedem
     // fehlgeschlagenen Sidecar-Write; Schwelle und Notice liegen wie oben beim
     // Aufrufer.
-    private onUnwritableFile?: (path: string) => void
+    private onUnwritableFile?: (path: string) => void,
+    // Task 19/C: Zwei unverwandte Änderungsketten derselben Note wurden
+    // vereinigt, und BEIDE haben etwas beigetragen — der Nutzer hat jetzt
+    // womöglich doppelte Absätze in der Datei. Feuert bei jedem Vorkommnis;
+    // Dedup und Wortlaut liegen wie bei den anderen Kanälen beim Aufrufer.
+    private onUnrelatedMerge?: (notePath: string) => void
   ) {}
 
   // Task 17/F-6: Notes, deren Stand beim letzten `saveState` NICHT auf die Platte
@@ -245,6 +250,29 @@ export class SyncHandler {
 
   stateFilePath(notePath: string): string {
     return `${QOLLAB_DIR}/${notePath}.${this.clientId}.yjs`;
+  }
+
+  // Task 19/C — der EINE Ort, an dem zwei unverwandte Änderungsketten vereinigt
+  // werden. Bis hierher taten das drei Aufrufer auf eigene Rechnung; jetzt geht
+  // jeder durch diese Tür, und die Tür meldet, was sie sieht.
+  //
+  // Gemeldet wird nur, wenn BEIDE Seiten etwas beigetragen haben. Ist eine Seite
+  // in der anderen enthalten — der häufigste Fall: leere `.md`, noch nicht
+  // nachgezogene Datei, identischer Stand beim Erstkontakt —, gibt `unionMerge`
+  // eine der Eingaben unverändert zurück, es entsteht keine Dopplung, und es gibt
+  // nichts zu melden. Genau diese Kürzung hält die Meldung von einem Dauerton
+  // fern.
+  //
+  // Warum hier nicht VERWEIGERT wird, obwohl der Task so heißt: Ein Abbruch
+  // müsste einen der beiden Stände fallen lassen oder in eine Konfliktkopie
+  // auslagern. Beides senkt die Menge dessen, was in der Note steht — gemessen
+  // am deterministischen Fuzzer wäre das ein Anstieg der Verlust-Kategorie, und
+  // „Verlust darf nicht steigen" ist die harte Auflage. Verweigert wird deshalb
+  // die STILLE: die Vereinigung bleibt, sie wird nur nicht mehr verschwiegen.
+  private unite(notePath: string, other: string, local: string): string {
+    const merged = unionMerge(other, local);
+    if (merged !== other && merged !== local) this.onUnrelatedMerge?.(notePath);
+    return merged;
   }
 
   // Task 14: Neue Geräte-ID nach erkannter Kollision. Die bisherigen Signaturen
@@ -772,7 +800,7 @@ export class SyncHandler {
     const mdText = await this.vault.read(file);
     this.crdtManager.setContent(
       notePath,
-      unionMerge(this.crdtManager.getContent(notePath), mdText)
+      this.unite(notePath, this.crdtManager.getContent(notePath), mdText)
     );
     return true;
   }
@@ -814,6 +842,11 @@ export class SyncHandler {
     // Task 13/A: Den lokalen Stand VOR dem Verwerfen sichern — Doc UND .md. Der
     // Doc kann der Datei voraus sein (bereits gemergter, noch nicht
     // zurückgeschriebener Stand) und die Datei dem Doc (externer Edit).
+    // Task 19/C, bewusst NICHT über `unite`: Doc und `.md` sind hier beide der
+    // lokale Stand DIESES Geräts — der Doc dem Text voraus, oder der Text dem Doc
+    // (externer Edit). Das ist kein Aufeinandertreffen zweier Ketten, sondern das
+    // Zusammenlegen der eigenen. Gemeldet wird erst die Vereinigung mit der
+    // fremden Kette unten.
     const localText = unionMerge(this.crdtManager.getContent(notePath), mdText);
     this.crdtManager.disposeDoc(notePath);
     this.guids.set(notePath, winner);
@@ -871,7 +904,7 @@ export class SyncHandler {
     // divergent). Beide Inkarnationen haben keinen gemeinsamen Vorfahren →
     // unionMerge. Auf Op-Ebene bleibt der Wechsel prinzipbedingt verlustbehaftet:
     // der lokale Beitrag zählt danach als frische Einfügung dieses Geräts.
-    this.crdtManager.setContent(notePath, unionMerge(winnerText, localText));
+    this.crdtManager.setContent(notePath, this.unite(notePath, winnerText, localText));
   }
 
   // Pfad der clientId-losen Legacy-Datei (v0.1-Ära).
@@ -1048,7 +1081,11 @@ export class SyncHandler {
     // Inhalts. Hier bleibt nur, einen inzwischen abweichenden Aufrufer-Text
     // (Datei änderte sich zwischen ensureDoc-Read und diesem Aufruf) mit
     // einzubeziehen — ebenfalls ohne gemeinsamen Vorfahren, also vereinigend.
-    if (base === undefined) return unionMerge(mergedText, content);
+    // Task 19/C: Im Regelfall hat `ensureDoc` den `.md`-Text eine Zeile weiter
+    // oben bereits vereinigt, `content` ist darin enthalten und `unite` schweigt.
+    // Es feuert nur, wenn sich die Datei zwischen dem Read in `ensureDoc` und
+    // diesem Aufruf geändert hat — dann ist es ein echter dritter Beitrag.
+    if (base === undefined) return this.unite(notePath, mergedText, content);
 
     // 3-Wege-Merge (wie onRemoteYjsUpdate): die lokale Änderung (Delta base→content)
     // wird auf den fremd-gemergten Stand angewandt. So überlebt ein Fremd-Edit, den
