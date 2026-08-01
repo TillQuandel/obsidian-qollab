@@ -180,7 +180,7 @@ export default class CrdtSyncPlugin extends Plugin {
       // Task 19/C: zwei unverwandte Änderungsketten vereinigt → melden.
       (notePath: string) => this.noteUnrelatedMerge(notePath),
       // Task 20: eine getrennt entstandene Fassung wurde verworfen → melden.
-      (notePath: string) => this.noteDiscardedIncarnation(notePath)
+      (notePath: string, guid: string) => this.noteDiscardedIncarnation(notePath, guid)
     );
 
     // Eigener Wächter statt Vault-Events: Obsidian feuert für .qollab nie. Poll-Scan
@@ -508,17 +508,25 @@ export default class CrdtSyncPlugin extends Plugin {
   // Dutzende betroffene Notizen auf einmal haben — einzeln gemeldet wäre das
   // eine Meldungsflut, die niemand liest und die den Hinweis entwertet.
   private static readonly DISCARDED_NOTICE_MAX = 3;
-  private noteDiscardedIncarnation(notePath: string): void {
-    if (this.discardedNoticePaths.has(notePath)) return;
-    this.discardedNoticePaths.add(notePath);
-    console.warn(`Qollab: getrennt entstandene Fassung verworfen in ${notePath}`);
+  private noteDiscardedIncarnation(notePath: string, guid: string): void {
+    // Szenariosuche 2026-07-31: Der Merker hängt an (Pfad, Kette), nicht am Pfad
+    // allein. Vorher verbrauchte die erste Meldung den Pfad — traf danach die
+    // Kette eines DRITTEN Geräts ein, deren Text wirklich fehlte, blieb es
+    // stumm, auch im Log. Bei zwei Geräten fiel das nicht auf, weil es je Notiz
+    // nur eine fremde Kette geben kann; ab drei wird aus einem Fehlalarm ein
+    // stilles Verschweigen.
+    const merker = `${notePath} ${guid}`;
+    if (this.discardedNoticePaths.has(merker)) return;
+    this.discardedNoticePaths.add(merker);
+    console.warn(`Qollab: getrennt entstandene Fassung verworfen in ${notePath} (${guid})`);
 
     if (this.discardedNoticePaths.size <= CrdtSyncPlugin.DISCARDED_NOTICE_MAX) {
       const name = (notePath.split('/').pop() ?? notePath).replace(/\.md$/, '');
       new Notice(
         `Qollab: Von „${name}" gibt es eine zweite, getrennt entstandene Fassung. ` +
-          `Sie wurde hier nicht übernommen — steht dort Text, der hier fehlt, ` +
-          `muss er von Hand übertragen werden.`,
+          `Sie wurde hier nicht übernommen. Läuft das andere Gerät noch, holt ` +
+          `Qollab den Text meist von selbst nach — bleibt er aus, muss er von ` +
+          `Hand übertragen werden.`,
         15000
       );
       return;
@@ -568,7 +576,14 @@ export default class CrdtSyncPlugin extends Plugin {
     merged: string | undefined
   ): Promise<void> {
     if (merged === undefined || merged === expected) return;
-    this.writingPaths.add(file.path);
+    // Szenariosuche 2026-07-31: Pfad EINMAL festhalten. Obsidian mutiert
+    // `TFile.path` beim Umbenennen in place (der rename-Handler verlässt sich
+    // selbst darauf). Wurde hier zweimal gelesen, setzte der Guard auf den alten
+    // Pfad und gab den neuen frei — der alte blieb dauerhaft in der Menge, und
+    // von da an verwarf der modify-Handler JEDES Ereignis für diesen Pfad,
+    // während der Poll weiter darüber schrieb.
+    const bewachterPfad = file.path;
+    this.writingPaths.add(bewachterPfad);
     let changed = false;
     try {
       await this.app.vault.process(file, (data) => {
@@ -587,7 +602,7 @@ export default class CrdtSyncPlugin extends Plugin {
       // ausdrücklich Task 17 (Schreibfehler-Rückkanal).
       changed = false;
     } finally {
-      this.writingPaths.delete(file.path);
+      this.writingPaths.delete(bewachterPfad);
     }
     // Review F-2: Die Basis erst NACH dem bestätigten Write setzen. Im Callback
     // gesetzt, stand sie auf `merged`, während die Datei nach einem gescheiterten
@@ -1027,10 +1042,21 @@ export default class CrdtSyncPlugin extends Plugin {
   // Settings-Objekt bleibt der eine In-Memory-Zustand — nur die Persistenz ist
   // gesplittet, damit kein Aufrufer sich merken muss, welches Feld wohin gehört.
   async saveSettings() {
-    this.app.saveLocalStorage(DEVICE_SETTINGS_KEY, {
-      enabled: this.settings.enabled,
-      tombstones: this.settings.tombstones,
-    });
+    // Szenariosuche 2026-07-31: `saveLocalStorage` ist die Web-Storage-API und
+    // kann werfen (Quota; auf Mobile enger). Ungefangen riss der Wurf den
+    // `delete`-Handler auf, BEVOR er aufräumt: kein Tombstone, keine gelöschten
+    // Hilfsdateien, kein `disposeNote` — also genau die Zombie-Lage, gegen die
+    // Task 15 gebaut wurde, plus Waisen ohne Aufräumpfad. Der Schalterstand ist
+    // die kleinere Sorge; er steht im Zweifel beim nächsten Start auf dem
+    // Standard, während ein halb abgebrochenes Löschen dauerhaft nachwirkt.
+    try {
+      this.app.saveLocalStorage(DEVICE_SETTINGS_KEY, {
+        enabled: this.settings.enabled,
+        tombstones: this.settings.tombstones,
+      });
+    } catch (err) {
+      console.error('Qollab: Geräteeinstellungen konnten nicht gespeichert werden', err);
+    }
     const { enabled, tombstones, ...shared } = this.settings;
     void enabled;
     void tombstones;

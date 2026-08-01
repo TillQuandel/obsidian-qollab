@@ -174,7 +174,7 @@ export class SyncHandler {
     // systematisch die falsche Seite erreicht: Es meldet nur, wo vereinigt wird,
     // also beim Wechsel auf die fremde Kette. Gewinnt die eigene Kette, wird die
     // fremde still verworfen — und genau dort fehlt dem Nutzer hinterher Text.
-    private onDiscardedIncarnation?: (notePath: string) => void
+    private onDiscardedIncarnation?: (notePath: string, guid: string) => void
   ) {}
 
   // Task 17/F-6: Notes, deren Stand beim letzten `saveState` NICHT auf die Platte
@@ -850,7 +850,7 @@ export class SyncHandler {
       // Eine Meldung je Vorgang, nicht je verworfener Datei: Für den Nutzer ist
       // die Aussage „von dieser Notiz gibt es eine andere Fassung" — wie viele
       // Geräte daran hängen, ändert daran nichts.
-      this.onDiscardedIncarnation(notePath);
+      this.onDiscardedIncarnation(notePath, s.guid);
       return;
     }
   }
@@ -973,6 +973,14 @@ export class SyncHandler {
   // Rücken des Guards in `decodeSiblings`. Kein zusätzlicher IO im Normalfall:
   // existiert keine Legacy-Datei (der Regelfall), bleibt es beim einen `stat`.
   private async cleanupLegacyFile(notePath: string): Promise<void> {
+    // Szenariosuche 2026-07-31: Nur aufräumen, wenn der eigene State auch
+    // wirklich auf der Platte liegt. `saveState` schluckt Schreibfehler bewusst
+    // (Task 17/F-6) und kehrt normal zurück — die Vorbedingung oben („zu dem
+    // Zeitpunkt existiert GUID-tragender State") gilt dann nicht. Ohne diesen
+    // Guard löschte der nächste Schritt die Legacy-Datei, obwohl sie der letzte
+    // verbliebene Träger der Historie war; die Löschung wandert über den
+    // Datei-Sync auch noch zum zweiten Gerät.
+    if (this.unpersisted.has(notePath)) return;
     const path = this.legacyFilePath(notePath);
     let buffer: ArrayBuffer | null;
     try {
