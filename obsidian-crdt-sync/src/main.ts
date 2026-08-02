@@ -553,7 +553,7 @@ export default class CrdtSyncPlugin extends Plugin {
     // stumm, auch im Log. Bei zwei Geräten fiel das nicht auf, weil es je Notiz
     // nur eine fremde Kette geben kann; ab drei wird aus einem Fehlalarm ein
     // stilles Verschweigen.
-    const merker = `${notePath} ${guid}`;
+    const merker = `${notePath}\u0000${guid}`;
     if (this.discardedNoticePaths.has(merker)) return;
     this.discardedNoticePaths.add(merker);
     console.warn(`Qollab: getrennt entstandene Fassung verworfen in ${notePath} (${guid})`);
