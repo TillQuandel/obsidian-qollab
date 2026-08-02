@@ -10,6 +10,7 @@ import {
   dirname,
   statSidecar,
   sidecarExists,
+  readSidecar,
   hasAnySidecarFile,
 } from './sidecar-io';
 import { SidecarWatcher } from './sidecar-watcher';
@@ -293,21 +294,75 @@ export default class CrdtSyncPlugin extends Plugin {
     // umhängen; er schreibt keine Markierung und legt nichts Neues an. Stillgelegt
     // blieben die Sidecars unter dem alten Pfad als Waisen liegen, für die es
     // keinen Aufräumpfad gibt (`enabled-off-switch.test.ts` pinnt das).
+    //
+    // Szenariosuche F3: Der Umzug der Hilfsdateien kann scheitern, und zwar
+    // deterministisch. Der Hilfsdatei-Pfad ist konstruktiv 22 Zeichen länger als
+    // der Note-Pfad; ein Rename in einen tieferen Ordner reißt damit die
+    // Windows-Pfadgrenze für die Hilfsdatei, während die `.md` noch passt.
+    // Zweiter Auslöser: ein Sync-Dienst hält ein Handle auf die gerade
+    // geschriebene `.yjs`. Die Schleife hatte kein `try`/`catch` — der erste Wurf
+    // verließ den Handler, die übrigen Dateien blieben liegen, und `renameNote`
+    // lief NIE.
+    //
+    // Warum DURCHZIEHEN und nicht zurückrollen (das war die Entwurfsfrage):
+    //
+    //   1. Die `.md` ist schon umgezogen. Dieser Handler ist eine Nachricht über
+    //      etwas Geschehenes, kein Vorgang, der sich abbrechen ließe.
+    //      „Alles oder nichts" könnte nur die HILFSDATEIEN zurückholen — und das
+    //      Ergebnis wäre exakt der Schadenszustand: Note unter dem neuen Pfad,
+    //      gesamter Zustand unter dem alten. Der nächste Edit findet dort weder
+    //      Doc noch eigenen Stand und prägt eine frische Inkarnation über einer
+    //      lebenden Historie. Ein Rollback stellte den Schaden also sicher, den er
+    //      zu verhindern vorgibt.
+    //   2. Ein Rollback wäre selbst wieder eine Folge von Renames auf demselben
+    //      IO-Pfad, der gerade geworfen hat (gehaltenes Handle: die Rückrichtung
+    //      trifft dieselbe Datei). Ein Rückweg, der halb scheitern kann, ist keine
+    //      Atomarität, sondern eine zweite Sorte halber Umzüge.
+    //   3. Der tragende Zustand liegt im SPEICHER (`guids`, Doc, `localDiffBase`,
+    //      `priorPaths`, `ownSignatures`). Sein Umzug kostet nichts und kann nicht
+    //      scheitern. Also: den Zustand IMMER der `.md` folgen lassen und danach
+    //      die Platte nachziehen.
+    //
+    // Kein zweiter Rückkanal: Der Rückkanal aus Task 17/F-6 trägt hier, aber
+    // nicht über den gescheiterten Rename — der passiert pro Pfad genau einmal
+    // und erreichte die Schwelle von drei Versuchen nie. Er trägt über die
+    // REPARATUR: der eigene Stand wird unter dem neuen Pfad geschrieben, und
+    // dieser Write ist ein gewöhnlicher `saveState` mit Markierung, Wiederholung
+    // beim nächsten Trigger und Meldung ab dem dritten Fehlversuch. Genau der
+    // Fall, in dem der Nutzer handeln muss (Zielpfad dauerhaft zu lang), landet
+    // damit im bestehenden Kanal statt in einem neuen daneben.
     this.registerEvent(
       this.app.vault.on('rename', async (file, oldPath) => {
         if (!(file instanceof TFile)) return;
         if (!file.path.endsWith('.md')) return;
         await this.pathQueue.runAll([oldPath, file.path], async () => {
+          // Pfad EINMAL festhalten (Obsidian mutiert `TFile.path` in place, siehe
+          // modify-Handler oben) — Warteschlangen-Schlüssel und Arbeitspfad.
+          const neuerPfad = file.path;
           // Sidecars sind für den Index unsichtbar → über den Adapter listen und
           // umziehen. Zielordner ggf. anlegen (Rename in einen anderen Ordner).
           const sidecars = await listYjsInDir(this.sidecarAdapter, oldPath);
+          let misslungen = false;
           for (const sc of sidecars) {
             const suffix = sc.slice(`${QOLLAB_DIR}/${oldPath}`.length);
-            const newPath = `${QOLLAB_DIR}/${file.path}${suffix}`;
-            await ensureSidecarFolder(this.sidecarAdapter, dirname(newPath));
-            await this.sidecarAdapter.rename(sc, newPath);
+            const newPath = `${QOLLAB_DIR}/${neuerPfad}${suffix}`;
+            try {
+              await ensureSidecarFolder(this.sidecarAdapter, dirname(newPath));
+              await this.sidecarAdapter.rename(sc, newPath);
+            } catch (err) {
+              // Pro Datei fangen: Eine Datei, die nicht mitkommt, darf die
+              // übrigen nicht am alten Pfad festhalten. Dort sind sie
+              // unerreichbar — ohne `.md` steigt der Poll sofort aus und der
+              // Sweep läuft nur über indizierte `.md`-Dateien.
+              misslungen = true;
+              // Meldungen verschwinden nach Sekunden, eine liegengebliebene
+              // Fremd-Hilfsdatei bleibt. Sie kostet nichts als Platz: der Peer
+              // schreibt seinen Stand nach dem Rename unter dem neuen Pfad neu.
+              console.warn(`Qollab: Sync-Datei konnte nicht mitumziehen: ${sc} → ${newPath}`, err);
+            }
           }
-          this.syncHandler.renameNote(oldPath, file.path);
+          this.syncHandler.renameNote(oldPath, neuerPfad);
+          if (misslungen) await this.holeEigenenStandNach(oldPath, neuerPfad);
         });
       })
     );
@@ -537,6 +592,72 @@ export default class CrdtSyncPlugin extends Plugin {
     if (this.corruptNoticePaths.has(path)) return;
     this.corruptNoticePaths.add(path);
     new Notice(`Qollab: Sync-Datei kann nicht geschrieben werden — Note synct nicht: ${path}`);
+  }
+
+  // Szenariosuche F3, zweite Hälfte des Fixes: Nach einem unvollständigen Umzug
+  // MUSS der eigene Stand unter dem neuen Pfad liegen.
+  //
+  // Warum genau diese eine Datei und keine andere: Die eigene Hilfsdatei ist die
+  // einzige, deren Fehlen den Zustand kippt. `ensureDoc` liest unter dem neuen
+  // Pfad zuerst sie; fehlt sie, läuft der Adopt-Zweig und setzt `guids[newPath]`
+  // NEU — er überschreibt also genau den Eintrag, den `renameNote` gerade
+  // hinübergezogen hat, und prägt ohne adoptierbares Gegenüber eine frische
+  // Inkarnation über einer lebenden Historie. Liegengebliebene FREMDE Dateien
+  // kippen nichts: ihre Ops stecken längst im Doc, und der Peer schreibt seinen
+  // Stand nach dem Rename ohnehin unter dem neuen Pfad neu.
+  //
+  // Zwei Wege, in dieser Reihenfolge:
+  //   1. Es gibt einen lebenden Doc → aus ihm schreiben. Das ist der frischeste
+  //      Stand und derselbe Schreibpfad wie im Normalbetrieb, inklusive
+  //      Markierung/Wiederholung/Meldung aus Task 17/F-6, falls auch er scheitert
+  //      (der dauerhaft zu lange Zielpfad landet damit im bestehenden Kanal).
+  //   2. Kein Doc — der Regelfall beim Umbenennen einer in dieser Sitzung nie
+  //      angefassten Note → die liegengebliebene eigene Datei kopieren. `rename`
+  //      ist gescheitert, Lesen+Schreiben ist ein anderer Systemaufruf und kann
+  //      gelingen. Ohne diesen Zweig bliebe genau der häufigste Rename ungeheilt.
+  //      KEIN `saveState` hier: ohne Doc schriebe er einen LEEREN Stand unter die
+  //      lebende Kennung — die Schadensklasse aus Task 17/F-1.
+  //
+  // Erst wenn der Stand nachweislich am neuen Pfad liegt, wird die alte Datei
+  // entfernt. Eine eigene Hilfsdatei mit lebender Kennung unter einem Pfad ohne
+  // Note ist der Wiederbelebungs-Vektor: wird dort je wieder eine gleichnamige
+  // Note angelegt, adoptiert `ensureDoc` die alte Inkarnation samt Text. Gelöscht
+  // wird ausschließlich die EIGENE Datei und ausschließlich nach erfolgreicher
+  // Verdopplung ihres Inhalts — fremde Historie stirbt hier nie auf Verdacht.
+  private async holeEigenenStandNach(altePfadNote: string, neuePfadNote: string): Promise<void> {
+    const ziel = this.syncHandler.stateFilePath(neuePfadNote);
+    const quelle = this.syncHandler.stateFilePath(altePfadNote);
+    if (quelle === ziel) return;
+    try {
+      // Die eigene Datei war vielleicht gar nicht die gescheiterte.
+      if (await sidecarExists(this.sidecarAdapter, ziel)) return;
+      if (this.settings.enabled && this.crdtManager.hasDoc(neuePfadNote)) {
+        await this.syncHandler.saveState(neuePfadNote);
+        // Auch der Write ist gescheitert: `saveState` hat markiert und gemeldet,
+        // der nächste Trigger wiederholt ihn. Die alte Datei bleibt dann liegen —
+        // sie ist in diesem Moment der einzige Träger der Historie.
+        if (this.syncHandler.hasUnpersistedState(neuePfadNote)) return;
+      } else {
+        const bytes = await readSidecar(this.sidecarAdapter, quelle);
+        if (bytes === null) return; // nichts da, was nachzuziehen wäre
+        await ensureSidecarFolder(this.sidecarAdapter, dirname(ziel));
+        await this.sidecarAdapter.writeBinary(ziel, bytes);
+      }
+    } catch {
+      // Zielpfad dauerhaft unbeschreibbar (zu lang) oder Quelle unlesbar. Derselbe
+      // Zähler und dieselbe Meldung wie für jeden anderen Schreibfehler an diesem
+      // Pfad — die Wiederholung liefert der nächste `saveState` derselben Note.
+      this.noteUnwritable(ziel);
+      return;
+    }
+    // Eigener Zweig, damit ein scheiterndes `remove` nicht als Schreibfehler am
+    // ZIEL gezählt wird — dort steht der Stand ja gerade. Bleibt die Leiche
+    // liegen, kostet das nur den Wiederbelebungs-Vektor unter dem alten Pfad.
+    try {
+      await this.sidecarAdapter.remove(quelle);
+    } catch {
+      console.warn(`Qollab: alte Sync-Datei blieb nach dem Umbenennen liegen: ${quelle}`);
+    }
   }
 
   // Task 19/C — die Note wurde auf zwei Geräten getrennt weiterentwickelt, und

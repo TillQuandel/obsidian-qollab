@@ -445,8 +445,13 @@ export class SyncHandler {
   }
 
   // Rename: gleiche Inkarnation, GUID bleibt erhalten — Map-Eintrag umziehen.
-  // Der Doc wird verworfen und beim nächsten Zugriff aus den (bereits
-  // umbenannten) .yjs unter dem neuen Pfad neu aufgebaut.
+  //
+  // Szenariosuche F3: Der Doc wird MITGENOMMEN statt verworfen. Früher wurde er
+  // verworfen und beim nächsten Zugriff aus den (bereits umbenannten) .yjs unter
+  // dem neuen Pfad neu aufgebaut — das setzte voraus, dass der Dateiumzug im
+  // rename-Handler vollständig gelungen ist. Genau der kann scheitern (Details in
+  // `CrdtManager.renameDoc` und im Handler). Nebenbei behoben: Ein Rename nach
+  // einem gescheiterten `saveState` warf den nur im Doc lebenden Stand weg.
   renameNote(oldPath: string, newPath: string): void {
     const guid = this.guids.get(oldPath);
     this.guids.delete(oldPath);
@@ -482,7 +487,7 @@ export class SyncHandler {
     // beiden Fällen — die nächste Sichtung setzt eine frische Baseline.
     this.ownSignatures.delete(this.stateFilePath(oldPath));
     this.ownSignatures.delete(this.stateFilePath(newPath));
-    this.crdtManager.disposeDoc(oldPath);
+    this.crdtManager.renameDoc(oldPath, newPath);
   }
 
   // Löscht eine Sidecar, falls vorhanden (Ersatz für das frühere

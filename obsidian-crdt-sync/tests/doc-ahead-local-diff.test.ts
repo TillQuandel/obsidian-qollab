@@ -562,8 +562,8 @@ describe('Doc-Vorlauf: lokaler Diff darf einen gemergten Fremd-Edit nicht lösch
     await handler.applyLocalContent(NOTE, `${BASE}LOKAL1\n`);
     expect(manager.getContent(NOTE)).toContain('FREMD');
 
-    // Rename: Sidecars ziehen um (das tut der Handler nicht selbst), Doc wird
-    // verworfen und unter dem neuen Pfad neu aufgebaut.
+    // Rename: Sidecars ziehen um (das tut der Handler nicht selbst), Doc und
+    // GUID-Eintrag ziehen mit auf den neuen Pfad.
     vault._files.set(`.qollab/${NEW}.${OWN_ID}.yjs`, vault._files.get(OWN_PATH)!);
     vault._files.set(`.qollab/${NEW}.${FOREIGN_ID}.yjs`, vault._files.get(FOREIGN_PATH)!);
     vault._files.delete(OWN_PATH);

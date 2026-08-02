@@ -243,6 +243,29 @@ export class CrdtManager {
     this.docs.delete(filePath);
   }
 
+  // Szenariosuche F3: Der Doc zieht beim Umbenennen MIT, statt verworfen und
+  // unter dem neuen Pfad aus der Platte neu aufgebaut zu werden.
+  //
+  // Der Neuaufbau war korrekt, solange der Dateiumzug im rename-Handler
+  // vollständig gelang — er ist aber genau die IO, die scheitern kann (Pfadgrenze
+  // für die 22 Zeichen längere Hilfsdatei, gehaltenes Handle). Bleibt die eigene
+  // Hilfsdatei am alten Pfad liegen, findet der Neuaufbau unter dem neuen Pfad
+  // nichts und prägt eine FRISCHE Inkarnation über einer lebenden Historie. Der
+  // Umzug im Speicher kann dagegen nicht scheitern und ist gegenüber der Platte
+  // nie veraltet (die eigene Hilfsdatei wird aus genau diesem Doc geschrieben).
+  //
+  // Ein Doc unter dem Zielpfad beschreibt eine Datei, die dort nicht mehr liegt
+  // — Obsidian benennt nicht auf eine existierende Note um. Er wird verworfen,
+  // wie es `renameNote` mit `guids[newPath]` ohnehin tut.
+  renameDoc(from: string, to: string): void {
+    if (from === to) return;
+    const doc = this.docs.get(from);
+    if (!doc) return;
+    this.docs.get(to)?.destroy();
+    this.docs.delete(from);
+    this.docs.set(to, doc);
+  }
+
   disposeAll(): void {
     this.disposed = true;
     for (const doc of this.docs.values()) doc.destroy();
