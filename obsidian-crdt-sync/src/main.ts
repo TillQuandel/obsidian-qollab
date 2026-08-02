@@ -9,6 +9,7 @@ import {
   ensureSidecarFolder,
   dirname,
   statSidecar,
+  sidecarExists,
 } from './sidecar-io';
 import { SidecarWatcher } from './sidecar-watcher';
 import { CrdtSyncSettings, CrdtSyncSettingTab, DEFAULT_SETTINGS, generateClientId } from './settings';
@@ -328,20 +329,64 @@ export default class CrdtSyncPlugin extends Plugin {
     // (Review F-1): normalerweise genau die eigene, bei einer nur per Sync
     // bekannten Note die der Fremd-Siblings. `null` heißt „Stand unbekannt"
     // (IO-Fehler) → kein Tombstone, aufräumen wie bisher.
+    //
+    // Szenariosuche R3-F4: Dieser Handler feuert auch, wenn NICHT gelöscht,
+    // sondern nur lokal weggeräumt wurde. Dropbox („Selective Sync") und OneDrive
+    // („Ordner auswählen") entfernen einen abgewählten Ordner von der Platte; die
+    // Auswahl gilt pro Gerät, die Notizen leben auf dem anderen Gerät weiter. Das
+    // README empfiehlt genau das. `.qollab/` ist ein eigener Top-Level-Baum und in
+    // der Ordnerauswahl nicht sichtbar — die Hilfsdateien bleiben also liegen,
+    // während die `.md` verschwindet.
+    //
+    // Beide Zweige unten waren dann falsch: der Tombstone traf eine LEBENDE
+    // Inkarnation (und begrub sie beim Wiedereinschalten des Ordners erneut), und
+    // gelöscht wurden ALLE Hilfsdateien, auch die des anderen Geräts — eine
+    // Löschung, die der Datei-Sync brav dorthin zurückträgt und die dort die
+    // Historie vernichtet, ohne dass dieses Gerät je etwas gelöscht hätte.
+    //
+    // Das Unterscheidungskriterium ist der ORDNER der Note. Ein Löschbefehl gilt
+    // einer Note; das Wegräumen durch den Sync-Dienst nimmt den ganzen Ordner mit,
+    // weil die Abwahl pro Ordner erfolgt. Ist der Ordner mit verschwunden, war es
+    // also kein auf diese Note gerichteter Löschbefehl — dann bleibt alles liegen,
+    // wie es liegt. Frisch am Dateisystem geprüft (statSidecar/sidecarExists), weil
+    // Obsidians Index zum Zeitpunkt des Events nicht verlässlich nachgezogen ist.
+    //
+    // Was das kostet, unbeschönigt: Löscht der Nutzer selbst einen ganzen ORDNER
+    // (oder tut es das andere Gerät und der Sync stellt es hier zu), sieht das
+    // lokal identisch aus — dann bleiben die Hilfsdateien als Waisen liegen und es
+    // gibt keinen Tombstone, der Zombie-Schutz aus Task 15/F-1 greift für diese
+    // Notes also nicht. Die Abwägung ist bewusst: der Preis ist eine
+    // Wiederbelebung unter genau demselben Pfad innerhalb von 90 Tagen, der Preis
+    // der Gegenrichtung ist die garantierte Vernichtung der Historie auf einem
+    // Gerät, das nichts getan hat, in einer vom README empfohlenen Konfiguration.
+    // Für die Note direkt in der Vault-Wurzel gibt es keinen Ordner, der
+    // verschwinden könnte — dort bleibt es unverändert beim alten Verhalten.
     this.registerEvent(
       this.app.vault.on('delete', async (file) => {
         if (!(file instanceof TFile)) return;
         if (!file.path.endsWith('.md')) return;
         await this.pathQueue.run(file.path, async () => {
+          // Wirft der Check, ist der Ordner-Zustand unbekannt — dann wie bei jedem
+          // anderen Halbwissen in diesem Pfad (`guidsToTombstone` → `null`) die
+          // nicht-destruktive Seite wählen. Liegengebliebene Hilfsdateien lassen
+          // sich später aufräumen, eine gelöschte Historie nicht.
+          const folder = dirname(file.path);
+          const folderGone = folder
+            ? await sidecarExists(this.sidecarAdapter, folder).then(
+                (exists) => !exists,
+                () => true
+              )
+            : false;
           // Task 17/F-4: „aus" heißt keine neuen Markierungen. Ein Tombstone ist
           // eine Zustandsänderung mit 90 Tagen Halbwertszeit, und ein
           // sync-vermittelter Rename kommt als delete+create an — das
           // ausgeschaltete Plugin beerdigte damit eine LEBENDE Inkarnation. Das
           // Sidecar-Housekeeping darunter läuft weiter: unterbliebe es, blieben
           // Waisen liegen, die niemand mehr aufräumt.
-          const guids = this.settings.enabled
-            ? await this.syncHandler.guidsToTombstone(file.path)
-            : null;
+          const guids =
+            this.settings.enabled && !folderGone
+              ? await this.syncHandler.guidsToTombstone(file.path)
+              : null;
           if (guids) {
             await this.tombstoneStore.addAll(
               guids,
@@ -349,8 +394,16 @@ export default class CrdtSyncPlugin extends Plugin {
             );
           }
           // Sidecars über den Adapter listen und entfernen (Index-blind).
-          const sidecars = await listYjsInDir(this.sidecarAdapter, file.path);
-          for (const sc of sidecars) await this.sidecarAdapter.remove(sc);
+          // R3-F4: nicht, wenn der Ordner mit verschwunden ist — die Hilfsdateien
+          // sind dann der einzige Träger der Historie, und ihre Löschung wäre das,
+          // was der Sync zum anderen Gerät zurückträgt.
+          if (!folderGone) {
+            const sidecars = await listYjsInDir(this.sidecarAdapter, file.path);
+            for (const sc of sidecars) await this.sidecarAdapter.remove(sc);
+          }
+          // Der In-Memory-Zustand geht in beiden Fällen: die Note ist jetzt nicht
+          // da. Kehrt sie zurück, baut `ensureDoc` den Doc aus der liegen
+          // gebliebenen eigenen Sidecar mit derselben GUID wieder auf.
           this.syncHandler.disposeNote(file.path);
         });
       })
