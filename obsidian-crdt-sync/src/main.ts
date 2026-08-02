@@ -10,6 +10,7 @@ import {
   dirname,
   statSidecar,
   sidecarExists,
+  hasAnySidecarFile,
 } from './sidecar-io';
 import { SidecarWatcher } from './sidecar-watcher';
 import { CrdtSyncSettings, CrdtSyncSettingTab, DEFAULT_SETTINGS, generateClientId } from './settings';
@@ -753,6 +754,61 @@ export default class CrdtSyncPlugin extends Plugin {
     this.app.saveLocalStorage(SWEEP_CURSOR_KEY, cursor);
   }
 
+  // Szenariosuche R2-35: `.qollab` von Hand gelöscht.
+  //
+  // Der Ordner trägt ausschließlich Binärdateien und erklärt sich nirgends —
+  // gelöscht wird er deshalb aus denselben Gründen wie jeder unbekannte Ordner
+  // (aufräumen, Speicherplatz, Sync-Ordner sortieren). Die Löschung synct mit,
+  // also verlieren BEIDE Geräte ihre Historie.
+  //
+  // Ohne diese Prüfung ist der Zustand endgültig und still: Der Merker sagt für
+  // jede unveränderte `.md` „eigener Snapshot ist aktuell" und überspringt sie
+  // ohne einen einzigen Dateizugriff — eine Aussage, die nach dem Verlust falsch
+  // ist. Der Merker deckt bewusst nur die eine Feststellung ab (siehe oben), und
+  // deren einzige Voraussetzung, die eigene Sidecar, ist weg. Er beschreibt
+  // damit einen Snapshot, den es nicht mehr gibt, und hält den Sweep dauerhaft
+  // von der Platte fern. Für die Nutzerin ist „synct nicht mehr" von „alles in
+  // Ordnung" nicht unterscheidbar.
+  //
+  // Die Feststellung ist EXAKT, keine Heuristik: Merker gefüllt heißt, dieses
+  // Gerät hat schon einmal vollständig gesweept; kein einziges `.qollab`-File
+  // heißt, davon ist nichts übrig. Eine Neuinstallation fällt nicht darunter —
+  // der Merker liegt gerätelokal (siehe SWEEP_CURSOR_KEY) und ist dort ebenfalls
+  // leer, weshalb die teure Prüfung dann auch gar nicht erst läuft.
+  //
+  // GEHEILT wird damit: die Blindheit und das Schweigen. NICHT geheilt wird der
+  // Verlust selbst — die Historie ist weg und lässt sich nicht rekonstruieren.
+  // Insbesondere prägt der folgende volle Sweep NICHTS neu: Task 13/B (ohne
+  // adoptierbare Fremd-Sidecar wird nicht geprägt) bleibt in Kraft, und das ist
+  // hier die eigentliche Auflage. Prägten beide Geräte dieselbe Note unabhängig
+  // neu, entstünden zwei unabhängige Op-Ketten — der Erstkontakt-Fall, für den
+  // Koordination über einen Datei-Sync beweisbar unmöglich ist (sechs
+  // Lösungswege belegt ausgeschlossen). Der Fall wird gemeldet, nicht gelöst.
+  // Zurück in den Sync kommt eine Note über einen echten Edit (modify-Handler,
+  // also genau ein prägendes Gerät) oder über die Adoption einer wieder
+  // eingetroffenen Fremd-Sidecar — beides bestehende Pfade, die der verworfene
+  // Merker lediglich wieder erreichbar macht.
+  private async reconcileSweepCursor(previous: SweepCursor): Promise<SweepCursor> {
+    if (Object.keys(previous).length === 0) return previous;
+    if (await hasAnySidecarFile(this.sidecarAdapter)) return previous;
+    // Sofort persistieren statt auf das Sweep-Ende zu warten: Der Merker ist
+    // nachweislich falsch, und der Sweep kann vorher abbrechen (unloaded, Wurf).
+    this.saveSweepCursor({});
+    // Notices verschwinden nach Sekunden; der Verlust ist dauerhaft.
+    console.warn(
+      `Qollab: ${QOLLAB_DIR} ist leer oder fehlt, obwohl dieses Gerät bereits Sync-Dateien ` +
+        'angelegt hatte. Die gemeinsame Änderungshistorie ist verloren; der Fortschrittsmerker ' +
+        'wird verworfen und der Sweep sieht wieder jede Notiz an.'
+    );
+    new Notice(
+      `Qollab: Der Ordner ${QOLLAB_DIR} fehlt oder ist leer — die Änderungshistorie dieses ` +
+        'Vaults ist verloren (auf allen Geräten, sobald die Löschung mitsynchronisiert wurde). ' +
+        'Der Text der Notizen ist unberührt. Jede Notiz kommt erst wieder in den Sync, wenn sie ' +
+        `bearbeitet wird. Bitte ${QOLLAB_DIR} nicht löschen — dort liegt die Historie.`
+    );
+    return {};
+  }
+
   private async snapshotStaleMarkdownFiles(): Promise<void> {
     if (!this.settings.enabled) return;
 
@@ -765,7 +821,7 @@ export default class CrdtSyncPlugin extends Plugin {
     // letzten vollständigen Sweeps dieses Geräts, `next` wird währenddessen neu
     // aufgebaut — dadurch fallen gelöschte und umbenannte Notes von selbst
     // heraus, ohne eigenen Aufräumpfad.
-    const previous = this.loadSweepCursor();
+    const previous = await this.reconcileSweepCursor(this.loadSweepCursor());
     const next: SweepCursor = {};
     for (const file of files) {
       // Szenariosuche 2026-08-02: Pfad EINMAL festhalten, wie im modify-Handler.

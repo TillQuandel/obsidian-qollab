@@ -228,6 +228,35 @@ async function listDirFiles(adapter: SidecarAdapter, dir: string): Promise<strin
   return (await adapter.list(dir)).files;
 }
 
+// Gibt es im .qollab-Baum überhaupt noch EINE Datei? Bricht beim ersten Fund ab
+// — im Normalfall (gefüllter Ordner) kostet das ein einziges Verzeichnis-
+// Listing, im Verlustfall den Baum, in dem dann ohnehin ein voller Sweep folgt.
+// Bewusst nicht über listAllSidecars: das liest immer alles.
+//
+// Gezählt wird jede Datei, nicht nur gültige Sidecar-Namen: Die Frage lautet
+// „ist der Ordner leer?", und eine unlesbare oder halb kopierte Datei ist ein
+// Hinweis darauf, dass er es NICHT ist. Ein fehlender Ordner ist leer.
+export async function hasAnySidecarFile(adapter: SidecarAdapter): Promise<boolean> {
+  const walk = async (dir: string): Promise<boolean> => {
+    const fresh = await listDirFresh(adapter, dir);
+    let listing: { files: string[]; folders: string[] };
+    if (fresh) {
+      listing = fresh;
+    } else {
+      if (!(await adapter.exists(dir))) return false;
+      listing = await adapter.list(dir);
+    }
+    if (listing.files.length > 0) return true;
+    // Der Datei-Sync räumt beim Löschen eines Baums die Dateien ab und lässt die
+    // Ordner oft stehen — leere Unterordner sind deshalb kein Inhalt.
+    for (const sub of listing.folders) {
+      if (await walk(sub)) return true;
+    }
+    return false;
+  };
+  return walk(QOLLAB_DIR);
+}
+
 // Listet den gesamten .qollab-Baum rekursiv (alle Sidecar-Dateipfade). Für den
 // Poll-Scan des SidecarWatcher, der nichts über einzelne Note-Pfade weiß. Nutzt
 // dasselbe cache-freie Listing wie listYjsInDir (kein zweiter Listing-Pfad).
