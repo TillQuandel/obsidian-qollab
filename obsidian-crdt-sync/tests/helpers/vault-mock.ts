@@ -86,8 +86,14 @@ export function makeVaultMock(): VaultMock {
     return f;
   };
 
+  // Ein Ordner existiert, sobald irgendetwas darin liegt — Sidecar ODER .md. Die
+  // `.md`-Hälfte fehlte: `adapter.exists('Ordner')` war `false`, obwohl
+  // `Ordner/note.md` im Vault lag. Damit war „der Ordner der Note ist weg" im Mock
+  // nicht von „der Ordner ist da" unterscheidbar (R3-F4).
   const folderExists = (dir: string): boolean =>
-    folders.has(dir) || [...files.keys()].some((k) => k.startsWith(dir + '/'));
+    folders.has(dir) ||
+    [...files.keys()].some((k) => k.startsWith(dir + '/')) ||
+    [...textFiles.keys()].some((k) => k.startsWith(dir + '/'));
 
   const listDir = (dir: string): { files: string[]; folders: string[] } => {
     const outFiles: string[] = [];
