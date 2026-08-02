@@ -11,6 +11,7 @@ import { join } from 'path';
 import { SCAN_INTERVAL_MS } from '../src/sidecar-watcher';
 import { filterYjsFiles } from '../src/sync-handler';
 import { DEFAULT_SETTINGS } from '../src/settings';
+import { encodeStateFile, decodeStateFile } from '../src/state-file';
 
 const README = readFileSync(join(__dirname, '..', '..', 'README.md'), 'utf8');
 
@@ -86,5 +87,26 @@ describe('Funde 38/39: README hält, was das Geräteprofil hergibt', () => {
     // Und beide Ausnahmen müssen im Fließtext benannt sein.
     expect(CLAIMS).toContain('im Moment des Löschens **ausgeschaltet**');
     expect(CLAIMS).toContain('Geht das **Geräteprofil verloren**');
+  });
+});
+
+// Szenariosuche Runde 2, Fund 40 — eine verirrte Hilfsdatei kippt fremden Text in
+// eine unbeteiligte Notiz. Der Schaden ist in `verirrte-sidecar.test.ts`
+// reproduziert und dort als bewusste Grenze gepinnt; der README muss sie nennen,
+// solange das Dateiformat den Note-Pfad nicht trägt.
+describe('Fund 40: README nennt die Grenze, solange das Format keinen Pfad trägt', () => {
+  it('sagt die Zuordnung über den Dateinamen zu — und der Code hält sie so', () => {
+    // Code-Anker 1: Die gelesene Datei kennt genau zwei Felder. Kommt je ein
+    // Note-Pfad dazu, ist die Grenze neu zu bewerten und dieser Test fällt.
+    const datei = encodeStateFile('0'.repeat(32), new Uint8Array([0, 0]));
+    expect(Object.keys(decodeStateFile(datei)).sort()).toEqual(['guid', 'update']);
+    // Code-Anker 2: Die Zuordnung läuft rein über den Dateinamen — dieselben
+    // Bytes gehören unter dem einen Namen zu der einen, unter dem anderen zu der
+    // anderen Notiz.
+    expect(filterYjsFiles(['.qollab/b.md.5e307e01.yjs'], 'b.md')).toHaveLength(1);
+    expect(filterYjsFiles(['.qollab/b.md.5e307e01.yjs'], 'a.md')).toHaveLength(0);
+
+    expect(CLAIMS).toContain('Dateiname ist der einzige Hinweis darauf, zu welcher Notiz sie gehört');
+    expect(CLAIMS).toContain('den Ordner `.qollab` nicht von Hand umsortieren');
   });
 });
