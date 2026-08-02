@@ -754,12 +754,42 @@ export class SyncHandler {
     // Sidecar nahm sonst diesen Zweig, `applyUpdate` gelang als No-op und
     // `own.guid ?? generateGuid()` prägte die Spaltung, die der Fix verhindern soll.
     if (own && (own.guid !== null || carriesYjsOps(own.update))) {
-      // R2: korrupter eigener State → überspringen; Doc bleibt leer und wird beim
-      // nächsten saveState (aus applyLocalContent) mit gültigem State überschrieben.
+      // Halb angekommene eigene Sidecar: Kopf (`QLB1` + GUID) vollständig,
+      // Nutzlast abgeschnitten — Stromausfall im Write, halb materialisierter
+      // Sync-Download, abgebrochener NTFS-Extend. Weil die GUID in der Bedingung
+      // oben VORNE im ODER steht, wird dieser Zweig allein wegen des intakten
+      // Kopfes genommen; die Nutzlast wird nie beurteilt.
+      //
+      // Früher wurde der Wurf hier nur gemeldet und dann weitergemacht. Das war
+      // der Schadensweg, gemessen: Der Doc ist nach dem gescheiterten
+      // `applyUpdate` LEER, bekommt unten aber die GUID der echten Inkarnation —
+      // ein leerer Doc gibt sich als lebende Historie aus. (1) Der nächste lokale
+      // Diff nimmt ihn als Basis und materialisiert den GESAMTEN Notiztext als
+      // EIGENE Ops. (2) Liefert der Sync dieselbe Datei später vollständig nach,
+      // ist sie GUID-gleich, gilt als kompatibel und wird gemergt — Yjs
+      // dedupliziert nach Item-ID, nicht nach Inhalt. Ergebnis: jede Zeile
+      // zweimal.
+      //
+      // Ein unverwertbarer eigener Stand ist dasselbe wie ein abgebrochener
+      // Lesevorgang: Der Aufrufer bricht ab, schreibt nichts zurück und wiederholt
+      // beim nächsten Trigger; ist die Datei dauerhaft kaputt, meldet der
+      // bestehende Rückkanal sie nach dem dritten Versuch. Lieber eine Notiz, die
+      // bis zur Meldung nicht synct, als eine, die sich stillschweigend verdoppelt.
+      //
+      // `disposeDoc` gehört untrennbar dazu: `applyUpdate` legt den Doc an, BEVOR
+      // es wirft, und integriert je nach Schnittstelle auch schon Structs. Bliebe
+      // dieser halbe Doc liegen, nähme der nächste Lauf den `hasDoc`-Zweig ganz
+      // oben — der eigene State käme nie mehr über diesen Zweig in den Doc, der
+      // lokale Diff liefe gegen einen leeren Vorstand, und die Verdopplung
+      // entstünde erneut, nur eine Etage tiefer im 3-Wege-Merge (gemessen).
+      // Verworfen wird dabei ausschließlich der Doc, den dieser Aufruf selbst
+      // erzeugt hat: ein vorhandener wäre oben schon zurückgekehrt.
       try {
         this.crdtManager.applyUpdate(notePath, own.update);
       } catch {
+        this.crdtManager.disposeDoc(notePath);
         this.onCorruptFile?.(own.path);
+        throw new SidecarReadError(own.path);
       }
       this.guids.set(notePath, own.guid ?? generateGuid());
       return false;
