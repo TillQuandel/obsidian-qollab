@@ -1,5 +1,13 @@
 import { diff_match_patch } from 'diff-match-patch';
 
+// Byte Order Mark (U+FEFF). Gehört an Position 0 oder gar nicht hin: mitten im
+// Text ist es ein unsichtbares Zeichen, das z. B. unmittelbar vor einem `#` aus
+// der Überschrift nach CommonMark einen Absatz macht. Von beiden Merge-Verfahren
+// gebraucht.
+const BOM = '\uFEFF';
+
+const ohneBom = (text: string): string => (text.startsWith(BOM) ? text.slice(1) : text);
+
 // 3-Wege-Text-Merge: die lokale Änderung (Diff base → local) wird als Patch auf
 // den bereits gemergten other-Stand angewandt. diff-match-patch wendet Patches
 // fuzzy an: bei direkt überlappenden Edits setzt sich die lokale Änderung durch
@@ -14,12 +22,49 @@ import { diff_match_patch } from 'diff-match-patch';
 // (local ⊇ other-Edit). patch_apply dedupliziert NICHT — es fügt sie erneut ein
 // (Verdopplung). Aufrufer müssen den Fall `local === other` deshalb vorher
 // abfangen (kein Patch nötig) statt threeWayMerge blind aufzurufen.
+//
+// Zeilenenden und BOM: `patch_make` vergleicht ZEICHENweise, ein `\r` ist dabei
+// ein Zeichen wie jedes andere. Stehen `local` und `other` auf verschiedenen
+// Zeilenenden, wird die lokale Zeile mit IHREM Zeilenende in die fremde Datei
+// gesetzt — gemessen `"# Titel\r\nText.\r\nLokal.\nFremd.\r\n"`: kein Verlust,
+// aber ein gemischtes Ergebnis, das über den Datei-Sync auf beide Geräte wandert.
+// Das ist nicht kosmetisch: der zeichenweise Diff in crdt-manager.ts erzeugt bei
+// einem Zeilenende-Wechsel Operationen über die ganze Datei, und Werkzeuge, die
+// auf Zeilenenden achten (Git mit `core.autocrlf`, Linter), sehen Änderungen, die
+// inhaltlich keine sind. Ohne lokale Änderung ist der Patch leer und `other` ginge
+// unverändert durch — der Zeilenende-Wechsel der Gegenseite kippte dann die ganze
+// Datei. Ein BOM verschiebt zusätzlich die Zeichen-Offsets des Patches: gemessen
+// `"<BOM># TitelLokal\n\nFremd\n"` — die lokale Zeile klebte an der Überschrift.
+//
+// Deshalb wie in `unionMerge`: verglichen (und gepatcht) wird auf einer
+// LF-Fassung ohne BOM, ausgegeben wird in den Zeilenenden des LOKALEN Standes,
+// ein führendes BOM überlebt genau dann, wenn `local` eines hatte. Anders als
+// dort gehen lokale Zeilen NICHT byteweise durch: der Patch greift auch
+// innerhalb einer Zeile, eine zeilengenaue Rückabbildung auf die Original-Bytes
+// gibt es hier nicht. Vorrang hat die Zusage „kein gemischtes Ergebnis" — ein
+// bereits gemischter lokaler Stand wird dabei auf sein vorherrschendes
+// Zeilenende gezogen.
+//
+// Die 40000-Zeilen-Grenze von `diff_linesToChars_`, für die `unionMerge` einen
+// Rückfallzweig braucht, trifft hier nicht: der Zeilen-Modus ist innerhalb von
+// `diff_main` nur eine Beschleunigung, das Ergebnis bleibt ein Zeichen-Diff.
+// Diese Funktion bildet keine Diff-Indizes auf Zeilen zurück.
 const dmp = new diff_match_patch();
 
 export function threeWayMerge(base: string, local: string, other: string): string {
-  const patches = dmp.patch_make(base, local);
-  const [merged] = dmp.patch_apply(patches, other);
-  return merged;
+  const localBom = local.startsWith(BOM);
+  const localBody = ohneBom(local);
+  // Vergleichsfassung: nur der Inhalt zählt, nicht die Schreibweise.
+  const baseLf = ohneBom(base).replace(/\r\n/g, '\n');
+  const localLf = localBody.replace(/\r\n/g, '\n');
+  const otherLf = ohneBom(other).replace(/\r\n/g, '\n');
+
+  const patches = dmp.patch_make(baseLf, localLf);
+  const [merged] = dmp.patch_apply(patches, otherLf);
+
+  const eol = localBody.includes('\r\n') ? '\r\n' : '\n';
+  const out = eol === '\n' ? merged : merged.replace(/\n/g, eol);
+  return localBom ? BOM + out : out;
 }
 
 // Die Textstücke, die der Diff `from` → `to` NEU einfügt — also genau das, was ein
@@ -89,8 +134,8 @@ export function insertedTexts(from: string, to: string): string[] {
 // umgeschrieben, auch nicht bei gemischten Zeilenenden. Nur die Zeilen, die es
 // ausschließlich fremd gibt (DELETE), bekommen das lokale Zeilenende, damit die
 // Union keine dritte Mischung erzeugt. Ein führendes BOM überlebt genau dann,
-// wenn der lokale Stand eines hatte.
-const BOM = '\uFEFF';
+// wenn der lokale Stand eines hatte. (Die Konstante `BOM` steht oben, weil
+// `threeWayMerge` sie ebenfalls braucht.)
 
 // Zeilen INKLUSIVE Zeilenende; die letzte hat keines, wenn der Text nicht auf
 // einem endet.
