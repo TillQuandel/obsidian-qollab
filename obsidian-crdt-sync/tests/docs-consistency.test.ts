@@ -10,6 +10,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { SCAN_INTERVAL_MS } from '../src/sidecar-watcher';
 import { filterYjsFiles } from '../src/sync-handler';
+import { DEFAULT_SETTINGS } from '../src/settings';
 
 const README = readFileSync(join(__dirname, '..', '..', 'README.md'), 'utf8');
 
@@ -55,5 +56,35 @@ describe('F-7: README hält, was der Code tut', () => {
     for (const excluded of ['workspace', 'vault-stats', 'graph.json', 'data.json']) {
       expect(CLAIMS).toContain(excluded);
     }
+  });
+});
+
+// Szenariosuche Runde 2, Funde 38/39 — beides sind Zusagen, die die Architektur
+// nicht hält. Der Schaden ist in `profile-loss.test.ts` reproduziert und dort als
+// nicht behebbar belegt; die Korrektur konnte deshalb nur im README liegen.
+describe('Funde 38/39: README hält, was das Geräteprofil hergibt', () => {
+  it('nennt den Aus-Schalter als gerätelokal und nach Profilverlust zurückgesetzt', () => {
+    // Der Schalter lebt ausschließlich im Geräteprofil (main.ts,
+    // DEVICE_SETTINGS_KEY), und sein Default ist `true`. Jedes Gerät ohne dieses
+    // Profil — Erststart wie Profilverlust — kommt damit scharf hoch. Weil der
+    // README das Abschalten für große Vaults ausdrücklich empfiehlt, ist das
+    // Verschweigen dieses Rücksetzers eine falsche Zusage.
+    expect(DEFAULT_SETTINGS.enabled).toBe(true);
+    expect(CLAIMS).toContain('besser deaktivieren');
+    expect(CLAIMS).toContain('Der Schalter gilt pro Gerät');
+    expect(CLAIMS).toContain('startet dort wieder mit „Sync aktiviert"');
+  });
+
+  it('sagt den Zombie-Schutz nicht mehr vorbehaltlos zu', () => {
+    // `enabled` und `tombstones` sind genau die beiden Felder, die `saveSettings`
+    // aus `data.json` heraushält (Task 17/F-3) — sie leben nur im Geräteprofil.
+    // Damit hängt der Zombie-Schutz an zwei Bedingungen: Qollab war beim Löschen
+    // an, und das Profil lebt noch. Ein „behoben." ohne Vorbehalt ist falsch.
+    expect(DEFAULT_SETTINGS).toHaveProperty('tombstones', {});
+    expect(CLAIMS).not.toMatch(/\*\*Zombie-Resurrection — behoben\.\*\*/);
+    expect(CLAIMS).toContain('Zombie-Resurrection — behoben, mit zwei Ausnahmen.');
+    // Und beide Ausnahmen müssen im Fließtext benannt sein.
+    expect(CLAIMS).toContain('im Moment des Löschens **ausgeschaltet**');
+    expect(CLAIMS).toContain('Geht das **Geräteprofil verloren**');
   });
 });
