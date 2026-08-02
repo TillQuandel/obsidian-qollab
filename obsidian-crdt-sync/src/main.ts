@@ -642,13 +642,30 @@ export default class CrdtSyncPlugin extends Plugin {
     } finally {
       this.writingPaths.delete(bewachterPfad);
     }
+    // Szenariosuche 2026-08-02, zweite Hälfte: Der Guard hielt den Pfad bereits
+    // fest, alles NACH dem `await` las ihn aber erneut — `noteLocalDiffBase` unten
+    // und der Dateiname in der Meldung. Fällt eine Umbenennung in das
+    // Schreibfenster (der Auto-Note-Mover reagiert auf genau diesen Write), lagen
+    // Guard und Diff-Basis auf zwei verschiedenen Pfaden: bewacht wurde der alte,
+    // gemerkt der neue. Ein Lauf, der Zustand unter einem Pfad schreibt, dessen
+    // Warteschlangen-Schlüssel er nie gehalten und dessen Schreib-Guard er nie
+    // gesetzt hat, ist genau die Konstellation, aus der die belegte Verdopplung im
+    // modify-Handler entstanden ist.
+    //
+    // Deshalb hier ABBRECHEN statt unter dem falschen Pfad zu merken. Verloren
+    // geht dabei nichts: `renameNote` zieht die zuletzt gesehene `.md` vom alten
+    // auf den neuen Pfad um, und diese Basis ist der Stand VOR dem Write —
+    // `mergeForLocalDiff` fängt den Vorlauf beim nächsten `modify` über
+    // `content === mergedText` ab. Die Meldung entfällt mit, sie nennte sonst
+    // einen Namen, unter dem dieser Lauf nie gearbeitet hat.
+    if (file.path !== bewachterPfad) return;
     // Review F-2: Die Basis erst NACH dem bestätigten Write setzen. Im Callback
     // gesetzt, stand sie auf `merged`, während die Datei nach einem gescheiterten
     // Write weiter `expected` trug — der nächste `modify` difft dann „merged →
     // expected", also genau die Löschung des Fremd-Edits, die dieser Task
     // verhindern soll (gemessen: FREMD=0). `changed` ist nur true, wenn der Callback
     // `merged` zurückgegeben hat UND `process` durchgelaufen ist.
-    if (changed) this.syncHandler.noteLocalDiffBase(file.path, merged);
+    if (changed) this.syncHandler.noteLocalDiffBase(bewachterPfad, merged);
     // Dieselbe Meldung wie beim Write-Back in onRemoteYjsUpdate: für den Nutzer ist
     // es dasselbe Ereignis („die Note wurde automatisch zusammengeführt"), nur
     // ausgelöst vom eigenen Tippen statt vom Poll. Ohne sie verschwände das Signal
@@ -698,6 +715,48 @@ export default class CrdtSyncPlugin extends Plugin {
     const previous = this.loadSweepCursor();
     const next: SweepCursor = {};
     for (const file of files) {
+      // Szenariosuche 2026-08-02: Pfad EINMAL festhalten, wie im modify-Handler.
+      // Obsidian mutiert `TFile.path` beim Umbenennen IN PLACE, und
+      // `getMarkdownFiles()` liefert genau die Objekte des Vault-Index — dieselben,
+      // die der rename-Handler mutiert vorfindet. Die Pro-Datei-Arbeit hier liest
+      // `file.path` an sieben Stellen über drei `await`-Grenzen hinweg
+      // (`statSidecar`, `hasAdoptableGuid`, Warteschlangen-Schlüssel,
+      // `vault.read`). Ohne festen Pfad war eine Stelle der Warteschlangen-
+      // Schlüssel und eine spätere der Arbeitspfad — identisch zum behobenen
+      // modify-Fehler, nur über ein deutlich breiteres Fenster.
+      //
+      // Erreichbar auf zwei Wegen, die beide beim Start zusammenfallen: Der Sweep
+      // schreibt über `writeBackMerged` selbst `.md`-Dateien und löst damit
+      // umbenennende Plugins aus (Auto-Note-Mover reagiert auf Frontmatter/Tags),
+      // und er läuft über den ganzen Vault lange genug, dass eine Umbenennung von
+      // außen (Nutzer, Datei-Sync, anderes Plugin) in eines seiner IO-Fenster
+      // fällt.
+      //
+      // Der Schaden ist derselbe wie dort: Unter dem neuen Pfad gibt es weder Doc
+      // noch Sidecar (beide liegen noch am alten), also prägt `ensureDoc` eine
+      // FRISCHE GUID über einer lebenden Historie. Der rename-Handler zieht danach
+      // die echte Historie auf denselben Pfad; der Doc im Speicher bleibt der
+      // frisch geprägte. Beim nächsten Abgleich gilt die eigene Sidecar als
+      // kompatibel (gleiche GUID) und wird angewandt — Yjs dedupliziert nach
+      // Item-ID, nicht nach Inhalt: der Notiztext steht doppelt (gemessen: 2 statt
+      // 1, in Datei und CRDT), ohne jede Meldung.
+      //
+      // Der Abbruch sitzt an EINER Stelle: im Rumpf der Warteschlange, wo
+      // Schlüssel und Arbeitspfad übereinstimmen müssen. Die beiden früheren
+      // `await`-Grenzen brauchen keinen eigenen — sobald alles darunter `notePath`
+      // benutzt, entscheidet der Sweep dort über den alten Pfad und arbeitet auch
+      // auf ihm (`statSidecar` liest, `hasAdoptableGuid` räumt höchstens Leichen
+      // am alten Pfad ab, der Merker landet am alten Pfad und fällt beim nächsten
+      // Sweep von selbst heraus, weil es die Note dort nicht mehr gibt). Gemessene
+      // Mutationsprobe: eigene Abbrüche an diesen beiden Grenzen ändern kein
+      // Testergebnis, der Abbruch in der Warteschlange fängt alle drei Fenster.
+      //
+      // Übersprungen wird die Note dann ohne Merker, damit der nächste Sweep sie
+      // voll ansieht. Der rename-Handler zieht Sidecars und Zustand ohnehin um;
+      // erfasst wird der Stand unter dem neuen Pfad (nächster `modify`,
+      // spätestens der nächste Sweep).
+      const notePath = file.path;
+
       // Bricht der Sweep hier ab, wird `next` NICHT geschrieben: er beschriebe
       // sonst nur das bereits besuchte Präfix, und alles danach verlöre seinen
       // Merker. Der alte Stand bleibt stehen und ist weiterhin korrekt — er sagt
@@ -731,21 +790,21 @@ export default class CrdtSyncPlugin extends Plugin {
         // `loadAndMerge` zurück. Der Merker deckt bewusst NUR diese eine
         // Feststellung ab; über fremde Sidecars sagt er nichts aus, weil deren
         // Ankunft die `.md` nicht anfasst.
-        const seen = previous[file.path];
+        const seen = previous[notePath];
         if (seen && seen[0] === file.stat.mtime && seen[1] === file.stat.size) {
-          next[file.path] = seen;
+          next[notePath] = seen;
           continue;
         }
 
         // Sidecar-mtime über den Adapter (Index-blind für .qollab/). Ist der eigene
         // Sidecar mindestens so neu wie die .md, ist der Snapshot aktuell.
-        const statePath = this.syncHandler.stateFilePath(file.path);
+        const statePath = this.syncHandler.stateFilePath(notePath);
         // Task 12 (m-3): frischer stat — eine stale Adapter-mtime würde die .md
         // fälschlich als „Snapshot aktuell" überspringen.
         const stat = await statSidecar(this.sidecarAdapter, statePath);
         if (stat && stat.mtime >= file.stat.mtime) {
           // Genau diese Feststellung merkt sich der Merker — und nur sie.
-          next[file.path] = [file.stat.mtime, file.stat.size];
+          next[notePath] = [file.stat.mtime, file.stat.size];
           continue;
         }
 
@@ -769,7 +828,7 @@ export default class CrdtSyncPlugin extends Plugin {
         // getombstete GUID) — reine Datei-Existenz genügt nicht: eine korrupte oder
         // halb kopierte Fremd-Sidecar trägt keine GUID, ensureDoc prägte dann doch
         // eine frische Inkarnation.
-        if (!stat && !(await this.syncHandler.hasAdoptableGuid(file.path, dirCache))) {
+        if (!stat && !(await this.syncHandler.hasAdoptableGuid(notePath, dirCache))) {
           continue;
         }
 
@@ -779,12 +838,19 @@ export default class CrdtSyncPlugin extends Plugin {
         // Task 16: Write-Back wie im modify-Handler. Der Sweep ist der Pfad, der beim
         // Start eine bei geschlossener App angekommene Fremd-Sidecar in den Doc zieht;
         // ohne Write-Back startete die Sitzung genau im Vorlauf-Zustand.
-        await this.pathQueue.run(file.path, async () => {
-          if (this.unloaded) return;
+        await this.pathQueue.run(notePath, async () => {
+          // Der Abbruchpunkt (siehe oben). Geprüft wird an jeder `await`-Grenze
+          // innerhalb der Warteschlange — der Wartezeit selbst, dem `vault.read`
+          // und dem `applyLocalContent`: der Schlüssel ist `notePath`, also muss
+          // auch der Arbeitspfad `notePath` sein. Dieselbe Regel wie im
+          // modify-Handler, und derselbe bewusst bezahlte Preis: ein in `content`
+          // schon gelesener Edit ist danach nur in der `.md` und wird vom nächsten
+          // Trigger unter dem neuen Pfad erfasst.
+          if (this.unloaded || file.path !== notePath) return;
           const content = await this.app.vault.read(file);
-          if (this.unloaded) return;
-          const merged = await this.syncHandler.applyLocalContent(file.path, content);
-          if (this.unloaded) return;
+          if (this.unloaded || file.path !== notePath) return;
+          const merged = await this.syncHandler.applyLocalContent(notePath, content);
+          if (this.unloaded || file.path !== notePath) return;
           await this.writeBackMerged(file, content, merged);
         });
       } catch {
