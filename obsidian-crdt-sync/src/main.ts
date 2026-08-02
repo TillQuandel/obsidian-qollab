@@ -210,19 +210,57 @@ export default class CrdtSyncPlugin extends Plugin {
     // diesem Fenster tippt der Nutzer weiter (Obsidian feuert modify wenige Sekunden
     // nach jedem Tippstopp), und der nächste Diff verbuchte den Vorlauf als
     // Löschung. Es ist kein zusätzlicher Write: es ist DERSELBE, nur früher.
+    //
+    // Szenariosuche 2026-08-02: Der Pfad wird EINMAL festgehalten und danach
+    // durchgehend verwendet — Warteschlangen-Schlüssel und Arbeitspfad müssen
+    // derselbe sein. Obsidian mutiert `TFile.path` beim Umbenennen IN PLACE (der
+    // rename-Handler unten verlässt sich selbst darauf: er bekommt `(file,
+    // oldPath)` und liest den NEUEN Pfad aus `file.path`). Vorher wurde
+    // `file.path` hier zweimal gelesen — als Schlüssel und im Rumpf erneut —,
+    // und dazwischen lagen der `vault.read` UND die gesamte Wartezeit in der
+    // Warteschlange.
+    //
+    // Fällt eine Umbenennung in dieses Fenster, hielt der Task den Schlüssel des
+    // ALTEN Pfades und arbeitete auf dem NEUEN. Das ist kein Ausnahmefall: der
+    // Auto-Note-Mover benennt anhand von Frontmatter/Tags um, beide Abläufe
+    // entspringen also demselben Schreibvorgang — die Überlappung ist
+    // strukturell.
+    //
+    // Der Schaden lief so: Unter dem neuen Pfad gibt es weder Doc noch Sidecar
+    // (die liegen noch am alten), also prägte `ensureDoc` eine FRISCHE GUID über
+    // einer lebenden Historie und baute den Doc aus dem `.md`-Text neu auf.
+    // Danach zog der rename-Task die echte Historie auf denselben Pfad und
+    // setzte die alte GUID zurück — der Doc im Speicher blieb der frisch
+    // geprägte. Beim nächsten Abgleich galt die eigene Sidecar als kompatibel
+    // (gleiche GUID) und wurde angewandt; Yjs dedupliziert nach Item-ID, nicht
+    // nach Inhalt: der ganze Notiztext stand doppelt, ohne jede Meldung.
+    //
+    // Weicht `file.path` im Rumpf ab, wird deshalb ABGEBROCHEN statt unter dem
+    // falschen Schlüssel gearbeitet — beide Alternativen wären falsch: der neue
+    // Pfad ist nicht durch die Warteschlange gedeckt, und unter dem alten liefe
+    // der Write-Back darunter trotzdem über das TFile-Objekt gegen den NEUEN
+    // Pfad (Diff-Basis und Schreib-Guard lägen dann auf zwei verschiedenen
+    // Pfaden). Der rename-Handler zieht Sidecars und Zustand ohnehin um.
+    //
+    // Preis des Abbruchs, bewusst bezahlt: Ein in `content` schon gelesener
+    // Nutzer-Edit ist danach nur in der `.md`. Verloren ist er nicht — der
+    // nächste `modify` erfasst ihn unter dem neuen Pfad, spätestens der
+    // Startup-Sweep (`.md` neuer als eigener Sidecar). Das ist deutlich billiger
+    // als eine gespaltene Inkarnation, die den Text stumm verdoppelt.
     this.registerEvent(
       this.app.vault.on('modify', async (file) => {
         if (!this.settings.enabled) return;
         if (!(file instanceof TFile)) return;
         if (!file.path.endsWith('.md')) return;
-        if (this.writingPaths.has(file.path)) return;
+        const notePath = file.path;
+        if (this.writingPaths.has(notePath)) return;
 
-        await this.pathQueue.run(file.path, async () => {
+        await this.pathQueue.run(notePath, async () => {
           if (this.unloaded) return;
           const content = await this.app.vault.read(file);
-          if (this.unloaded) return;
-          const merged = await this.syncHandler.applyLocalContent(file.path, content);
-          if (this.unloaded) return;
+          if (this.unloaded || file.path !== notePath) return;
+          const merged = await this.syncHandler.applyLocalContent(notePath, content);
+          if (this.unloaded || file.path !== notePath) return;
           await this.writeBackMerged(file, content, merged);
         });
       })
