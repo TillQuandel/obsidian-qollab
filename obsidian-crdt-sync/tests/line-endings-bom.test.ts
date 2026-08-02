@@ -120,6 +120,28 @@ describe('unionMerge — BOM', () => {
   });
 });
 
+describe('unionMerge — jenseits der Token-Grenze', () => {
+  // Ab 40000 verschiedenen Zeilen fasst diff_linesToChars_ den Rest zu EINEM
+  // Token zusammen. Dann steht das k-te Zeichen nicht mehr fuer die k-te Zeile,
+  // und die zeilengenaue Rueckabbildung liefe versetzt — dafuer gibt es den
+  // Rueckfallweg. Was er zusagt, ist Verlustfreiheit und ein einheitliches
+  // Zeilenende; die (schon vorher bestehende) Verdopplung im Schwanz jenseits
+  // der Grenze hebt er nicht auf.
+  it('bleibt verlustfrei und liefert das lokale Zeilenende', () => {
+    const basis = Array.from({ length: 41000 }, (_, i) => `Zeile ${i}`);
+    const local = basis.join('\r\n') + '\r\n';
+    const other = basis.join('\n') + '\nnur fremd\n';
+    const merged = unionMerge(other, local);
+
+    const teile = merged.split('\r\n');
+    expect(teile).toContain('Zeile 0');
+    expect(teile).toContain('Zeile 40999');
+    expect(teile).toContain('nur fremd');
+    // Kein einzelnes LF uebrig: das Ergebnis ist durchgaengig CRLF.
+    expect(/[^\r]\n/.test(merged)).toBe(false);
+  });
+});
+
 describe('unionMerge — Kontrollen (muessen gruen bleiben)', () => {
   it('reines LF gegen LF verhaelt sich wie bisher', () => {
     expect(unionMerge('a\nb\n', 'a\nc\n')).toBe('a\nb\nc\n');

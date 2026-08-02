@@ -68,15 +68,111 @@ export function insertedTexts(from: string, to: string): string[] {
 // Zeilenende garantieren und es hinterher nur dann wieder entfernen, wenn KEINE
 // der beiden Seiten eines hatte — sonst würde die Union ein Zeilenende erfinden
 // bzw. verschlucken.
+//
+// CRLF und BOM: Dieselbe Tokenisierung macht `"# Titel\n"` und `"# Titel\r\n"`
+// zu verschiedenen Tokens. Zwischen einer LF- und einer CRLF-Fassung DESSELBEN
+// Textes hat damit keine einzige Zeile eine Entsprechung, der Kurzschluss
+// `other === local` greift wegen der verschiedenen Bytes nicht, und die Union
+// hängt beide Fassungen vollständig hintereinander — gemessen 20 + 23 Zeichen
+// → 74 bzw. 43, exakt die Summe. Der Weg dorthin ist Alltag: Git-Checkout mit
+// `core.autocrlf=true` (Windows-Standard), externer Windows-Editor,
+// PowerShell-Export; ein Windows- und ein Mac-Gerät sehen dann systematisch
+// verschiedene Zeilenenden für dieselbe Notiz. Ein BOM (U+FEFF) ist für den
+// Diff ein gewöhnliches Zeichen der ersten Zeile und wanderte auf demselben Weg
+// in die Dateimitte (gemessen: Index 8 statt 0) — die Datei begann ohne
+// Kodierungs-Kennzeichnung, und das U+FEFF stand unmittelbar vor dem `#`, womit
+// die Überschrift nach CommonMark kein ATX-Heading mehr ist, sondern ein Absatz.
+//
+// Deshalb: verglichen wird auf einer LF-Fassung ohne BOM, ausgegeben wird in den
+// Zeilenenden des LOKALEN Standes. Zeilen, die aus `local` stammen (EQUAL und
+// INSERT), gehen byteweise unverändert durch — die Datei wird nicht unnötig
+// umgeschrieben, auch nicht bei gemischten Zeilenenden. Nur die Zeilen, die es
+// ausschließlich fremd gibt (DELETE), bekommen das lokale Zeilenende, damit die
+// Union keine dritte Mischung erzeugt. Ein führendes BOM überlebt genau dann,
+// wenn der lokale Stand eines hatte.
+const BOM = '\uFEFF';
+
+// Zeilen INKLUSIVE Zeilenende; die letzte hat keines, wenn der Text nicht auf
+// einem endet.
+function splitLines(text: string): string[] {
+  const lines: string[] = [];
+  let start = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '\n') {
+      lines.push(text.slice(start, i + 1));
+      start = i + 1;
+    }
+  }
+  if (start < text.length) lines.push(text.slice(start));
+  return lines;
+}
+
+// Garantiertes Zeilenende auf der Schlusszeile (siehe Review C-1 oben).
+function padLast(lines: string[], eol: string): string[] {
+  if (lines.length > 0 && !lines[lines.length - 1].endsWith('\n')) {
+    lines[lines.length - 1] += eol;
+  }
+  return lines;
+}
+
 export function unionMerge(other: string, local: string): string {
-  if (other === local) return other;
-  const otherNl = other.endsWith('\n');
-  const localNl = local.endsWith('\n');
-  const a = other === '' || otherNl ? other : other + '\n';
-  const b = local === '' || localNl ? local : local + '\n';
-  const { chars1, chars2, lineArray } = dmp.diff_linesToChars_(a, b);
+  const localBom = local.startsWith(BOM);
+  const otherBody = other.startsWith(BOM) ? other.slice(1) : other;
+  const localBody = localBom ? local.slice(1) : local;
+
+  // Vergleichsfassung: nur hier zählt der Inhalt, nicht die Schreibweise.
+  const otherLf = otherBody.replace(/\r\n/g, '\n');
+  const localLf = localBody.replace(/\r\n/g, '\n');
+  // Inhaltlich gleich → lokalen Stand unverändert zurückgeben (kein Write-Back).
+  if (otherLf === localLf) return local;
+
+  const eol = localBody.includes('\r\n') ? '\r\n' : '\n';
+  const otherNl = otherLf.endsWith('\n');
+  const localNl = localLf.endsWith('\n');
+  const otherLines = padLast(splitLines(otherLf), '\n');
+  const localLines = padLast(splitLines(localLf), '\n');
+  // Gleiche Länge wie localLines — die Normalisierung ändert keine Zeilenzahl.
+  const localOrig = padLast(splitLines(localBody), eol);
+
+  const { chars1, chars2, lineArray } = dmp.diff_linesToChars_(
+    otherLines.join(''),
+    localLines.join('')
+  );
   const diffs = dmp.diff_main(chars1, chars2, false);
-  dmp.diff_charsToLines_(diffs, lineArray);
-  const merged = diffs.map(([, text]) => text).join('');
-  return !otherNl && !localNl && merged.endsWith('\n') ? merged.slice(0, -1) : merged;
+
+  let merged: string;
+  // Ein Zeichen je Zeile — nur dann steht das k-te Zeichen für die k-te Zeile.
+  // Ab 40000 verschiedenen Zeilen fasst diff_linesToChars_ den Rest zu EINEM
+  // Token zusammen (harte Grenze in diff-match-patch); dann trägt der Index
+  // nicht mehr, und die Rückabbildung liefe zeilenversetzt. Für diesen Fall der
+  // ältere Weg: über lineArray zurück und die Zeilenenden pauschal angleichen.
+  if (chars1.length === otherLines.length && chars2.length === localLines.length) {
+    const out: string[] = [];
+    let i = 0;
+    let j = 0;
+    for (const [op, chars] of diffs) {
+      const n = chars.length;
+      if (op === diff_match_patch.DIFF_DELETE) {
+        for (let k = 0; k < n; k++) out.push(otherLines[i + k].slice(0, -1) + eol);
+        i += n;
+      } else {
+        for (let k = 0; k < n; k++) out.push(localOrig[j + k]);
+        j += n;
+        if (op === diff_match_patch.DIFF_EQUAL) i += n;
+      }
+    }
+    merged = out.join('');
+  } else {
+    dmp.diff_charsToLines_(diffs, lineArray);
+    merged = diffs
+      .map(([, text]) => text)
+      .join('')
+      .replace(/\n/g, eol);
+  }
+
+  if (!otherNl && !localNl) {
+    if (merged.endsWith('\r\n')) merged = merged.slice(0, -2);
+    else if (merged.endsWith('\n')) merged = merged.slice(0, -1);
+  }
+  return localBom ? BOM + merged : merged;
 }
