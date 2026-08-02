@@ -63,6 +63,14 @@ type SweepCursor = Record<string, [number, number]>;
 // Das Sidecar-Dateiformat (`<note>.<clientId>.yjs`) verlangt exakt 8 Hex-Zeichen.
 // Alles andere aus dem Speicher wird verworfen statt in Dateinamen weitergereicht.
 const CLIENT_ID_RE = /^[0-9a-f]{8}$/;
+// Szenariosuche Fund 37: Wortlaut der Meldung über eine fremd geschriebene eigene
+// Hilfsdatei — exportiert, damit `docs-consistency.test.ts` den README-Absatz
+// gegen den tatsächlichen Wortlaut halten kann statt gegen eine zweite Textkopie.
+// Begründung des Wortlauts steht bei `onOwnSidecarChanged`.
+export const FOREIGN_OWN_SIDECAR_NOTICE =
+  'Qollab: Die Sync-Datei dieses Geräts wurde von außen verändert — entweder trägt ' +
+  'ein zweites Gerät dieselbe Geräte-ID, oder es wurde eine Sicherung zurückgespielt. ' +
+  'Dieses Gerät arbeitet ab jetzt unter einer neuen Geräte-ID weiter.';
 
 export default class CrdtSyncPlugin extends Plugin {
   settings: CrdtSyncSettings;
@@ -1026,13 +1034,52 @@ export default class CrdtSyncPlugin extends Plugin {
           continue;
         }
 
+        // Szenariosuche Fund 36: Die `.md` ist anders als beim letzten Merker,
+        // ihr Zeitstempel ist dabei aber NICHT vorangeschritten — sie wurde von
+        // außen durch eine ältere Fassung ersetzt. Genau das tun Explorer-Copy,
+        // ZIP-Entpacken und „vorherige Version wiederherstellen": sie übernehmen
+        // den Zeitstempel der Sicherung.
+        //
+        // Für diese Notiz ist der Vergleich unten blind. Er fragt „ist die
+        // Hilfsdatei neuer?" und schließt aus einem Ja auf „unser Snapshot ist
+        // aktuell" — eine Aussage über Alter, wo eine über Änderung nötig wäre.
+        // Die zurückgespielte Notiz wurde deshalb übersprungen, der Doc behielt
+        // den neueren Stand, und der nächste Fremd-Trigger schrieb ihn über die
+        // Datei zurück: die Rückspielung war lautlos weg (reproduziert in
+        // `backup-restore.test.ts`).
+        //
+        // Der Merker beantwortet die Frage exakt und ohne Dateizugriff: er hält
+        // fest, wie die `.md` aussah, als der Snapshot zuletzt NACHWEISLICH
+        // aktuell war. Zwei Zahlen aus dem Gerätespeicher gegen zwei aus
+        // `TFile.stat` — die Treffer-Abkürzung darüber bleibt unangetastet, der
+        // Sweep-Gewinn aus Task 19/B also auch (gemessen, siehe Bericht).
+        //
+        // `<=` statt `<`: Bleibt der Zeitstempel stehen, während sich die Größe
+        // ändert, ist er als Frische-Signal ebenso wertlos (OneDrive rundet
+        // `.md`-mtimes auf ganze Sekunden — bekannte Grenze #3).
+        //
+        // Warum das NICHT der Fehl-Fix aus `git-rollback.test.ts` ist: Der dort
+        // gepinnte erkennt einen Rollback und UNTERDRÜCKT daraufhin den lokalen
+        // Diff — das frisst die legitime Offline-Löschung (Fall G) mit. Hier
+        // wird nichts unterdrückt, sondern eine bisher übersprungene Notiz
+        // überhaupt erst angesehen; sie läuft danach durch denselben Pfad wie
+        // jede andere geänderte `.md`. Ein G)-Analogon kann daran nicht
+        // scheitern, weil es keinen Fall gibt, in dem „nicht ansehen" das
+        // gewünschte Ergebnis wäre.
+        //
+        // Ohne Merker-Eintrag (Erststart, Neuinstallation, in dieser Sitzung nie
+        // als aktuell bestätigte Notiz) gibt es keine Erinnerung, an der sich
+        // eine Rückdatierung messen liesse — dort bleibt es beim
+        // Zeitstempel-Vergleich. Das ist die Grenze dieses Fixes.
+        const zurueckdatiert = seen !== undefined && file.stat.mtime <= seen[0];
+
         // Sidecar-mtime über den Adapter (Index-blind für .qollab/). Ist der eigene
         // Sidecar mindestens so neu wie die .md, ist der Snapshot aktuell.
         const statePath = this.syncHandler.stateFilePath(notePath);
         // Task 12 (m-3): frischer stat — eine stale Adapter-mtime würde die .md
         // fälschlich als „Snapshot aktuell" überspringen.
         const stat = await statSidecar(this.sidecarAdapter, statePath);
-        if (stat && stat.mtime >= file.stat.mtime) {
+        if (!zurueckdatiert && stat && stat.mtime >= file.stat.mtime) {
           // Genau diese Feststellung merkt sich der Merker — und nur sie.
           next[notePath] = [file.stat.mtime, file.stat.size];
           continue;
@@ -1304,6 +1351,28 @@ export default class CrdtSyncPlugin extends Plugin {
   // Pfad den Self-Check nicht mehr, und die restlichen Pfade des Durchlaufs tragen
   // bereits die neue ID. Ein sitzungsweiter Guard würde nur eine SPÄTERE, echte
   // zweite Kollision verschlucken.
+  //
+  // Szenariosuche Fund 37: Die Meldung nannte bis hierher eine Ursache
+  // („Geräte-ID-Kollision erkannt"), die an dieser Stelle gar nicht feststeht.
+  // Festgestellt ist ausschließlich: Jemand, der nicht wir sind, hat unsere
+  // eigene Hilfsdatei geschrieben. Eine geteilte Geräte-ID ist eine mögliche
+  // Ursache; eine bei laufender App zurückgespielte Sicherung ist eine andere
+  // und inzwischen die wahrscheinlichere, weil die echte Kollision seit Task 14
+  // eine geerbte `data.json` voraussetzt.
+  //
+  // Schärfer geht die Unterscheidung hier nicht: Sie bräuchte einen Vergleich
+  // des Dateiinhalts gegen den eigenen Doc, und den gibt es im Regelfall nicht
+  // — für jede in dieser Sitzung nicht angefasste Notiz stammt die Signatur aus
+  // der ersten Sichtung des Wächters, ganz ohne Doc, und ihn aus der
+  // fraglichen Datei aufzubauen wäre zirkulär. Der Zeitstempel taugt ebenfalls
+  // nicht: über Gerätegrenzen ist er nicht belastbar (bekannte Grenzen #3/#27).
+  //
+  // Die HANDLUNG bleibt darum unverändert richtig — ein fremder Schreiber auf
+  // unserem Pfad, also treten wir zur Seite. Nur die Behauptung fällt weg. Der
+  // Wortlaut trägt beide Ursachen, damit die Empfängerin die für sie zutreffende
+  // wiedererkennt statt nach einem zweiten Gerät zu suchen, das es nicht gibt
+  // (`backup-restore.test.ts`, README-Absatz gepinnt in
+  // `docs-consistency.test.ts`).
   private async onOwnSidecarChanged(
     notePath: string,
     path: string,
@@ -1321,7 +1390,7 @@ export default class CrdtSyncPlugin extends Plugin {
     if (!(await this.syncHandler.isForeignSidecarWrite(path, cur))) return false;
 
     this.reprovisionClientId();
-    new Notice('Qollab: Geräte-ID-Kollision erkannt, neu provisioniert.');
+    new Notice(FOREIGN_OWN_SIDECAR_NOTICE, 15000);
     await this.pathQueue.run(notePath, () => this.onRemoteYjsUpdate(notePath));
     return true;
   }

@@ -29,6 +29,12 @@ import {
 
 const NOTE = 'note.md';
 const CLIENT_ID_KEY = 'qollab-client-id';
+// Szenariosuche Fund 37: Die Meldung heißt nicht mehr „Geräte-ID-Kollision
+// erkannt" — sie kann die Ursache an dieser Stelle nicht kennen (siehe
+// `backup-restore.test.ts`). Der stabile Anker ist „Geräte-ID"; kein anderer
+// Meldungstext in `src/` trägt das Wort, die Negativ-Prüfungen unten behalten
+// damit ihre Schärfe.
+const KOLLISIONS_MELDUNG = /Geräte-ID/;
 const SHARED_ID = 'c10ec10e'; // per data.json-Sync geklonte ID (Klon-Ära)
 const BASE_TEXT = 'Basis\n';
 const PEER_TEXT = 'Basis\nA-Zeile\n';
@@ -154,7 +160,7 @@ describe('Klon-Repro: geteilte clientId (Fund 1)', () => {
     expect(vault._files.has(ownPath(SHARED_ID))).toBe(true);
     // Genau eine Meldung an den Nutzer.
     expect(
-      (Notice as any).messages.filter((m: string) => /Kollision/i.test(m))
+      (Notice as any).messages.filter((m: string) => KOLLISIONS_MELDUNG.test(m))
     ).toHaveLength(1);
   });
 
@@ -256,7 +262,7 @@ describe('Keine False Positives: eigene Writes lösen keine Neu-Provisionierung 
     await plugin.sidecarWatcher.poll();
 
     expect(plugin.clientId).toBe(id);
-    expect((Notice as any).messages.filter((m: string) => /Kollision/i.test(m))).toEqual([]);
+    expect((Notice as any).messages.filter((m: string) => KOLLISIONS_MELDUNG.test(m))).toEqual([]);
     expect(vault._files.has(ownPath(id))).toBe(true);
   });
 
@@ -274,7 +280,7 @@ describe('Keine False Positives: eigene Writes lösen keine Neu-Provisionierung 
     await plugin.sidecarWatcher.poll();
 
     expect(plugin.clientId).toBe(id);
-    expect((Notice as any).messages.filter((m: string) => /Kollision/i.test(m))).toEqual([]);
+    expect((Notice as any).messages.filter((m: string) => KOLLISIONS_MELDUNG.test(m))).toEqual([]);
   });
 
   // Task 13 schreibt die EIGENE Sidecar in Pfaden neu, die nicht von einem lokalen
@@ -311,7 +317,7 @@ describe('Keine False Positives: eigene Writes lösen keine Neu-Provisionierung 
     await plugin.sidecarWatcher.poll();
 
     expect(plugin.clientId).toBe(id);
-    expect((Notice as any).messages.filter((m: string) => /Kollision/i.test(m))).toEqual([]);
+    expect((Notice as any).messages.filter((m: string) => KOLLISIONS_MELDUNG.test(m))).toEqual([]);
   });
 
   // Review I-1: Der rename-Handler verschiebt die Sidecar am SyncHandler vorbei
@@ -348,7 +354,7 @@ describe('Keine False Positives: eigene Writes lösen keine Neu-Provisionierung 
     await plugin.sidecarWatcher.poll();
 
     // RED (vor dem Fix): clientId neu vergeben + 1 Kollisions-Notice.
-    expect((Notice as any).messages.filter((m: string) => /Kollision/i.test(m))).toEqual([]);
+    expect((Notice as any).messages.filter((m: string) => KOLLISIONS_MELDUNG.test(m))).toEqual([]);
     expect(plugin.clientId).toBe(id);
     expect(vault._files.has(ownPathFor(A, id))).toBe(true);
     expect([...vault._files.keys()].filter((p) => p.endsWith('.yjs'))).toHaveLength(1);
@@ -380,7 +386,7 @@ describe('Keine False Positives: eigene Writes lösen keine Neu-Provisionierung 
     await plugin.sidecarWatcher.poll();
 
     expect(plugin.clientId).toBe(id);
-    expect((Notice as any).messages.filter((m: string) => /Kollision/i.test(m))).toEqual([]);
+    expect((Notice as any).messages.filter((m: string) => KOLLISIONS_MELDUNG.test(m))).toEqual([]);
   });
 });
 

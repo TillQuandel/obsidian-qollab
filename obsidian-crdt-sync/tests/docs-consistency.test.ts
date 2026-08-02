@@ -12,6 +12,7 @@ import { SCAN_INTERVAL_MS } from '../src/sidecar-watcher';
 import { filterYjsFiles } from '../src/sync-handler';
 import { DEFAULT_SETTINGS } from '../src/settings';
 import { encodeStateFile, decodeStateFile } from '../src/state-file';
+import { FOREIGN_OWN_SIDECAR_NOTICE } from '../src/main';
 
 const README = readFileSync(join(__dirname, '..', '..', 'README.md'), 'utf8');
 
@@ -108,5 +109,34 @@ describe('Fund 40: README nennt die Grenze, solange das Format keinen Pfad träg
 
     expect(CLAIMS).toContain('Dateiname ist der einzige Hinweis darauf, zu welcher Notiz sie gehört');
     expect(CLAIMS).toContain('den Ordner `.qollab` nicht von Hand umsortieren');
+  });
+});
+
+// Szenariosuche Runde 2, Fund 37 — die Meldung über eine fremd geschriebene
+// eigene Hilfsdatei nannte eine Ursache, die an ihrer Stelle nicht feststeht,
+// und der README bestätigte sie („nur noch möglich, wenn beide dieselbe alte
+// `data.json` geerbt haben"). Der Schaden ist in `backup-restore.test.ts`
+// reproduziert und dort als an der Erkennungsstelle nicht auflösbar belegt; die
+// Korrektur konnte deshalb nur im Wortlaut liegen — und der muss in Meldung und
+// README derselbe bleiben.
+describe('Fund 37: README hält, was die Meldung wirklich sagt', () => {
+  it('die Meldung behauptet keine Ursache, sondern nennt beide', () => {
+    expect(FOREIGN_OWN_SIDECAR_NOTICE).not.toMatch(/Kollision/);
+    expect(FOREIGN_OWN_SIDECAR_NOTICE).toMatch(/von außen verändert/);
+    // Beide Ursachen, in dieser Reihenfolge nicht festgelegt — nur beide da.
+    expect(FOREIGN_OWN_SIDECAR_NOTICE).toMatch(/zweites Gerät/);
+    expect(FOREIGN_OWN_SIDECAR_NOTICE).toMatch(/Sicherung/);
+  });
+
+  it('der README sagt die Meldung nicht mehr als Kollisions-Nachweis zu', () => {
+    // Die widerrufene Zusage. Sie stand im Fließtext und wird dort nicht mehr
+    // geduldet; im Blockzitat der Richtigstellung darf sie zitiert werden (die
+    // CLAIMS-Filterung oben blendet Blockzitate aus).
+    expect(CLAIMS).not.toMatch(/meldet diese Kollision einmal/);
+    // Und der Absatz benennt, was die Meldung nicht leisten kann, plus beide
+    // Ursachen — dieselben zwei, die auch im Meldungstext stehen.
+    expect(CLAIMS).toContain('die Meldung kann nicht sagen, welche vorliegt');
+    expect(CLAIMS).toContain('dieselbe Geräte-ID');
+    expect(CLAIMS).toContain('Sicherung des `.qollab`-Ordners zurückgespielt');
   });
 });
