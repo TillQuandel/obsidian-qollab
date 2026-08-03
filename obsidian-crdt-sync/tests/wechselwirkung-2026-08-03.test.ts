@@ -188,6 +188,38 @@ describe('A) reconcileSweepCursor: eine einzige Datei entwertet den Fix', () => 
     expect([...vault._files.keys()].filter((k) => k.startsWith('.qollab/alpha/'))).toEqual([]);
   });
 
+  // Gegenprobe zur Genauigkeit: Der Merker führt Einträge für Notizen, die es
+  // beim nächsten Start nicht mehr gibt — jede gelöschte Notiz hinterlässt einen.
+  // Ihre eigene Sidecar ist dann ebenfalls weg (der Löschpfad räumt sie ab), also
+  // sieht der Abgleich denselben Zustand wie beim echten Verlust. Zu melden ist
+  // hier NICHTS: ein Fehlalarm macht eine spätere echte Verlustmeldung stumm
+  // (bekannte Grenze: „ab drei Geräten macht ein Fehlalarm eine spätere echte
+  // Verlustkette stumm"). Ohne diese Gegenprobe bleibt der Schutz ungeprüft —
+  // die Mutationsprobe hat ihn genau so gefunden.
+  it('KONTROLLE — eine gelöschte Notiz ist kein Verlust und wird nicht gemeldet', async () => {
+    const vault = makeCoveredVault(['alpha'], 3);
+    const store = makeLocalStorage();
+    const shared = { value: null as any };
+    await sweep(vault, store, shared);
+    expect(Object.keys(cursorOf(store))).toHaveLength(3);
+
+    // Zustand NACH einer Löschung: Notiz weg, ihre Hilfsdatei weg, Merker-Eintrag
+    // steht noch. Die übrigen zwei sind unberührt.
+    vault._textFiles.delete('alpha/note-1.md');
+    vault._files.delete(`.qollab/alpha/note-1.md.${OWN_ID}.yjs`);
+    vault._mtimes.delete(`.qollab/alpha/note-1.md.${OWN_ID}.yjs`);
+
+    (Notice as any).messages.length = 0;
+    const stats = countSidecarStats(vault);
+    await sweep(vault, store, shared);
+
+    expect(qollabNotices()).toHaveLength(0);
+    // Und die zwei überlebenden bleiben abgekürzt — die Löschung darf sie nicht
+    // mit in einen vollen Durchlauf reissen.
+    expect(stats.n).toBe(0);
+    expect(Object.keys(cursorOf(store)).sort()).toEqual(['alpha/note-0.md', 'alpha/note-2.md']);
+  });
+
   // A2: der eigentliche Wechselwirkungs-Fall. `.qollab` wird VOLLSTÄNDIG
   // gelöscht, während die App läuft (Obsidian feuert für Dot-Ordner keine
   // Events, das Plugin merkt nichts). Der nächste `saveState` — ein einziger
