@@ -239,8 +239,16 @@ describe('F-2: laufender Sweep hält Trigger offen, statt sie zu bedienen', () =
     // Der Sweep hat EDIT-Z erfasst …
     expect(vault._textFiles.get(NOTE)).toContain('EDIT-Z');
 
-    // … und der abgelehnte Trigger blieb unverbraucht: derselbe Sidecar-Stand
-    // löst erneut aus und zieht EDIT-Y nach.
+    // … und EDIT-Y ebenfalls, denn `applyLocalContent` zieht im Sweep die
+    // ausstehende Fremd-Sidecar mit ein.
+    //
+    // Richtigstellung (Mutationsmessung): Hier stand „der abgelehnte Trigger blieb
+    // unverbraucht: derselbe Sidecar-Stand löst erneut aus und zieht EDIT-Y nach".
+    // Das prüft der zweite Scan NICHT — gemessen: nimmt man ihn ganz heraus, sind
+    // beide Assertions weiterhin grün, weil der Sweep EDIT-Y schon geschrieben hat.
+    // Der Rückkanal, der hier behauptet wurde, wird in
+    // `watcher-false-rueckkanal.test.ts` geprüft. Der Aufruf bleibt als
+    // Idempotenz-Probe stehen: ein zweiter Scan darf nichts kaputt machen.
     await plugin.sidecarWatcher.scanNote(NOTE);
     expect(vault._textFiles.get(NOTE)).toContain('EDIT-Z');
     expect(vault._textFiles.get(NOTE)).toContain('EDIT-Y');
