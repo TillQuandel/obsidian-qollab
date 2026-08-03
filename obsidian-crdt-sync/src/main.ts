@@ -364,10 +364,15 @@ export default class CrdtSyncPlugin extends Plugin {
           // Pfad EINMAL festhalten (Obsidian mutiert `TFile.path` in place, siehe
           // modify-Handler oben) — Warteschlangen-Schlüssel und Arbeitspfad.
           const neuerPfad = file.path;
+          // Szenariosuche R3-F8: Ändert sich nur die Groß-/Kleinschreibung eines
+          // ORDNERS, muss dessen Name auf der Platte eigens nachgezogen werden —
+          // der Umzug der einzelnen Dateien unten leistet das nicht (Begründung
+          // bei `ordnerSchreibweiseNachziehen`). Vor dem Listing, damit die
+          // Dateien danach ohnehin schon am Ziel liegen.
+          let misslungen = !(await this.ordnerSchreibweiseNachziehen(oldPath, neuerPfad));
           // Sidecars sind für den Index unsichtbar → über den Adapter listen und
           // umziehen. Zielordner ggf. anlegen (Rename in einen anderen Ordner).
           const sidecars = await listYjsInDir(this.sidecarAdapter, oldPath);
-          let misslungen = false;
           for (const sc of sidecars) {
             const suffix = sc.slice(`${QOLLAB_DIR}/${oldPath}`.length);
             const newPath = `${QOLLAB_DIR}/${neuerPfad}${suffix}`;
@@ -617,6 +622,65 @@ export default class CrdtSyncPlugin extends Plugin {
     if (this.corruptNoticePaths.has(path)) return;
     this.corruptNoticePaths.add(path);
     new Notice(`Qollab: Sync-Datei kann nicht geschrieben werden — Note synct nicht: ${path}`);
+  }
+
+  // Szenariosuche R3-F8: Der Hilfsdatei-Ordner muss die Schreibweise des neuen
+  // Note-Pfads tragen. Rückgabe `false` = die Angleichung war nötig und ist
+  // gescheitert (behandelt wie jede andere nicht mitgekommene Datei).
+  //
+  // Warum das nicht der Datei-Umzug unten erledigt — an NTFS gemessen, nicht
+  // hergeleitet: Ein `rename` löst das ZIELVERZEICHNIS case-insensitiv auf und
+  // setzt nur den BLATTnamen. `rename('.qollab/Ordner/a.md.x.yjs',
+  // '.qollab/ordner/a.md.x.yjs')` legt die Datei also wieder in `Ordner` ab; das
+  // Verzeichnis behält seinen Namen. Und es wirft dabei nicht — Obsidians
+  // `FileSystemAdapter.rename` nimmt eine reine Schreibweisen-Umbenennung von der
+  // „Destination file already exists"-Prüfung ausdrücklich aus. Für den Handler
+  // sah der Umzug damit gelungen aus: keine Warnung, kein `misslungen`, keine
+  // Reparatur. Auch `ensureSidecarFolder` half nicht — sein Existenz-Check ist
+  // ebenfalls blind für die Schreibweise und legt deshalb nichts an, und ein
+  // späterer `saveState` schreibt zwar in die richtige Datei, ändert ihren Namen
+  // aber nie (auch gemessen).
+  //
+  // Was daraus folgt, ist der eigentliche Schaden: Der Wächter rechnet den
+  // Note-Pfad aus dem DATEINAMEN zurück (`QOLLAB_RE`) und bekommt die alte
+  // Schreibweise. `getAbstractFileByPath` ist laut `obsidian.d.ts` case sensitive,
+  // findet dort also keine Note — und `onRemoteYjsUpdate` verbucht den Trigger
+  // als erledigt („verwaiste Hilfsdatei"). Der Stand des anderen Geräts erreicht
+  // die Note ab da nie mehr, ohne jede Meldung.
+  //
+  // Zugestellt wird der Fall als gewöhnliches Rename-Event je `.md`: Obsidians
+  // Adapter feuert beim Umbenennen eines Ordners `renamed` zusätzlich für jeden
+  // Nachfahren. Die Angleichung ist deshalb idempotent — der zweite Aufruf findet
+  // den Ordner schon richtig benannt vor.
+  //
+  // Ausschließlich für den Fall „unterscheidet sich NUR in der Schreibweise". Ein
+  // echter Ordnerwechsel läuft unverändert über den Datei-Umzug unten; dort ist
+  // der Zielordner ein anderer und wird regulär angelegt.
+  private async ordnerSchreibweiseNachziehen(
+    altePfadNote: string,
+    neuePfadNote: string
+  ): Promise<boolean> {
+    const alt = dirname(`${QOLLAB_DIR}/${altePfadNote}`);
+    const neu = dirname(`${QOLLAB_DIR}/${neuePfadNote}`);
+    if (alt === neu) return true;
+    if (alt.toLowerCase() !== neu.toLowerCase()) return true;
+    // Gleiche Länge (nur Schreibweise), also gibt es genau eine erste
+    // abweichende Stelle — und nur dieser eine Ordner wird umbenannt. Die
+    // tieferen Segmente sind unverändert und ziehen als Inhalt mit.
+    const altT = alt.split('/');
+    const neuT = neu.split('/');
+    const i = altT.findIndex((s, k) => s !== neuT[k]);
+    const von = altT.slice(0, i + 1).join('/');
+    const nach = neuT.slice(0, i + 1).join('/');
+    // Ohne Hilfsdatei-Ordner gibt es nichts anzugleichen — kein Fehlerfall.
+    if (!(await sidecarExists(this.sidecarAdapter, von))) return true;
+    try {
+      await this.sidecarAdapter.rename(von, nach);
+      return true;
+    } catch (err) {
+      console.warn(`Qollab: Sync-Ordner konnte nicht mitumziehen: ${von} → ${nach}`, err);
+      return false;
+    }
   }
 
   // Szenariosuche F3, zweite Hälfte des Fixes: Nach einem unvollständigen Umzug
