@@ -9,7 +9,8 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { SCAN_INTERVAL_MS } from '../src/sidecar-watcher';
-import { filterYjsFiles } from '../src/sync-handler';
+import { filterYjsFiles, SyncHandler, QOLLAB_DIR } from '../src/sync-handler';
+import { CrdtManager } from '../src/crdt-manager';
 import { DEFAULT_SETTINGS } from '../src/settings';
 import { encodeStateFile, decodeStateFile } from '../src/state-file';
 import { FOREIGN_OWN_SIDECAR_NOTICE } from '../src/main';
@@ -109,6 +110,51 @@ describe('Fund 40: README nennt die Grenze, solange das Format keinen Pfad träg
 
     expect(CLAIMS).toContain('Dateiname ist der einzige Hinweis darauf, zu welcher Notiz sie gehört');
     expect(CLAIMS).toContain('den Ordner `.qollab` nicht von Hand umsortieren');
+  });
+});
+
+// Der README verwies für die Datei-Explosion auf Issue #9 („Subdocuments +
+// SQLite-Single-Store") und versprach damit eine Lösung, die nicht kommt: #9 ist
+// als „not planned" geschlossen, beide Hälften sind widerlegt. Die Grenze selbst
+// besteht unverändert — sie steckt in der Form des Sidecar-Pfads, und genau dort
+// hängt dieser Test. Ändert sich die Ablage (flache Segmente je Gerät, #12),
+// fällt er und die Aussage im README ist neu zu fassen.
+describe('Datei-Explosion: README verspricht keine Lösung, die es nicht gibt', () => {
+  const handler = (clientId: string) =>
+    new SyncHandler({} as any, new CrdtManager(), clientId);
+
+  it('nennt das Wachstum als offene Grenze — und der Code hält das Gesetz', () => {
+    // Code-Anker: Der Pfad einer Hilfsdatei ist Funktion aus Note-Pfad UND
+    // Geräte-ID, im unter `.qollab/` gespiegelten Baum. Daraus folgt unmittelbar
+    // „Notes × Geräte" Dateien — das ist die Grenze, die der README benennt.
+    const note = 'projekte/2026/notiz.md';
+    const a = handler('a1b2c3d4').stateFilePath(note);
+    const b = handler('e5f6a7b8').stateFilePath(note);
+    expect(a).toBe(`${QOLLAB_DIR}/projekte/2026/notiz.md.a1b2c3d4.yjs`);
+    expect(b).not.toBe(a);
+    // Beide gehören zu derselben Notiz: zwei Geräte, zwei Dateien, eine Note.
+    expect(filterYjsFiles([a, b], note)).toEqual([a, b]);
+    // Und eine zweite Note bringt ihre eigenen mit — das Produkt, nicht die Summe.
+    expect(filterYjsFiles([a, b], 'projekte/2026/andere.md')).toEqual([]);
+
+    expect(CLAIMS).toContain('Das Wachstum dieser Hilfsdateien ist eine offene Grenze');
+    // Der Rat zum Deaktivieren steht ohne Bedingung, an die er geknüpft wäre.
+    expect(CLAIMS).toContain('besser deaktivieren, ohne Ablaufdatum');
+  });
+
+  it('verweist nicht mehr auf das geschlossene Issue und seine widerlegte Lösung', () => {
+    // Der tote Link ist im ganzen Dokument weg, auch in der Richtigstellung —
+    // dort wird die Nummer nur noch genannt, nicht mehr verlinkt.
+    expect(README).not.toMatch(/issues\/9(?!\d)/);
+    // Und keine der beiden widerlegten Hälften wird im Fließtext noch zugesagt.
+    expect(CLAIMS).not.toMatch(/Subdocument/i);
+    expect(CLAIMS).not.toMatch(/SQLite/i);
+  });
+
+  it('nennt die verfolgte Richtung als Arbeit, nicht als Zusage', () => {
+    expect(CLAIMS).toContain('issues/12');
+    expect(CLAIMS).toContain('ohne Termin und ohne Zusage');
+    expect(CLAIMS).toContain('gebaut ist davon nichts');
   });
 });
 
