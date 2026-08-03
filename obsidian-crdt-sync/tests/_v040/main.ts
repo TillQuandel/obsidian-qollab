@@ -1,0 +1,536 @@
+import { Notice, Plugin, TFile } from 'obsidian';
+import { CrdtManager } from './crdt-manager';
+import { SyncHandler, TombstoneStore, QOLLAB_DIR } from './sync-handler';
+import {
+  SidecarAdapter,
+  listYjsInDir,
+  ensureSidecarFolder,
+  dirname,
+  statSidecar,
+} from './sidecar-io';
+import { SidecarWatcher } from './sidecar-watcher';
+import { CrdtSyncSettings, CrdtSyncSettingTab, DEFAULT_SETTINGS, generateClientId } from './settings';
+import { pruneTombstones } from './tombstones';
+import { PathQueue } from './path-queue';
+import { threeWayMerge } from './text-merge';
+
+// Uint8Array → ArrayBuffer für Obsidians adapter.writeBinary (das nur ArrayBuffer
+// akzeptiert). encodeStateFile liefert Uint8Array.
+function toArrayBuffer(data: ArrayBuffer | Uint8Array): ArrayBuffer {
+  return (data instanceof Uint8Array
+    ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
+    : data) as ArrayBuffer;
+}
+
+// Task 14: Schlüssel der gerätelokalen Geräte-ID. App.saveLocalStorage legt sie im
+// Electron-Profil ab — vault-spezifisch UND gerätelokal, also außerhalb jedes
+// Datei-Syncs. In data.json (= im Vault, wird mitsynchronisiert) hat sie nichts zu
+// suchen: zwei Geräte mit derselben ID schreiben denselben Sidecar-Pfad, und der
+// Self-Ignore des Watchers legt den automatischen Remote-Merge still lahm.
+const CLIENT_ID_KEY = 'qollab-client-id';
+// Das Sidecar-Dateiformat (`<note>.<clientId>.yjs`) verlangt exakt 8 Hex-Zeichen.
+// Alles andere aus dem Speicher wird verworfen statt in Dateinamen weitergereicht.
+const CLIENT_ID_RE = /^[0-9a-f]{8}$/;
+
+export default class CrdtSyncPlugin extends Plugin {
+  settings: CrdtSyncSettings;
+  // Geräte-ID dieser Installation (gerätelokal, siehe CLIENT_ID_KEY).
+  clientId: string;
+  // Alt-ID aus data.json, nur für die einmalige Migration nach localStorage.
+  private legacyClientId = '';
+  private crdtManager: CrdtManager;
+  private syncHandler: SyncHandler;
+  private sidecarWatcher: SidecarWatcher;
+  // Adapter-gestützte Sidecar-IO (.qollab/ ist für den Vault-Index unsichtbar).
+  private sidecarAdapter: SidecarAdapter;
+  // Gerätelokaler Tombstone-Store (Teil der Plugin-Data).
+  private tombstoneStore: TombstoneStore = {
+    has: (guid: string) => guid in this.settings.tombstones,
+    add: async (guid: string) => {
+      this.settings.tombstones[guid] = Date.now();
+      await this.saveSettings();
+    },
+  };
+  // Guard: verhindert Endlos-Loop wenn wir selbst eine .md-Datei schreiben
+  private writingPaths = new Set<string>();
+  // R2: Pro-Pfad-Dedup für korrupte-Datei-Notices (einmal pro Session).
+  private corruptNoticePaths = new Set<string>();
+  // Task 12: Zähler für aufeinanderfolgende IO-Lesefehler pro Sidecar-Pfad. Ein
+  // einzelner Fehler ist transient (EBUSY beim Sync-Write) und bleibt still; hält
+  // er an, ist die Note faktisch vom Sync abgeschnitten und der Nutzer muss es
+  // erfahren — sonst ist „synct nicht mehr" nicht von „alles in Ordnung"
+  // unterscheidbar.
+  private unreadableCounts = new Map<string, number>();
+  private static readonly UNREADABLE_NOTICE_AFTER = 3;
+  // Serialisiert ALLE Doc-Mutationen pro Note-Pfad (Remote-Merge, lokale
+  // Änderung, Startup-Sweep) — verhindert verschränkte Mutationen desselben
+  // Y.Doc und damit verlorene Updates.
+  private pathQueue = new PathQueue();
+  private unloaded = false;
+
+  async onload() {
+    await this.loadSettings();
+    this.clientId = await this.provisionClientId();
+
+    this.crdtManager = new CrdtManager();
+    const vault = this.app.vault;
+
+    // Sidecars laufen ausschließlich über den Adapter — der Vault-Index ist blind
+    // für den Dot-Ordner .qollab/. Die .md-Note dagegen ist indiziert und bleibt
+    // auf der Vault-API (getAbstractFileByPath/read/process).
+    const rawAdapter = vault.adapter;
+    this.sidecarAdapter = {
+      exists: (p) => rawAdapter.exists(p),
+      readBinary: (p) => rawAdapter.readBinary(p),
+      writeBinary: (p, data) => rawAdapter.writeBinary(p, toArrayBuffer(data)),
+      remove: (p) => rawAdapter.remove(p),
+      mkdir: (p) => rawAdapter.mkdir(p),
+      stat: (p) => rawAdapter.stat(p),
+      list: (p) => rawAdapter.list(p),
+      rename: (from, to) => rawAdapter.rename(from, to),
+      // Task 12: Auf Desktop (FileSystemAdapter) liest sidecar-io direkt am
+      // Dateisystem statt über die verzögerte Adapter-Sicht. Duck-Typing statt
+      // instanceof, damit Mobile/Test-Adapter ohne die Methode auskommen.
+      getBasePath:
+        typeof (rawAdapter as any).getBasePath === 'function'
+          ? () => (rawAdapter as any).getBasePath() as string
+          : undefined,
+    };
+    if (!this.sidecarAdapter.getBasePath) {
+      // Einmalig beim Bind, nicht pro Aufruf: auf Mobile ist der Fallback der
+      // legitime Normalfall. Benennt Obsidian getBasePath aber um, fiele Qollab
+      // still auf genau die verzögerte Sicht zurück, die Task 12 ausgelöst hat.
+      console.warn(
+        'Qollab: kein Direktzugriff auf die Vault-Wurzel (getBasePath fehlt) — ' +
+          'Sidecar-Lesezugriffe laufen über die vault.adapter-Sicht, die verzögert sein kann.'
+      );
+    }
+    const adapter = this.sidecarAdapter;
+
+    // Schlankes VaultLike: Vault-API für die indizierte .md, Adapter für Sidecars.
+    const vaultLike = {
+      getAbstractFileByPath: (p: string) => vault.getAbstractFileByPath(p),
+      read: (file: { path: string }) => vault.read(file as TFile),
+      adapter,
+      listYjsFiles: (notePath: string) => listYjsInDir(adapter, notePath),
+    };
+
+    this.syncHandler = new SyncHandler(
+      vaultLike as any,
+      this.crdtManager,
+      this.clientId,
+      this.tombstoneStore,
+      // R2: korrupte Sidecar-Datei → einmalige Notice pro Session.
+      (path: string) => {
+        if (!this.corruptNoticePaths.has(path)) {
+          this.corruptNoticePaths.add(path);
+          new Notice(`Qollab: beschädigte Sync-Datei übersprungen: ${path}`);
+        }
+      },
+      // Task 12: unlesbare (nicht korrupte) Sidecar → erst nach mehreren Versuchen
+      // melden, damit ein transienter EBUSY nicht sofort nervt.
+      (path: string) => this.noteUnreadable(path)
+    );
+
+    // Eigener Wächter statt Vault-Events: Obsidian feuert für .qollab nie. Poll-Scan
+    // per Intervall + Sofort-Trigger beim Öffnen einer Note.
+    this.sidecarWatcher = new SidecarWatcher(
+      adapter,
+      this.clientId,
+      async (notePath) => {
+        // Rückgabe durchreichen: false = Merge abgebrochen, der Watcher darf den
+        // Trigger dann nicht als verbraucht verbuchen (F-2a).
+        return this.pathQueue.run(notePath, () => this.onRemoteYjsUpdate(notePath));
+      },
+      // Task 14: Änderungen an der EIGENEN Sidecar prüfen (Kollisionserkennung).
+      (notePath, path, cur) => this.onOwnSidecarChanged(notePath, path, cur)
+    );
+    this.sidecarWatcher.start({
+      registerInterval: (fn, ms) => {
+        const id = window.setInterval(fn, ms);
+        this.registerInterval(id);
+        return () => window.clearInterval(id);
+      },
+      onFileOpen: (cb) => {
+        const ref = this.app.workspace.on('file-open', (file) =>
+          cb(file instanceof TFile ? file.path : null)
+        );
+        this.registerEvent(ref);
+        return () => this.app.workspace.offref(ref);
+      },
+    });
+
+    // Wenn Nutzer eine .md-Note bearbeitet → CRDT-State aktualisieren + speichern.
+    // Read UND applyLocalContent laufen über dieselbe Queue wie der Remote-Merge:
+    // so liest die Task die .md erst, nachdem ein evtl. laufender Merge sein
+    // Write-Back abgeschlossen hat, statt einen stale-Text hereinzuspielen.
+    this.registerEvent(
+      this.app.vault.on('modify', async (file) => {
+        if (!this.settings.enabled) return;
+        if (!(file instanceof TFile)) return;
+        if (!file.path.endsWith('.md')) return;
+        if (this.writingPaths.has(file.path)) return;
+
+        await this.pathQueue.run(file.path, async () => {
+          if (this.unloaded) return;
+          const content = await this.app.vault.read(file);
+          if (this.unloaded) return;
+          await this.syncHandler.applyLocalContent(file.path, content);
+        });
+      })
+    );
+
+    // Rename: .yjs-Dateien mitumbenennen. Gleiche Inkarnation → GUID bleibt,
+    // Map-Eintrag zieht auf den neuen Pfad um. Über die Queue auf oldPath, damit
+    // ein geparkter Task auf oldPath (loadAndMerge/applyLocalContent) nicht
+    // parallel zum renameNote den GUID-Map-Eintrag mutiert (Orphan-.yjs +
+    // GUID-Divergenz). Keine verschachtelten run-Aufrufe mit gleichem Key hier.
+    this.registerEvent(
+      this.app.vault.on('rename', async (file, oldPath) => {
+        if (!(file instanceof TFile)) return;
+        if (!file.path.endsWith('.md')) return;
+        await this.pathQueue.run(oldPath, async () => {
+          // Sidecars sind für den Index unsichtbar → über den Adapter listen und
+          // umziehen. Zielordner ggf. anlegen (Rename in einen anderen Ordner).
+          const sidecars = await listYjsInDir(this.sidecarAdapter, oldPath);
+          for (const sc of sidecars) {
+            const suffix = sc.slice(`${QOLLAB_DIR}/${oldPath}`.length);
+            const newPath = `${QOLLAB_DIR}/${file.path}${suffix}`;
+            await ensureSidecarFolder(this.sidecarAdapter, dirname(newPath));
+            await this.sidecarAdapter.rename(sc, newPath);
+          }
+          this.syncHandler.renameNote(oldPath, file.path);
+        });
+      })
+    );
+
+    // Delete: .yjs-Dateien mitlöschen. VOR dem Löschen die GUID dieser
+    // Inkarnation tombstonen — so kann eine stale fremde .yjs derselben GUID die
+    // gleichnamig neu angelegte Note später nicht wiederauferstehen lassen. Über
+    // die Queue, damit ein geparkter Task auf demselben Pfad nicht nach dem
+    // Delete resumed und via saveState die gelöschte .yjs wieder anlegt
+    // (Resurrection). Keine verschachtelten run-Aufrufe mit gleichem Key hier.
+    this.registerEvent(
+      this.app.vault.on('delete', async (file) => {
+        if (!(file instanceof TFile)) return;
+        if (!file.path.endsWith('.md')) return;
+        await this.pathQueue.run(file.path, async () => {
+          const guid = await this.syncHandler.currentGuid(file.path);
+          if (guid) await this.tombstoneStore.add(guid);
+          // Sidecars über den Adapter listen und entfernen (Index-blind).
+          const sidecars = await listYjsInDir(this.sidecarAdapter, file.path);
+          for (const sc of sidecars) await this.sidecarAdapter.remove(sc);
+          this.syncHandler.disposeNote(file.path);
+        });
+      })
+    );
+
+    this.addSettingTab(new CrdtSyncSettingTab(this.app, this));
+
+    // Externe FS-Edits (z.B. CLI/LLM bei geschlossener App) erzeugen kein
+    // 'modify'-Event. Beim Start nachziehen: fuer jede .md, deren mtime
+    // neuer ist als die zugehoerige .yjs (oder die noch keine .yjs hat),
+    // die lokale Aenderung via applyLocalContent in den CRDT bringen.
+    // applyLocalContent bootstrappt den Doc aus dem persistierten eigenen State
+    // (nicht aus dem Text) und diff-merged nur die lokale Aenderung ein. Hat
+    // dieses Geraet noch keinen eigenen State, werden fremde Sibling-.yjs-Files
+    // als Basis adoptiert (Sibling-Adoption). KEIN loadAndMerge — ein explizites
+    // Hereinholen fremder .yjs-Staende findet im Sweep nicht statt.
+    //
+    // Reihenfolge zwingend: ERST der Sweep (aktualisiert die lokalen Snapshots
+    // aller stale .md via applyLocalContent), DANN der Initial-Scan des
+    // Watchers (merged alle beim Start vorhandenen fremden Sidecars). Andernfalls
+    // würde man mergen, bevor die lokalen Snapshots aktuell sind — der Initial-
+    // Scan schließt die Lücke, dass bei geschlossener App angekommene Remote-
+    // Stände sonst nie gemergt wurden.
+    this.app.workspace.onLayoutReady(() => {
+      void (async () => {
+        await this.snapshotStaleMarkdownFiles();
+        if (this.unloaded) return;
+        await this.sidecarWatcher.poll();
+      })();
+    });
+  }
+
+  // Zählt Lesefehler pro Sidecar-Pfad und meldet einmalig, sobald die Datei
+  // dauerhaft unlesbar wirkt.
+  //
+  // R2-3: Die Dedup-Menge `corruptNoticePaths` wird sich mit der Korrupt-Notice
+  // BEWUSST geteilt — ein Pfad, der bereits als „beschädigt" gemeldet wurde, meldet
+  // sich nie zusätzlich als „nicht lesbar" und umgekehrt. Für den Nutzer sind beides
+  // dieselbe Aussage („diese Datei blockiert den Sync"); zwei Meldungen zum selben
+  // Pfad wären Lärm. Also: höchstens eine Meldung pro Pfad und Session.
+  private noteUnreadable(path: string): void {
+    const count = (this.unreadableCounts.get(path) ?? 0) + 1;
+    this.unreadableCounts.set(path, count);
+    if (count < CrdtSyncPlugin.UNREADABLE_NOTICE_AFTER) return;
+    if (this.corruptNoticePaths.has(path)) return;
+    this.corruptNoticePaths.add(path);
+    new Notice(`Qollab: Sync-Datei wiederholt nicht lesbar — Note synct nicht: ${path}`);
+  }
+
+  private async snapshotStaleMarkdownFiles(): Promise<void> {
+    if (!this.settings.enabled) return;
+
+    const files = this.app.vault.getMarkdownFiles();
+    for (const file of files) {
+      if (this.unloaded) return;
+
+      // Sidecar-mtime über den Adapter (Index-blind für .qollab/). Ist der eigene
+      // Sidecar mindestens so neu wie die .md, ist der Snapshot aktuell.
+      const statePath = this.syncHandler.stateFilePath(file.path);
+      // Task 12 (m-3): frischer stat — eine stale Adapter-mtime würde die .md
+      // fälschlich als „Snapshot aktuell" überspringen.
+      const stat = await statSidecar(this.sidecarAdapter, statePath);
+      if (stat && stat.mtime >= file.stat.mtime) {
+        continue;
+      }
+
+      // Task 13/B: Ohne eigene Sidecar fehlt die Vergleichsbasis — „lokal
+      // geändert" ist für diese Note nicht feststellbar, jede unveränderte Note
+      // sähe wie ein Offline-Edit aus. Prägte der Sweep hier eine frische GUID,
+      // bekäme beim Zwei-Geräte-Rollout JEDE Seite ihre eigene Inkarnation
+      // derselben Note (Split-Brain); der Tie-Break-Verlierer verwirft danach
+      // seine Historie (Realtest S05 v1: 10/10 divergent). Deshalb: ohne eigene
+      // Sidecar nur dann snapshotten, wenn eine adoptierbare fremde Sidecar
+      // vorliegt — dann übernimmt ensureDoc deren GUID statt eine neue zu prägen.
+      // Sonst entsteht die GUID beim ersten echten Edit (modify-Handler), also
+      // genau einmal und auf dem Gerät, das wirklich editiert hat.
+      //
+      // Offline-Edits bleiben erfasst: sie betreffen Notes, die dieses Gerät
+      // schon kennt (eigene Sidecar vorhanden) — dort greift unverändert der
+      // mtime-Vergleich oben.
+      //
+      // Review I-3: Die Frage „gibt es etwas zu adoptieren?" beantwortet der
+      // SyncHandler auf derselben Basis wie ensureDoc (dekodierbare, nicht
+      // getombstete GUID) — reine Datei-Existenz genügt nicht: eine korrupte oder
+      // halb kopierte Fremd-Sidecar trägt keine GUID, ensureDoc prägte dann doch
+      // eine frische Inkarnation.
+      if (!stat && !(await this.syncHandler.hasAdoptableGuid(file.path))) {
+        continue;
+      }
+
+      // Pro-Datei-Arbeit über dieselbe Queue wie modify/Remote-Merge — der Sweep
+      // darf nicht parallel zu einem laufenden Merge denselben Doc mutieren.
+      try {
+        await this.pathQueue.run(file.path, async () => {
+          if (this.unloaded) return;
+          const content = await this.app.vault.read(file);
+          if (this.unloaded) return;
+          await this.syncHandler.applyLocalContent(file.path, content);
+        });
+      } catch {
+        // Einzelne Datei darf den Sweep nicht abbrechen
+      }
+    }
+  }
+
+  // Rückgabe: false = der Merge lief NICHT durch (abgebrochen/übersprungen), der
+  // Watcher darf den Trigger nicht als verbraucht verbuchen (F-2a). true = erledigt.
+  private async onRemoteYjsUpdate(notePath: string): Promise<boolean> {
+    if (this.unloaded) return false;
+    if (!this.settings.enabled) return false;
+
+    // Fix A: den .md-Inhalt VOR dem Merge festhalten. Er ist die Basis, um beim
+    // Write-Back einen lokalen User-Edit zu erkennen, der zwischen Merge-
+    // Berechnung und Write-Back in der Datei gelandet ist. Existiert die Datei
+    // (noch) nicht, gibt es keine Basis → Normalpfad (blind schreiben) wie bisher.
+    const preFile = this.app.vault.getAbstractFileByPath(notePath);
+    let preMerge: string | null = null;
+    if (preFile instanceof TFile) {
+      preMerge = await this.app.vault.read(preFile);
+      if (this.unloaded) return false;
+    }
+
+    // Guard 1: ohne .md gibt es nichts zu mergen. Ein loadAndMerge-Aufruf ohne
+    // existierende .md würde ensureDoc und saveState auslösen — das persistiert
+    // einen leeren eigenen Sidecar mit frischer GUID. Kehrt die .md später via
+    // Sync zurück (Sync-Konfliktauflösung Delete-vs-Edit behält die Datei),
+    // überschreibt dieser leere Stand beim nächsten Write-Back die Note mit ''.
+    // Kommt die .md an, greift der reguläre Adopt-Zweig (ensureDoc) mit
+    // .md-Injektion — kein eigener Aufruf hier nötig.
+    const noteFile = this.app.vault.getAbstractFileByPath(notePath);
+    // Verwaiste Sidecar ohne .md: bewusst nichts zu tun, gilt als erledigt —
+    // sonst triggerte sie bei jedem Poll erneut.
+    if (!noteFile) return true;
+
+    // Fix-Runde (Review F-2b): Hat ein früherer applyLocalContent wegen eines
+    // IO-Fehlers abgebrochen, lebt der lokale Edit NUR in der .md — loadAndMerge
+    // injiziert den .md-Text im own-Branch bewusst nicht. Ohne Nachholen liefe der
+    // Write-Back unten über `data === preMerge` und überschriebe ihn (Verlust).
+    // Deshalb den Lauf hier nachholen, bevor der gemergte Stand berechnet wird.
+    // Nachgeholt wird der GEMERKTE Text, nicht der aktuelle .md-Inhalt: nach einem
+    // Abbruch im pending-Zweig (R2-1) ist der Doc dem .md bereits um den Remote-Stand
+    // voraus, und ein Diff „.md gegen Doc" würde diesen zurückrollen.
+    const uncaptured = this.syncHandler.pendingLocalContent(notePath);
+    if (uncaptured !== undefined) {
+      await this.syncHandler.applyLocalContent(notePath, uncaptured);
+      if (this.unloaded) return false;
+    }
+
+    const merged = await this.syncHandler.loadAndMerge(notePath);
+    if (this.unloaded) return false;
+    // null = nichts zu mergen ODER Merge wegen IO-Fehler abgebrochen. In beiden
+    // Fällen kein Write-Back; der Watcher hat lastSeen nicht fortgeschrieben.
+    if (merged === null) return false;
+
+    // Der Nachhol-Versuch ist erneut gescheitert: der lokale Edit ist weiterhin
+    // nicht im CRDT erfasst, `merged` kennt ihn nicht. Ein Write-Back würde ihn
+    // jetzt löschen — lieber gar nicht schreiben und beim nächsten Trigger erneut
+    // versuchen.
+    if (this.syncHandler.hasAbortedRead(notePath)) return false;
+
+    // Guard 2: ein leerer, historienloser Merge-Stand darf eine vorhandene .md
+    // nie überschreiben. Historienlos = Y.Doc hat keinerlei Ops (State-Vector leer,
+    // store.clients.size === 0) — das passiert bei einem Frisch-Doc ohne Edits.
+    // Abgrenzung: eine echte Leerung (User löscht allen Text) hinterlässt
+    // Delete-Ops → hasOps() gibt true → dieser Guard greift NICHT.
+    if (merged === '' && !this.crdtManager.hasOps(notePath)) return true;
+
+    const file = this.app.vault.getAbstractFileByPath(notePath);
+    if (!(file instanceof TFile)) return true;
+
+    // Atomarer Read-Modify-Write in der process-Funktion. Der writingPaths-Guard
+    // umschließt BEIDE process-Aufrufe, da jeder ein modify-Event feuert.
+    this.writingPaths.add(notePath);
+    let changed = false;
+    try {
+      // Erster Versuch, Drei-Fall-Logik:
+      //   data === merged        → schon aktuell, kein Write, keine Notice.
+      //   data === preMerge      → Normalfall, gemergten Stand schreiben.
+      //   sonst                  → Edit im Merge-Fenster: NICHT überschreiben,
+      //                            data als `pending` nach außen reichen.
+      // Ohne preMerge-Basis (Datei existierte vor dem Merge nicht) gibt es keinen
+      // Edit-Guard → wie bisher den gemergten Stand schreiben.
+      let pending: string | null = null;
+      await this.app.vault.process(file, (data) => {
+        if (data === merged) return data;
+        if (preMerge === null || data === preMerge) {
+          changed = true;
+          return merged;
+        }
+        pending = data;
+        return data;
+      });
+
+      // Fix A: Ein Edit ist im Merge-Fenster gelandet. Ihn als 3-Wege-Merge
+      // (Basis = preMerge, lokal = pending) auf den gemergten Remote-Stand
+      // anwenden und via applyLocalContent ins CRDT bringen — so überleben beide
+      // Änderungen. Danach EIN zweiter Write-Back-Versuch mit derselben Logik
+      // (Basis ist jetzt `pending`). Weicht `data` erneut ab: aufgeben ohne Write,
+      // der nächste modify-Event-Task konvergiert. Kein Loop, max. eine Wiederholung.
+      if (pending !== null) {
+        const threeWay = threeWayMerge(preMerge ?? '', pending, merged);
+        await this.syncHandler.applyLocalContent(notePath, threeWay);
+        // R2-1: Zweiter Write-Back-Pfad, gleiche Falle wie oben. Bricht das
+        // applyLocalContent ab, ist `merged2` der Remote-Stand OHNE den
+        // pending-Edit und `data === pending` würde ihn überschreiben. Die beiden
+        // Bedingungen sind positiv korreliert: dieser Zweig existiert für
+        // „Sync-Overwrite + Editor-Save im selben Fenster" — genau die Lage, in der
+        // ein Sync-Tool Handles hält und EBUSY erzeugt. Kein Write, Trigger bleibt
+        // unverbraucht; der nächste Lauf konvergiert.
+        if (this.syncHandler.hasAbortedRead(notePath)) return false;
+        if (!this.unloaded) {
+          const merged2 = this.crdtManager.getContent(notePath);
+          await this.app.vault.process(file, (data) => {
+            if (data === merged2) return data;
+            if (data === pending) {
+              changed = true;
+              return merged2;
+            }
+            return data;
+          });
+        }
+      }
+    } finally {
+      this.writingPaths.delete(notePath);
+    }
+
+    if (changed && this.settings.statusNotice) {
+      new Notice(`CRDT Sync: ${file.name} automatisch gemergt.`);
+    }
+    return true;
+  }
+
+  onunload() {
+    this.unloaded = true;
+    this.sidecarWatcher.stop();
+    this.crdtManager.disposeAll();
+  }
+
+  // Task 14, Fix B: Geräte-ID beschaffen.
+  //   1. localStorage hat eine gültige ID → nutzen.
+  //   2. sonst data.json-Alt-ID → einmalig übernehmen (und aus data.json entfernen).
+  //   3. sonst frisch generieren.
+  // Der Migrationsfall 2 kann auf BEIDEN Geräten dieselbe ID ergeben (die geklonte
+  // data.json war ja überall gleich) — deshalb ist die Kollisionserkennung in
+  // onOwnSidecarChanged Pflichtteil dieses Fixes und nicht Kür.
+  private async provisionClientId(): Promise<string> {
+    const stored = this.app.loadLocalStorage(CLIENT_ID_KEY);
+    let id: string | null =
+      typeof stored === 'string' && CLIENT_ID_RE.test(stored) ? stored : null;
+    if (id === null) {
+      id = CLIENT_ID_RE.test(this.legacyClientId) ? this.legacyClientId : generateClientId();
+      this.app.saveLocalStorage(CLIENT_ID_KEY, id);
+    }
+    if (this.legacyClientId) {
+      // loadSettings hat den Alt-Schlüssel bereits aus dem Settings-Objekt
+      // getrennt; dieser Save schreibt data.json endgültig ohne clientId.
+      this.legacyClientId = '';
+      await this.saveSettings();
+    }
+    return id;
+  }
+
+  // Task 14, Fix C/D: neue Geräte-ID vergeben. Gutartig — die alte Sidecar-Datei
+  // bleibt liegen und ist ab jetzt eine Fremd-Sidecar derselben GUID, die ganz
+  // normal gemergt wird.
+  private reprovisionClientId(): void {
+    this.clientId = generateClientId();
+    this.app.saveLocalStorage(CLIENT_ID_KEY, this.clientId);
+    this.syncHandler.setClientId(this.clientId);
+    this.sidecarWatcher.setClientId(this.clientId);
+  }
+
+  // Task 14, Fix C: Der Watcher hat eine Änderung an unserem eigenen Sidecar-Pfad
+  // gesehen. War sie nicht von uns, trägt ein zweites Gerät dieselbe clientId
+  // (Alt-Installation mit mitgesyncter data.json) — sonst bliebe der Peer für immer
+  // hinter dem Self-Ignore unsichtbar. Dann: neu provisionieren, die Kollision EINMAL
+  // melden und die Note regulär mergen (der alte Pfad ist jetzt fremd). Die alte
+  // Datei wird NICHT gelöscht — sie gehört ab sofort dem anderen Gerät.
+  //
+  // Kein Once-Guard wie bei corruptNoticePaths (Review M-1): Pro Vorfall kann hier
+  // ohnehin nur eine Meldung entstehen — nach dem Reprovisionieren matcht der alte
+  // Pfad den Self-Check nicht mehr, und die restlichen Pfade des Durchlaufs tragen
+  // bereits die neue ID. Ein sitzungsweiter Guard würde nur eine SPÄTERE, echte
+  // zweite Kollision verschlucken.
+  private async onOwnSidecarChanged(
+    notePath: string,
+    path: string,
+    cur: { mtime: number; size: number }
+  ): Promise<boolean> {
+    if (this.unloaded) return false;
+    if (!(await this.syncHandler.isForeignSidecarWrite(path, cur))) return false;
+
+    this.reprovisionClientId();
+    new Notice('Qollab: Geräte-ID-Kollision erkannt, neu provisioniert.');
+    await this.pathQueue.run(notePath, () => this.onRemoteYjsUpdate(notePath));
+    return true;
+  }
+
+  async loadSettings() {
+    // Task 14: Eine Alt-Installation trägt die clientId noch in data.json. Sie wird
+    // hier vom Settings-Objekt getrennt (und damit beim nächsten saveData aus
+    // data.json entfernt); provisionClientId entscheidet über die Migration.
+    const raw = ((await this.loadData()) ?? {}) as Record<string, unknown>;
+    this.legacyClientId = typeof raw.clientId === 'string' ? raw.clientId : '';
+    delete raw.clientId;
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, raw);
+    // Tombstones > 90 Tage beim Laden entfernen (hält die Data-Datei klein).
+    this.settings.tombstones = pruneTombstones(this.settings.tombstones ?? {});
+  }
+
+  async saveSettings() {
+    await this.saveData(this.settings);
+  }
+}
