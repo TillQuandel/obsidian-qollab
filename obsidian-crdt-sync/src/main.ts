@@ -11,7 +11,7 @@ import {
   statSidecar,
   sidecarExists,
   readSidecar,
-  hasAnySidecarFile,
+  listAllSidecars,
 } from './sidecar-io';
 import { SidecarWatcher } from './sidecar-watcher';
 import { CrdtSyncSettings, CrdtSyncSettingTab, DEFAULT_SETTINGS, generateClientId } from './settings';
@@ -253,11 +253,21 @@ export default class CrdtSyncPlugin extends Plugin {
     // Pfad (Diff-Basis und Schreib-Guard lägen dann auf zwei verschiedenen
     // Pfaden). Der rename-Handler zieht Sidecars und Zustand ohnehin um.
     //
-    // Preis des Abbruchs, bewusst bezahlt: Ein in `content` schon gelesener
-    // Nutzer-Edit ist danach nur in der `.md`. Verloren ist er nicht — der
-    // nächste `modify` erfasst ihn unter dem neuen Pfad, spätestens der
-    // Startup-Sweep (`.md` neuer als eigener Sidecar). Das ist deutlich billiger
-    // als eine gespaltene Inkarnation, die den Text stumm verdoppelt.
+    // Preis des Abbruchs: Ein in `content` schon gelesener Nutzer-Edit ist danach
+    // nur in der `.md`, nicht im Doc. Der erste Entwurf hielt ihn deshalb für
+    // sicher — „der nächste `modify` erfasst ihn unter dem neuen Pfad,
+    // spätestens der Startup-Sweep". Das gilt aber nur, solange kein FREMDER
+    // Trigger dazwischenkommt (Szenariosuche Welle 2, Fund 1): Trifft vorher eine
+    // Fremd-Sidecar ein, läuft `onRemoteYjsUpdate` über `data === preMerge` in
+    // den Normalzweig und schreibt den Doc-Stand zurück, der den Edit nicht
+    // kennt. Kein Delete-Op, keine Meldung, kein Weg zurück.
+    //
+    // Für exakt diesen Zustand — gelesen, nicht erfasst — gibt es seit Task
+    // 12/F-2b `abortedReads`. Steht die Markierung, holt `onRemoteYjsUpdate` den
+    // Lauf nach und schreibt nicht, solange er scheitert. Der Abbruch bleibt also,
+    // meldet den Text aber über denselben Rückkanal wie der IO-Abbruch (siehe
+    // `noteUncapturedLocalContent`). Der Preis schrumpft damit auf das, was er
+    // sein sollte: ein verzögerter, kein verlorener Edit.
     this.registerEvent(
       this.app.vault.on('modify', async (file) => {
         if (!this.settings.enabled) return;
@@ -269,8 +279,15 @@ export default class CrdtSyncPlugin extends Plugin {
         await this.pathQueue.run(notePath, async () => {
           if (this.unloaded) return;
           const content = await this.app.vault.read(file);
-          if (this.unloaded || file.path !== notePath) return;
+          if (this.unloaded) return;
+          if (file.path !== notePath) {
+            this.syncHandler.noteUncapturedLocalContent(notePath, content);
+            return;
+          }
           const merged = await this.syncHandler.applyLocalContent(notePath, content);
+          // Hier NICHT markieren: `applyLocalContent` ist durchgelaufen, der Edit
+          // steht im Doc und in der eigenen Sidecar. Offen bleibt allein der
+          // Write-Back — der bekannte, von Task 16 abgedeckte Doc-Vorlauf.
           if (this.unloaded || file.path !== notePath) return;
           await this.writeBackMerged(file, content, merged);
         });
@@ -899,11 +916,42 @@ export default class CrdtSyncPlugin extends Plugin {
   // von der Platte fern. Für die Nutzerin ist „synct nicht mehr" von „alles in
   // Ordnung" nicht unterscheidbar.
   //
-  // Die Feststellung ist EXAKT, keine Heuristik: Merker gefüllt heißt, dieses
-  // Gerät hat schon einmal vollständig gesweept; kein einziges `.qollab`-File
-  // heißt, davon ist nichts übrig. Eine Neuinstallation fällt nicht darunter —
-  // der Merker liegt gerätelokal (siehe SWEEP_CURSOR_KEY) und ist dort ebenfalls
-  // leer, weshalb die teure Prüfung dann auch gar nicht erst läuft.
+  // Szenariosuche Welle 2, Fund 3: Die Feststellung wird PRO NOTIZ getroffen, so
+  // genau wie der Merker geführt wird. Der erste Entwurf fragte den ganzen Baum
+  // („gibt es überhaupt noch eine Datei?") und nannte das exakt — es war
+  // all-or-nothing, während der Merker pro Notiz gilt. Eine einzige überlebende
+  // Datei irgendwo im Baum hielt jeden anderen Eintrag warm, und jede betroffene
+  // Notiz wurde weiter ohne einen einzigen Dateizugriff übersprungen, stumm und
+  // dauerhaft. Zwei alltägliche Auslöser: der Teilverlust eines Unterordners, und
+  // der Vollverlust bei LAUFENDER App — Obsidian feuert für Dot-Ordner keine
+  // Events, und der nächste `saveState` legt `.qollab` mit genau EINER Datei neu
+  // an. Hier reproduziert in `wechselwirkung-2026-08-03.test.ts` (A1, A2); eine
+  // zweite, unabhängige Linse hat denselben Befund am echten Dateisystem gemessen
+  // (1638 Notizen: 0 Meldungen, 0 von 25 Notizen wieder im Sync über mehrere
+  // Neustarts — fremde Messung, hier nicht nachgestellt).
+  //
+  // Die Feststellung pro Notiz ist EXAKT, keine Heuristik: Ein Merker-Eintrag
+  // heißt „der eigene Snapshot dieser Notiz war aktuell"; seine einzige
+  // Voraussetzung ist die eigene Sidecar. Fehlt sie, ist die Aussage falsch und
+  // der Eintrag fällt weg — die Notiz wird beim laufenden Sweep wieder voll
+  // angesehen. Eine Neuinstallation fällt nicht darunter: der Merker liegt
+  // gerätelokal (siehe SWEEP_CURSOR_KEY) und ist dort leer, weshalb die Prüfung
+  // gar nicht erst läuft.
+  //
+  // KOSTEN, gemessen statt geschätzt — echtes Dateisystem, 1638 Notizen in 121
+  // Ordnern, 3276 Sidecars (zwei Geräte), Median aus drei Läufen:
+  //
+  //   alt   Abbruch beim ersten Fund (1 readdir)          0,8 –   1,3 ms
+  //   neu   ein rekursives Listing + Set                   87 –  123 ms
+  //   ALT.  ein `statSidecar` je Merker-Eintrag           396 –  498 ms
+  //   Bezug was der Watcher-Poll ALLE 30 s ohnehin tut    851 –  965 ms
+  //         (dasselbe Listing plus ein stat je Datei)
+  //
+  // Der Aufpreis von ~95 ms fällt EINMAL pro Start an, in einem Plugin, das
+  // dieselbe Baumwanderung alle 30 s macht und dabei rund das Zehnfache
+  // ausgibt. Die naheliegende Alternative — pro Merker-Eintrag ein `stat` —
+  // kostet das Vierfache und stünde in keinem Verhältnis zu dem, was der Merker
+  // einspart (Task 19/B: 301 → 7 ms).
   //
   // GEHEILT wird damit: die Blindheit und das Schweigen. NICHT geheilt wird der
   // Verlust selbst — die Historie ist weg und lässt sich nicht rekonstruieren.
@@ -917,25 +965,81 @@ export default class CrdtSyncPlugin extends Plugin {
   // also genau ein prägendes Gerät) oder über die Adoption einer wieder
   // eingetroffenen Fremd-Sidecar — beides bestehende Pfade, die der verworfene
   // Merker lediglich wieder erreichbar macht.
-  private async reconcileSweepCursor(previous: SweepCursor): Promise<SweepCursor> {
+  //
+  // Szenariosuche Welle 2, Fund 2: Diese Methode wirft NICHT. Sie ist der erste
+  // IO-Schritt des Sweeps und liegt vor und außerhalb des Pro-Datei-`try`, um den
+  // Task 17/R-2 ausdrücklich die ganze Pro-Datei-Arbeit gelegt hat („eine
+  // einzelne Datei bricht den Sweep nicht ab"). Ungefangen riss ein transienter
+  // Lesefehler auf `.qollab` — die Fehlerklasse, um die Task 12 kreist: das
+  // Sync-Tool hält ein Handle — den GANZEN Sweep ab, bevor eine einzige Notiz
+  // angesehen war; `onLayoutReady` startete danach Watcher und Poll, die auf
+  // nicht aktualisierten Snapshots mergen (gemessen: 0 von 3 Offline-Edits
+  // überlebten). Im Fehlerfall bleibt `previous` deshalb UNVERÄNDERT stehen:
+  // Verwerfen wäre eine Aussage über einen Zustand, den wir gerade nicht lesen
+  // konnten, und kostete bei jedem transienten Fehler einen vollen Sweep. Der
+  // Merker ist dann höchstens so falsch wie vor diesem Fix, und jede geänderte
+  // `.md` wird weiterhin angesehen.
+  private async reconcileSweepCursor(
+    previous: SweepCursor,
+    lebendeNotes: Set<string>
+  ): Promise<SweepCursor> {
     if (Object.keys(previous).length === 0) return previous;
-    if (await hasAnySidecarFile(this.sidecarAdapter)) return previous;
-    // Sofort persistieren statt auf das Sweep-Ende zu warten: Der Merker ist
-    // nachweislich falsch, und der Sweep kann vorher abbrechen (unloaded, Wurf).
-    this.saveSweepCursor({});
+
+    let vorhanden: Set<string>;
+    try {
+      // EIN rekursives Listing, dieselbe Quelle wie der Watcher-Poll. Bewusst
+      // kein bestätigendes `stat` je Kandidat: auf dem Desktop-Pfad liest
+      // `listAllSidecars` mit `fs.readdir` direkt am Dateisystem, also genauso
+      // cache-frei wie `statSidecar` — und der Poll trifft seine
+      // Existenz-Entscheidungen seit jeher auf genau dieser Liste. Ein zweiter
+      // Zugriff je Kandidat brächte keine frischere Antwort, nur Kosten.
+      vorhanden = new Set(await listAllSidecars(this.sidecarAdapter));
+    } catch (err) {
+      console.warn(
+        `Qollab: ${QOLLAB_DIR} war beim Start nicht lesbar — der Fortschrittsmerker bleibt ` +
+          'unverändert stehen und der Sweep läuft normal weiter.',
+        err
+      );
+      return previous;
+    }
+
+    const behalten: SweepCursor = {};
+    let verloren = 0;
+    for (const [notePath, gesehen] of Object.entries(previous)) {
+      if (vorhanden.has(this.syncHandler.stateFilePath(notePath))) {
+        behalten[notePath] = gesehen;
+        continue;
+      }
+      // Gezählt — und gemeldet — wird nur, was den Nutzer betrifft: eine Notiz,
+      // die es noch gibt und die ihre Historie verloren hat. Merker-Einträge
+      // gelöschter oder umbenannter Notizen fallen hier ebenfalls weg (sie täten
+      // es am Sweep-Ende ohnehin, weil `next` neu aufgebaut wird), sind aber kein
+      // Verlust — sie im Text mitzuzählen wäre ein Fehlalarm, und ein Fehlalarm
+      // macht eine spätere echte Verlustmeldung stumm.
+      if (lebendeNotes.has(notePath)) verloren++;
+    }
+
+    if (verloren === 0) return behalten;
+
+    // Sofort persistieren statt auf das Sweep-Ende zu warten: Die verworfenen
+    // Einträge sind nachweislich falsch, und der Sweep kann vorher abbrechen
+    // (unloaded, Wurf).
+    this.saveSweepCursor(behalten);
     // Notices verschwinden nach Sekunden; der Verlust ist dauerhaft.
     console.warn(
-      `Qollab: ${QOLLAB_DIR} ist leer oder fehlt, obwohl dieses Gerät bereits Sync-Dateien ` +
-        'angelegt hatte. Die gemeinsame Änderungshistorie ist verloren; der Fortschrittsmerker ' +
-        'wird verworfen und der Sweep sieht wieder jede Notiz an.'
+      `Qollab: Für ${verloren} Notiz(en) fehlt die eigene Sync-Datei in ${QOLLAB_DIR}, obwohl ` +
+        'dieses Gerät sie bereits angelegt hatte. Die gemeinsame Änderungshistorie dieser ' +
+        'Notizen ist verloren; ihr Fortschrittsmerker wird verworfen und der Sweep sieht sie ' +
+        'wieder an.'
     );
     new Notice(
-      `Qollab: Der Ordner ${QOLLAB_DIR} fehlt oder ist leer — die Änderungshistorie dieses ` +
-        'Vaults ist verloren (auf allen Geräten, sobald die Löschung mitsynchronisiert wurde). ' +
-        'Der Text der Notizen ist unberührt. Jede Notiz kommt erst wieder in den Sync, wenn sie ' +
-        `bearbeitet wird. Bitte ${QOLLAB_DIR} nicht löschen — dort liegt die Historie.`
+      `Qollab: ${verloren === 1 ? 'Einer Notiz' : `${verloren} Notizen`} fehlt die Sync-Datei ` +
+        `in ${QOLLAB_DIR} — ihre gemeinsame Änderungshistorie ist verloren (auf allen Geräten, ` +
+        'sobald die Löschung mitsynchronisiert wurde). Der Text der Notizen ist unberührt. Sie ' +
+        'kommen erst wieder in den Sync, wenn sie bearbeitet werden oder die Sync-Datei eines ' +
+        `anderen Geräts eintrifft. Bitte ${QOLLAB_DIR} nicht löschen — dort liegt die Historie.`
     );
-    return {};
+    return behalten;
   }
 
   private async snapshotStaleMarkdownFiles(): Promise<void> {
@@ -950,7 +1054,14 @@ export default class CrdtSyncPlugin extends Plugin {
     // letzten vollständigen Sweeps dieses Geräts, `next` wird währenddessen neu
     // aufgebaut — dadurch fallen gelöschte und umbenannte Notes von selbst
     // heraus, ohne eigenen Aufräumpfad.
-    const previous = await this.reconcileSweepCursor(this.loadSweepCursor());
+    //
+    // Die Pfade der lebenden Notizen gehen mit: `reconcileSweepCursor` meldet
+    // ausschließlich Notizen, die es noch gibt (siehe dort). Der Index ist schon
+    // gelesen, das kostet nichts.
+    const previous = await this.reconcileSweepCursor(
+      this.loadSweepCursor(),
+      new Set(files.map((f) => f.path))
+    );
     const next: SweepCursor = {};
     for (const file of files) {
       // Szenariosuche 2026-08-02: Pfad EINMAL festhalten, wie im modify-Handler.
@@ -1120,12 +1231,19 @@ export default class CrdtSyncPlugin extends Plugin {
           // innerhalb der Warteschlange — der Wartezeit selbst, dem `vault.read`
           // und dem `applyLocalContent`: der Schlüssel ist `notePath`, also muss
           // auch der Arbeitspfad `notePath` sein. Dieselbe Regel wie im
-          // modify-Handler, und derselbe bewusst bezahlte Preis: ein in `content`
-          // schon gelesener Edit ist danach nur in der `.md` und wird vom nächsten
-          // Trigger unter dem neuen Pfad erfasst.
+          // modify-Handler — und derselbe Rückkanal: Ein in `content` schon
+          // gelesener Edit ist nach dem Abbruch nur in der `.md`, und ein
+          // Fremd-Trigger vor dem nächsten Erfassungslauf überschriebe ihn.
+          // Hier wiegt das schwerer als im modify-Handler, weil das Fenster nicht
+          // 30 s breit ist, sondern null: `onLayoutReady` ruft direkt hinter dem
+          // Sweep `startSidecarWatcher()` und `poll()`.
           if (this.unloaded || file.path !== notePath) return;
           const content = await this.app.vault.read(file);
-          if (this.unloaded || file.path !== notePath) return;
+          if (this.unloaded) return;
+          if (file.path !== notePath) {
+            this.syncHandler.noteUncapturedLocalContent(notePath, content);
+            return;
+          }
           const merged = await this.syncHandler.applyLocalContent(notePath, content);
           if (this.unloaded || file.path !== notePath) return;
           await this.writeBackMerged(file, content, merged);

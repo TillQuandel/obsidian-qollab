@@ -248,6 +248,27 @@ export class SyncHandler {
     return this.abortedReads.get(notePath);
   }
 
+  // Szenariosuche Welle 2, Fund 1: Derselbe Rückkanal von AUSSEN gemeldet.
+  //
+  // Der Pfad-Abbruch in main.ts (modify-Handler und Sweep, `file.path !==
+  // notePath`) stellt exakt den Zustand her, für den `abortedReads` gebaut wurde:
+  // Der `.md`-Text ist gelesen, aber weder im Doc noch in der eigenen Sidecar —
+  // er lebt allein in der Datei. Der Unterschied zum IO-Abbruch oben ist nur, WER
+  // abgebrochen hat; die Folge ist dieselbe, und ohne Markierung schreibt
+  // `onRemoteYjsUpdate` beim nächsten Fremd-Trigger über `data === preMerge` den
+  // Doc-Stand zurück, der den Edit nicht kennt (kein Delete-Op, keine Meldung,
+  // kein Weg zurück).
+  //
+  // Gemeldet wird unter `notePath`, dem Schlüssel der Warteschlange — nicht unter
+  // dem inzwischen gültigen `file.path`. Der Abbruch existiert gerade deshalb,
+  // weil der neue Pfad hier nicht gedeckt ist; ihn als Schlüssel zu benutzen
+  // wiederholte den Fehler, den er verhindert. Auf den neuen Pfad hebt der
+  // rename-Handler die Markierung (siehe `renameNote`) zusammen mit GUID, Doc und
+  // Sidecars — derselbe Weg, den der gesamte übrige Zustand nimmt.
+  noteUncapturedLocalContent(notePath: string, content: string): void {
+    this.abortedReads.set(notePath, content);
+  }
+
   // Task 14: Signatur unserer eigenen Sidecars + Pfade, die wir gerade schreiben
   // (writingPaths-Analogon für Sidecars). Beides zusammen hält das False-Positive-
   // Fenster der Kollisionserkennung klein.

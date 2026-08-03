@@ -1,8 +1,15 @@
 // Szenariosuche Welle 2 — Wechselwirkung der Fixes vom 31.07.–02.08.
 //
-// Reine REPRODUKTIONEN. Keine Änderung unter `src/`. Jeder Block hat eine
-// Gegenprobe, die das Messinstrument gegen einen bekannten Zustand validiert:
-// ohne sie beweist das Schweigen einer Messung nichts.
+// Ursprünglich reine REPRODUKTIONEN (Commit `5c65fa2`), jetzt die Absicherung der
+// drei Fixes. Jeder Block hat eine Gegenprobe, die das Messinstrument gegen einen
+// bekannten Zustand validiert: ohne sie beweist das Schweigen einer Messung
+// nichts. Die Gegenproben sind unverändert geblieben — sie sind der Nachweis,
+// dass die Fixes nicht durch Zurückdrehen der Fixes vom 02.08. entstanden sind.
+//
+// Vier Tests haben beim Fix die RICHTUNG gewechselt (A1, A2, C1, B1): Sie
+// behaupteten den Schaden, den die drei roten Tests (B2, B5, C3) als Verlust
+// nachwiesen. Ihr Szenario ist unangetastet, ihre Erwartung ist jetzt der
+// geheilte Zustand. Was vor dem Fix gemessen wurde, steht je Test im Kommentar.
 
 import { Notice, TFile } from 'obsidian';
 import CrdtSyncPlugin from '../src/main';
@@ -39,12 +46,17 @@ beforeEach(() => {
 // ===========================================================================
 // A) `reconcileSweepCursor` gegen EINE überlebende Datei
 //
-// Der Fix aus `e3494a6` nennt seine Feststellung „EXAKT, keine Heuristik":
+// Der Fix aus `e3494a6` nannte seine Feststellung „EXAKT, keine Heuristik":
 // Merker gefüllt + kein einziges `.qollab`-File ⇒ Verlust. Der Merker ist aber
-// PRO NOTE geführt, die Prüfung ist ALL-OR-NOTHING über den ganzen Baum. Eine
+// PRO NOTE geführt, die Prüfung war ALL-OR-NOTHING über den ganzen Baum. Eine
 // einzige verbliebene oder neu geschriebene Datei — und jede `saveState` nach
-// dem Verlust schreibt genau eine — macht die Selbstheilung für ALLE übrigen
+// dem Verlust schreibt genau eine — machte die Selbstheilung für ALLE übrigen
 // Notizen unerreichbar, ohne Meldung.
+//
+// Der Fix zieht die Feststellung auf die Genauigkeit des Merkers herunter: EIN
+// rekursives Listing des Baums, dann pro Merker-Eintrag die Frage, ob genau
+// DIESE eigene Sidecar noch existiert. A1 und A2 messen jetzt den geheilten
+// Zustand; die alten Zahlen stehen je Test daneben.
 // ===========================================================================
 
 function makeCoveredVault(ordner: string[], proOrdner: number): VaultMock {
@@ -134,7 +146,12 @@ describe('A) reconcileSweepCursor: eine einzige Datei entwertet den Fix', () => 
   // Zustand exakt der aus R2-35: eigene UND fremde Hilfsdatei weg, `.md`
   // unverändert, Merker warm. Der Poll sieht dort nichts (keine Datei = kein
   // Trigger), `loadAndMerge` hat nichts zurückzuholen.
-  it('A1 — halber `.qollab`-Baum gelöscht: kein Wort, kein Blick, Merker bleibt warm', async () => {
+  //
+  // VOR dem Fix gemessen: 0 Meldungen, 0 Dateizugriffe, alle 6 Merker-Einträge
+  // blieben stehen — die drei alpha-Notizen wären nie wieder in den Sync
+  // gekommen. Jetzt: genau die drei betroffenen verlieren ihren Merker und werden
+  // wieder angesehen, die drei intakten beta-Notizen nicht.
+  it('A1 — halber `.qollab`-Baum gelöscht: gemeldet, angesehen, Merker nur dort verworfen', async () => {
     const vault = makeCoveredVault(['alpha', 'beta'], 3);
     const store = makeLocalStorage();
     const shared = { value: null as any };
@@ -154,11 +171,20 @@ describe('A) reconcileSweepCursor: eine einzige Datei entwertet den Fix', () => 
     const stats = countSidecarStats(vault);
     await sweep(vault, store, shared);
 
-    // GEMESSEN: keine Meldung, kein einziger Dateizugriff, Merker unverändert.
-    expect(qollabNotices()).toHaveLength(0);
-    expect(stats.n).toBe(0);
-    expect(Object.keys(cursorOf(store))).toHaveLength(6);
-    // Und die drei alpha-Notizen haben nachweislich keine Hilfsdatei mehr.
+    // Eine Meldung, und sie nennt die richtige Zahl — nicht „der Vault" und nicht
+    // die sechs, von denen die Hälfte intakt ist.
+    expect(qollabNotices()).toHaveLength(1);
+    expect(qollabNotices()[0]).toContain('3 Notizen');
+    // Angesehen werden genau die drei betroffenen. Die drei intakten bleiben über
+    // den Merker abgekürzt — Task 19/B bleibt in Kraft.
+    expect(stats.n).toBe(3);
+    expect(Object.keys(cursorOf(store)).sort()).toEqual([
+      'beta/note-0.md',
+      'beta/note-1.md',
+      'beta/note-2.md',
+    ]);
+    // Task 13/B bleibt in Kraft: angesehen heißt NICHT neu geprägt. Ohne
+    // adoptierbare Fremd-Sidecar entsteht keine frische Inkarnation.
     expect([...vault._files.keys()].filter((k) => k.startsWith('.qollab/alpha/'))).toEqual([]);
   });
 
@@ -166,9 +192,13 @@ describe('A) reconcileSweepCursor: eine einzige Datei entwertet den Fix', () => 
   // gelöscht, während die App läuft (Obsidian feuert für Dot-Ordner keine
   // Events, das Plugin merkt nichts). Der nächste `saveState` — ein einziger
   // Tastendruck in einer einzigen Notiz, oder der neue `holeEigenenStandNach`
-  // im rename-Pfad — legt `.qollab` mit EINER Datei wieder an. Damit ist die
-  // Selbstheilung beim nächsten Start tot.
-  it('A2 — ein `saveState` nach dem Verlust schaltet die Selbstheilung dauerhaft ab', async () => {
+  // im rename-Pfad — legt `.qollab` mit EINER Datei wieder an. Vor dem Fix war
+  // die Selbstheilung damit beim nächsten Start tot: die eine Datei hielt den
+  // Merker aller vier übrigen Notizen warm.
+  //
+  // VOR dem Fix gemessen: 0 Meldungen, 0 Blicke auf die vier übrigen Notizen,
+  // ihre Merker-Einträge blieben stehen.
+  it('A2 — ein `saveState` nach dem Verlust hält die Selbstheilung NICHT mehr auf', async () => {
     const vault = makeCoveredVault(['alpha'], 5);
     const store = makeLocalStorage();
     const shared = { value: null as any };
@@ -202,19 +232,23 @@ describe('A) reconcileSweepCursor: eine einzige Datei entwertet den Fix', () => 
     };
     await sweep(vault, store, shared);
 
-    // GEMESSEN: der Verlust der übrigen vier Notizen bleibt unbemerkt und
-    // ungemeldet; sie werden weiterhin blind übersprungen. Angesehen wird
-    // ausschließlich die eine Notiz, deren `.md` sich geändert hat.
-    expect(qollabNotices()).toHaveLength(0);
-    expect(angesehen.filter((p) => !p.includes('note-2'))).toEqual([]);
-    // Die vier unberührten Notizen behalten ihren warmen Merker — obwohl ihre
-    // Historie nachweislich weg ist. Sie kommen nie wieder in den Sync.
-    expect(Object.keys(cursorOf(store)).sort()).toEqual([
-      'alpha/note-0.md',
-      'alpha/note-1.md',
-      'alpha/note-3.md',
-      'alpha/note-4.md',
+    // Der Verlust der übrigen vier Notizen wird gemeldet — die eine
+    // überlebende Datei deckt sie nicht mehr zu.
+    expect(qollabNotices()).toHaveLength(1);
+    expect(qollabNotices()[0]).toContain('4 Notizen');
+    // Und jede der vier wird wieder angesehen, statt blind übersprungen.
+    expect(
+      angesehen.filter((p) => !p.includes('note-2')).sort()
+    ).toEqual([
+      `.qollab/alpha/note-0.md.${OWN_ID}.yjs`,
+      `.qollab/alpha/note-1.md.${OWN_ID}.yjs`,
+      `.qollab/alpha/note-3.md.${OWN_ID}.yjs`,
+      `.qollab/alpha/note-4.md.${OWN_ID}.yjs`,
     ]);
+    // Kein warmer Merker mehr für eine Historie, die es nicht gibt.
+    expect(cursorOf(store)).toEqual({});
+    // Task 13/B: angesehen, aber nichts neu geprägt — die eine Datei von note-2
+    // bleibt die einzige.
     expect([...vault._files.keys()]).toHaveLength(1);
   });
 });
@@ -224,13 +258,16 @@ describe('A) reconcileSweepCursor: eine einzige Datei entwertet den Fix', () => 
 //    einzige AUSSERHALB des Pro-Datei-`try`, den Task 17/R-2 ausdrücklich um
 //    die ganze Pro-Datei-Arbeit gelegt hat („einzelne Datei bricht den Sweep
 //    nicht ab"). Ein transienter Lesefehler auf `.qollab` (das
-//    Sync-Tool-hält-ein-Handle-Szenario, um das Task 17 kreist) reisst damit
-//    seit dem Fix den GANZEN Sweep ab, bevor eine einzige Notiz angesehen wurde.
+//    Sync-Tool-hält-ein-Handle-Szenario, um das Task 17 kreist) riss damit seit
+//    dem Fix den GANZEN Sweep ab, bevor eine einzige Notiz angesehen wurde.
 //
 //    Der Kontrast isoliert die Ursache: derselbe IO-Fehler, einmal mit warmem
 //    und einmal mit leerem Merker. Bei leerem Merker kehrt
 //    `reconcileSweepCursor` vor jedem Dateizugriff zurück — dann trägt der
-//    Sweep den Fehler wie vorgesehen pro Datei.
+//    Sweep den Fehler wie vorgesehen pro Datei. Der Fix macht die Methode
+//    wurffrei: Sie fängt den Lesefehler, lässt den Merker unverändert stehen
+//    (eine Aussage über einen ungelesenen Zustand wäre geraten) und der Sweep
+//    läuft normal weiter.
 // ===========================================================================
 
 function makeStaleVault(n: number): VaultMock {
@@ -271,7 +308,9 @@ function einTransienterListenfehler(vault: VaultMock): void {
 }
 
 describe('C) reconcileSweepCursor: neuer Totalabbruch-Punkt vor der ersten Notiz', () => {
-  it('C1 — warmer Merker + Lesefehler auf `.qollab`: KEINE einzige Notiz wird erfasst', async () => {
+  // VOR dem Fix gemessen: `runStartupSweep` warf EBUSY, 0 von 3 Offline-Edits
+  // landeten im CRDT — der Fehler traf den Baum-Check vor der ersten Notiz.
+  it('C1 — warmer Merker + Lesefehler auf `.qollab`: der Sweep läuft trotzdem durch', async () => {
     const vault = makeStaleVault(3);
     const store = makeLocalStorage();
     const shared = { value: null as any };
@@ -283,14 +322,17 @@ describe('C) reconcileSweepCursor: neuer Totalabbruch-Punkt vor der ersten Notiz
 
     const plugin = makeDevice(vault, store, shared);
     await plugin.onload();
-    await expect(plugin.runStartupSweep()).rejects.toThrow('EBUSY');
+    await expect(plugin.runStartupSweep()).resolves.toBeUndefined();
 
-    // Kein einziger Offline-Edit ist im CRDT gelandet — der Fehler traf
-    // `hasAnySidecarFile`, also vor der ersten Notiz.
+    // Alle drei Offline-Edits sind erfasst: der eine Lesefehler kostet nur den
+    // Merker-Abgleich, keine einzige Notiz.
     const erfasst = [0, 1, 2].filter((i) =>
       plugin.crdtManager.getContent(`alpha/note-${i}.md`).includes('offline')
     );
-    expect(erfasst).toEqual([]);
+    expect(erfasst).toEqual([0, 1, 2]);
+    // Und der ungelesene Zustand wird nicht zum Anlass genommen, etwas zu
+    // behaupten: keine Meldung, kein verworfener Merker.
+    expect(qollabNotices()).toHaveLength(0);
     plugin.onunload();
   });
 
@@ -354,14 +396,18 @@ describe('C) reconcileSweepCursor: neuer Totalabbruch-Punkt vor der ersten Notiz
 });
 
 // ===========================================================================
-// B) Der neue modify-Abbruch stellt „lokaler Edit nicht erfasst" her — ohne
-//    die Markierung zu setzen, an der der Rest des Systems genau diesen
+// B) Der neue modify-Abbruch stellt „lokaler Edit nicht erfasst" her — und
+//    setzte die Markierung nicht, an der der Rest des Systems genau diesen
 //    Zustand erkennt (`abortedReads` / `pendingLocalContent`, Task 12/F-2b).
 //
-// Der Fix-Kommentar sagt: „Verloren ist er nicht — der nächste `modify` erfasst
+// Der Fix-Kommentar sagte: „Verloren ist er nicht — der nächste `modify` erfasst
 // ihn unter dem neuen Pfad". Trifft aber vorher ein Fremd-Trigger ein, schreibt
 // `onRemoteYjsUpdate` über `data === preMerge` den Doc-Stand zurück — und der
 // kennt den Edit nicht.
+//
+// Der Fix lässt den Abbruch stehen (er verhindert die stumme Textverdopplung
+// unter frisch geprägter GUID) und meldet den gelesenen Text über den
+// vorhandenen Rückkanal. Der Abbruch kostet damit eine Verzögerung, keinen Edit.
 // ===========================================================================
 
 function makeApp(vault: VaultMock) {
@@ -458,12 +504,19 @@ describe('B) modify-Abbruch bei Umbenennung: der Edit ist ungeschützt', () => {
     expect(plugin.crdtManager.getContent(NEU)).toBe(BASIS);
   });
 
-  it('B1 — der bestehende Rückkanal ist NICHT bewaffnet', async () => {
+  // VOR dem Fix gemessen: `hasAbortedRead(NEU) === false`, kein gemerkter Text —
+  // der Rückkanal war da und blieb ungenutzt.
+  it('B1 — der bestehende Rückkanal ist bewaffnet, unter dem neuen Pfad', async () => {
     const { plugin } = await abgebrochenerEdit();
     // Genau diese Markierung hält `onRemoteYjsUpdate` davon ab, einen nicht
     // erfassten Edit zu überschreiben (Task 12/F-2b, R2-1).
-    expect(plugin.syncHandler.hasAbortedRead(NEU)).toBe(false);
-    expect(plugin.syncHandler.pendingLocalContent(NEU)).toBeUndefined();
+    expect(plugin.syncHandler.hasAbortedRead(NEU)).toBe(true);
+    expect(plugin.syncHandler.pendingLocalContent(NEU)).toBe(MIT_LOKAL);
+    // Gesetzt wird sie unter dem Warteschlangen-Schlüssel (dem ALTEN Pfad) und
+    // vom rename-Handler mitgezogen — nicht dupliziert. Am alten Pfad läge sie
+    // sonst für immer und blockierte dessen Write-Back-Pfad, falls dort je
+    // wieder eine Notiz entsteht.
+    expect(plugin.syncHandler.hasAbortedRead(ALT)).toBe(false);
   });
 
   it('B2 — SCHADEN: der nächste Fremd-Trigger löscht den lokalen Edit', async () => {
