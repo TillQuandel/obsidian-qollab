@@ -8,6 +8,22 @@ const BOM = '\uFEFF';
 
 const ohneBom = (text: string): string => (text.startsWith(BOM) ? text.slice(1) : text);
 
+// Jedes Zeilenende auf LF bringen — die Vergleichsfassung beider Merge-Verfahren.
+//
+// `\r+` statt `\r`: ein doppeltes CR ('\r\r\n') entsteht, wenn eine naive
+// LF->CRLF-Umwandlung auf einen Text laeuft, der schon CRLF hat — der Einzeiler
+// `-replace "\n", "\r\n"` bzw. `text.replace(/\n/g, '\r\n')`. Gemessen mit
+// PowerShell 7: aus 61 0D 0A 62 0D 0A wird 61 0D 0D 0A 62 0D 0D 0A. (Gemessen
+// NICHT erzeugt: `git checkout` mit core.autocrlf=true, Set-Content, Out-File.)
+// Ein nicht ueberlappendes `replace(/\r\n/g, '\n')` macht daraus '\r\n' — das
+// Zeilenende ueberlebt die Normalisierung, und damit steht wieder genau die
+// Lage von vor dem 02.08. da: keine Zeile hat eine Entsprechung. Gemessen ohne
+// das `+`: `unionMerge` haengt beide Fassungen aneinander (jede Zeile zweimal),
+// `threeWayMerge` findet den Kontext des lokalen Hunks nicht wieder und
+// verwirft ihn STILL — die lokale Aenderung ist ohne Meldung weg.
+// Auf wohlgeformter Eingabe ist `\r+\n` mit `\r\n` deckungsgleich.
+const aufLf = (text: string): string => text.replace(/\r+\n/g, '\n');
+
 // 3-Wege-Text-Merge: die lokale Änderung (Diff base → local) wird als Patch auf
 // den bereits gemergten other-Stand angewandt. diff-match-patch wendet Patches
 // fuzzy an: bei direkt überlappenden Edits setzt sich die lokale Änderung durch
@@ -55,9 +71,9 @@ export function threeWayMerge(base: string, local: string, other: string): strin
   const localBom = local.startsWith(BOM);
   const localBody = ohneBom(local);
   // Vergleichsfassung: nur der Inhalt zählt, nicht die Schreibweise.
-  const baseLf = ohneBom(base).replace(/\r\n/g, '\n');
-  const localLf = localBody.replace(/\r\n/g, '\n');
-  const otherLf = ohneBom(other).replace(/\r\n/g, '\n');
+  const baseLf = aufLf(ohneBom(base));
+  const localLf = aufLf(localBody);
+  const otherLf = aufLf(ohneBom(other));
 
   const patches = dmp.patch_make(baseLf, localLf);
   const [merged] = dmp.patch_apply(patches, otherLf);
@@ -166,8 +182,8 @@ export function unionMerge(other: string, local: string): string {
   const localBody = localBom ? local.slice(1) : local;
 
   // Vergleichsfassung: nur hier zählt der Inhalt, nicht die Schreibweise.
-  const otherLf = otherBody.replace(/\r\n/g, '\n');
-  const localLf = localBody.replace(/\r\n/g, '\n');
+  const otherLf = aufLf(otherBody);
+  const localLf = aufLf(localBody);
   // Inhaltlich gleich → lokalen Stand unverändert zurückgeben (kein Write-Back).
   if (otherLf === localLf) return local;
 

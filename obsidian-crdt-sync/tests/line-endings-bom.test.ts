@@ -101,6 +101,55 @@ describe('unionMerge — CRLF gegen LF', () => {
 // geschriebenes und durchgereichtes Zeilenende dasselbe Zeichen, dann ist die
 // Umschreibung unsichtbar. Genau deshalb war die Luecke da — die Bestandstests
 // pruefen die CRLF-Richtung nur an Faellen, die ohne Umschreibung auskommen.
+// Ein doppeltes CR vor dem Zeilenende ('\r\r\n') entsteht, wenn eine naive
+// LF->CRLF-Umwandlung auf einen Text laeuft, der schon CRLF hat — der Einzeiler
+// `-replace "\n", "\r\n"` bzw. `text.replace(/\n/g, '\r\n')`. Gemessen mit
+// PowerShell 7: aus 61 0D 0A 62 0D 0A wird 61 0D 0D 0A 62 0D 0D 0A.
+// (Gemessen NICHT erzeugt: `git checkout` mit core.autocrlf=true — Git laesst
+// vorhandene CR stehen; ebensowenig Set-Content oder Out-File.)
+//
+// Die Normalisierung `replace(/\r\n/g, '\n')` ersetzt nicht ueberlappend: aus
+// '\r\r\n' wird '\r\n'. Das Zeilenende ueberlebt die Vergleichsfassung, damit
+// hat zwischen einem so umgewandelten und einem normalen Stand wieder KEINE
+// Zeile eine Entsprechung — genau die Lage vor dem Fix vom 02.08.
+describe('unionMerge — doppeltes CR vor dem Zeilenende', () => {
+  // `zeilen()` oben kennt nur '\r\n'; ein '\r\r\n' liesse dort ein '\r' am
+  // Zeilenende stehen und jede Gleichheitspruefung scheitern. Hier zerlegt
+  // deshalb ein eigener Helfer, der jeden CR-Lauf vor dem LF wegnimmt.
+  const zeilenCr = (s: string) =>
+    s
+      .replace(/\r+\n/g, '\n')
+      .split('\n')
+      .filter((z) => z !== '');
+
+  it('verdoppelt die Notiz nicht, wenn der fremde Stand doppelte CR hat', () => {
+    const local = '# Titel\nA\nB\n';
+    const other = '# Titel\r\r\nA\r\r\nB\r\r\nFREMD\r\r\n';
+    const merged = unionMerge(other, local);
+
+    for (const z of ['# Titel', 'A', 'B', 'FREMD']) {
+      expect(zeilenCr(merged).filter((x) => x === z).length).toBe(1);
+    }
+    // Der lokale Stand ist reines LF -> das Ergebnis auch.
+    expect(merged.includes('\r')).toBe(false);
+  });
+
+  it('verdoppelt die Notiz nicht, wenn der lokale Stand doppelte CR hat', () => {
+    const local = '# Titel\r\r\nA\r\r\nB\r\r\n';
+    const other = '# Titel\nA\nB\nFREMD\n';
+    const merged = unionMerge(other, local);
+
+    for (const z of ['# Titel', 'A', 'B', 'FREMD']) {
+      expect(zeilenCr(merged).filter((x) => x === z).length).toBe(1);
+    }
+    // Die lokalen Zeilen gehen byteweise durch (auch mit ihrem doppelten CR) —
+    // unionMerge schreibt die Datei nicht um; die hinzukommende fremde Zeile
+    // bekommt das lokale CRLF.
+    expect(merged.startsWith(local)).toBe(true);
+    expect(hatNacktesLf(merged)).toBe(false);
+  });
+});
+
 describe('unionMerge — geschriebene Zeilenenden (Mutationsdeckung)', () => {
   it('gibt fremden Zeilen das lokale CRLF, in der Mitte wie am Schluss', () => {
     const local = '# Titel\r\nA\r\nB\r\n';

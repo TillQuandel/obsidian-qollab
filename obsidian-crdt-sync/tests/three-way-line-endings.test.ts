@@ -100,6 +100,37 @@ describe('threeWayMerge — CRLF gegen LF', () => {
   });
 });
 
+// Doppeltes CR vor dem Zeilenende ('\r\r\n', Herkunft siehe
+// line-endings-bom.test.ts): die Normalisierung `replace(/\r\n/g, '\n')`
+// ersetzt nicht ueberlappend und laesst ein '\r\n' stehen. Fuer den 3-Wege-Merge
+// ist das schlimmer als fuer die Union — `patch_apply` findet den Kontext des
+// lokalen Hunks nicht wieder und verwirft ihn STILL. Die lokale Aenderung ist
+// dann weg, ohne Meldung, auf beiden Geraeten.
+describe('threeWayMerge — doppeltes CR vor dem Zeilenende', () => {
+  it('verschluckt die lokale Aenderung nicht, wenn der fremde Stand doppelte CR hat', () => {
+    const base = '# Titel\nA\nB\n';
+    const local = '# Titel\nA\nB\nLOKAL\n';
+    const other = '# Titel\r\r\nA\r\r\nB\r\r\nFREMD\r\r\n';
+    const merged = threeWayMerge(base, local, other);
+
+    expect(zaehle(merged, 'LOKAL')).toBe(1);
+    expect(zaehle(merged, 'FREMD')).toBe(1);
+    // Der lokale Stand ist reines LF -> das Ergebnis auch.
+    expect(merged.includes('\r')).toBe(false);
+  });
+
+  it('verschluckt die lokale Aenderung nicht, wenn der lokale Stand doppelte CR hat', () => {
+    const base = '# Titel\r\r\nA\r\r\nB\r\r\n';
+    const local = '# Titel\r\r\nA\r\r\nB\r\r\nLOKAL\r\r\n';
+    const other = '# Titel\nA\nB\nFREMD\n';
+    const merged = threeWayMerge(base, local, other);
+
+    expect(zaehle(merged, 'LOKAL')).toBe(1);
+    expect(zaehle(merged, 'FREMD')).toBe(1);
+    expect(hatNacktesLf(merged)).toBe(false);
+  });
+});
+
 describe('threeWayMerge — BOM', () => {
   it('haelt ein lokales BOM vorne, auch wenn der fremde Stand keines hat', () => {
     // Realer Weg: der Peer hat die Datei ueber ein Werkzeug ohne BOM geschrieben.
