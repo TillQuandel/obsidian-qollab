@@ -27,6 +27,9 @@ const zeilen = (s: string) =>
   lf(s)
     .split('\n')
     .filter((z) => z !== '');
+// Ein einzelnes LF ohne vorangehendes CR \u2014 der Nachweis fuer \u201Enicht gemischt".
+const hatNacktesLf = (s: string) => /(^|[^\r])\n/.test(s);
+const zaehleCrlf = (s: string) => (s.match(/\r\n/g) || []).length;
 
 describe('unionMerge — CRLF gegen LF', () => {
   it('verdoppelt inhaltlich identischen Text nicht', () => {
@@ -79,6 +82,86 @@ describe('unionMerge — CRLF gegen LF', () => {
     const merged = unionMerge('a\r\nb\r\nc\r\nd\r\n', local);
     expect(lf(merged)).toBe('a\nb\nc\nd\n');
     expect(merged.startsWith(local)).toBe(true);
+  });
+});
+
+// Die vier Stellen, an denen unionMerge ein Zeilenende SCHREIBT statt es
+// durchzureichen. Alle vier waren bis hierher unbewacht: eine Mutationsprobe
+// (je eine Stelle neutralisiert, volle Suite) liess 59 Suiten / 381 Tests
+// gruen. Die Erwartungen unten sind mit der intakten Implementierung gemessen,
+// nicht abgeleitet.
+//
+//   Zeile 201  fremde Zeilen bekommen `eol` (statt des LF der Vergleichsfassung)
+//   Zeile 177  fremde Schlusszeile wird mit LF aufgefuellt (Vergleichsraum)
+//   Zeile 178  lokale Schlusszeile wird mit LF aufgefuellt (Vergleichsraum)
+//   Zeile 180  lokale Schlusszeile wird in den ORIGINALBYTES mit `eol` aufgefuellt
+//   Zeile 219  ein aufgefuelltes CRLF wird zweizeichig zurueckgenommen
+//
+// Alle Faelle brauchen einen lokalen CRLF-Stand: bei `eol === '\n'` sind
+// geschriebenes und durchgereichtes Zeilenende dasselbe Zeichen, dann ist die
+// Umschreibung unsichtbar. Genau deshalb war die Luecke da — die Bestandstests
+// pruefen die CRLF-Richtung nur an Faellen, die ohne Umschreibung auskommen.
+describe('unionMerge — geschriebene Zeilenenden (Mutationsdeckung)', () => {
+  it('gibt fremden Zeilen das lokale CRLF, in der Mitte wie am Schluss', () => {
+    const local = '# Titel\r\nA\r\nB\r\n';
+    const other = '# Titel\r\nA\r\nFREMD 1\r\nB\r\nFREMD 2\r\n';
+    const merged = unionMerge(other, local);
+
+    // Neutralisiert (`out.push(otherLines[i + k])`) steht hier
+    // '# Titel\r\nA\r\nFREMD 1\nB\r\nFREMD 2\n' — nackte LF mitten in einer
+    // sonst durchgaengigen CRLF-Datei, also genau die gemischte Fassung, gegen
+    // die der Fix gebaut wurde.
+    expect(hatNacktesLf(merged)).toBe(false);
+    expect(zaehleCrlf(merged)).toBe(5);
+    expect(merged).toBe('# Titel\r\nA\r\nFREMD 1\r\nB\r\nFREMD 2\r\n');
+  });
+
+  it('gibt auch einer LEEREN fremden Zeile das lokale CRLF', () => {
+    // Die Umschreibung schneidet ein Zeichen ab und haengt `eol` an. Bei einer
+    // Leerzeile besteht die ganze Zeile aus diesem einen Zeichen — der Rest ist
+    // der leere String, das Ergebnis muss trotzdem ein volles CRLF sein.
+    const local = 'a\r\nb\r\n';
+    const merged = unionMerge('a\r\n\r\nFREMD\r\nb\r\n', local);
+
+    expect(hatNacktesLf(merged)).toBe(false);
+    expect(merged).toBe('a\r\n\r\nFREMD\r\nb\r\n');
+  });
+
+  it('erkennt die fremde Schlusszeile ohne Zeilenende als dieselbe Zeile', () => {
+    // Fremd endet auf 'b' OHNE Zeilenende, lokal auf 'b\r\n'. Beide Staende
+    // muessen im Vergleichsraum mit LF aufgefuellt werden, sonst sind 'b\n' und
+    // 'b\r\n' verschiedene Tokens und 'b' erscheint zweimal.
+    const local = 'a\r\nb\r\n';
+    const merged = unionMerge('a\r\nFREMD\r\nb', local);
+
+    expect(zeilen(merged).filter((z) => z === 'b').length).toBe(1);
+    expect(hatNacktesLf(merged)).toBe(false);
+    expect(merged).toBe('a\r\nFREMD\r\nb\r\n');
+  });
+
+  it('haengt an die lokale Schlusszeile ohne Zeilenende CRLF an, nicht LF', () => {
+    // Spiegelbild: LOKAL endet ohne Zeilenende, fremd mit. Das Auffuellen
+    // passiert zweimal — im Vergleichsraum mit LF (sonst Verdopplung von 'b')
+    // und in den Originalbytes mit dem lokalen CRLF (sonst endet die CRLF-Datei
+    // auf einem nackten LF).
+    const local = 'a\r\nb';
+    const merged = unionMerge('a\r\nFREMD\r\nb\r\n', local);
+
+    expect(zeilen(merged).filter((z) => z === 'b').length).toBe(1);
+    expect(hatNacktesLf(merged)).toBe(false);
+    expect(merged).toBe('a\r\nFREMD\r\nb\r\n');
+  });
+
+  it('nimmt das aufgefuellte CRLF vollstaendig zurueck, nicht nur zur Haelfte', () => {
+    // Keine Seite hat ein Schluss-Zeilenende -> das zum Vergleich aufgefuellte
+    // muss wieder weg. Bei CRLF sind das ZWEI Zeichen; nur eines abzuschneiden
+    // liesse ein einzelnes '\r' am Dateiende stehen.
+    const local = 'a\r\nb';
+    const merged = unionMerge('a\r\nFREMD', local);
+
+    expect(merged.endsWith('\r')).toBe(false);
+    expect(merged.endsWith('b')).toBe(true);
+    expect(merged).toBe('a\r\nFREMD\r\nb');
   });
 });
 
