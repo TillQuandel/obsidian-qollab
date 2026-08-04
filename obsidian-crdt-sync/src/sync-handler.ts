@@ -262,6 +262,20 @@ export class SyncHandler {
   // 42/42 bei drei Notizen, 0 ohne). Genau diese Kette wird hier geschlossen.
   private nachgetragen = new Map<string, string>();
 
+  // MESSAUFBAU (2026-08-04) — drei Verfahren gegen dieselbe Stichprobe:
+  //   'ersetzen'    Bestand: eigene Kette verwerfen, aus der Fremdhistorie neu
+  //                 aufbauen. Bedingung: Doc seit dem Nachtrag unveraendert.
+  //   'undo'        Weg A: Nachtrag als markierte Transaktion, spaeter per
+  //                 Y.UndoManager gezielt zuruecknehmen. Keine Bedingung an
+  //                 zwischenzeitliche Edits — aber der Merkposten lebt im
+  //                 Speicher und ueberlebt keinen Neustart.
+  //   'korrigieren' Weg B: Merkposten IM Doc (reist mit, ueberlebt Neustart),
+  //                 nach dem Merge die ueberzaehligen Zeilen entfernen.
+  nachtragVerfahren: 'ersetzen' | 'undo' | 'korrigieren' = 'ersetzen';
+
+  static readonly NACHTRAG_ORIGIN = Symbol.for('qollab.nachtrag');
+  private static readonly MERK = 'nachtrag';
+
   // Obergrenze des Kanal-Tors. Der Reset unten haengt daran, dass der Merge den
   // Doc VERAENDERT hat — nicht daran, dass er dem geparkten Text naeherkommt.
   // Ein Peer, der laufend Updates schickt, die den geparkten Stand nie decken,
@@ -405,10 +419,32 @@ export class SyncHandler {
     // gleich dem geparkten Text und es gibt keine reine Fassung zu retten.
     const vereinigt = unionMerge(p.text, doc);
     if (vereinigt !== p.text) await this.onSaveCopy?.(notePath, p.text);
-    await this.applyLocalContent(notePath, vereinigt);
+
+    // WEG A: Der UndoManager muss VOR den Ops existieren, sonst verfolgt er sie
+    // nicht. Der `origin` markiert alles, was der Nachtrag gleich schreibt.
+    if (this.nachtragVerfahren === 'undo') {
+      this.crdtManager.undoFuer(notePath, SyncHandler.NACHTRAG_ORIGIN);
+      this.crdtManager.standardOrigin = SyncHandler.NACHTRAG_ORIGIN;
+    }
+    try {
+      await this.applyLocalContent(notePath, vereinigt);
+    } finally {
+      this.crdtManager.standardOrigin = null;
+    }
+
     // Ab hier trägt der Doc fremden Text unter EIGENER Client-ID. Den Stand
     // merken: Kommt die Fremdhistorie doch noch, ist unsere Kette redundant.
     this.nachgetragen.set(notePath, this.crdtManager.getContent(notePath));
+    // WEG B: derselbe Merkposten, aber IM Doc — er reist mit der Hilfsdatei mit
+    // und überlebt einen Neustart.
+    // Nur ein FLAG, nicht der Volltext. Die erste Fassung legte den ganzen
+    // nachgetragenen Text in die Y.Map — gemessen 7808 B Aufschlag bei einer
+    // Notiz von 3895 B, also 200 %, und das in jeder Hilfsdatei. Für die
+    // Korrektur genügt die Information, DASS nachgetragen wurde; den Zieltext
+    // berechnet sie aus dem Doc-Stand und der Fremdhistorie.
+    if (this.nachtragVerfahren === 'korrigieren') {
+      this.crdtManager.merke(notePath, SyncHandler.MERK, '1');
+    }
   }
 
   // Solange etwas geparkt ist, trägt die `.md` Text, den dieses Gerät nicht
@@ -1127,7 +1163,10 @@ export class SyncHandler {
   private mergeCompatible(notePath: string, siblings: DecodedSibling[]): void {
     const guid = this.guids.get(notePath);
     const passend = siblings.filter((s) => s.guid === null || s.guid === guid);
-    if (this.ersetzeNachtrag(notePath, passend)) return;
+    // Der lokale Stand VOR dem Merge. Er trägt den Nachtrag und alles, was der
+    // Nutzer seither getippt hat — er ist die Grundlage der Korrektur unten.
+    const vorher = this.crdtManager.getContent(notePath);
+    if (this.nachtragVerfahren === 'ersetzen' && this.ersetzeNachtrag(notePath, passend)) return;
     for (const s of passend) {
       try {
         this.crdtManager.applyUpdate(notePath, s.update);
@@ -1135,6 +1174,92 @@ export class SyncHandler {
         this.onCorruptFile?.(s.path);
       }
     }
+    if (this.nachtragVerfahren === 'undo') this.undoNachtrag(notePath, passend);
+    else if (this.nachtragVerfahren === 'korrigieren') {
+      this.korrigiereNachtrag(notePath, vorher, passend);
+    }
+  }
+
+  // WEG A — die Nachtrags-Transaktion gezielt zuruecknehmen. Anders als beim
+  // Ersetzen spielt es keine Rolle, ob seit dem Nachtrag jemand getippt hat: der
+  // UndoManager nimmt nur die markierten Ops zurueck.
+  //
+  // Die Deckungspruefung bleibt: Ein Undo, dessen Text die Fremdhistorie NICHT
+  // traegt, waere ein Verlust — und der propagiert als Loeschung weiter.
+  private undoNachtrag(notePath: string, siblings: DecodedSibling[]): void {
+    const stand = this.nachgetragen.get(notePath);
+    if (stand === undefined || !this.crdtManager.hatUndo(notePath)) return;
+    const eigen = this.stateFilePath(notePath);
+    const fremde = siblings.filter((s) => s.path !== eigen);
+    if (fremde.length === 0) return;
+
+    const probe = new CrdtManager();
+    let fremdText: string;
+    try {
+      for (const s of fremde) probe.applyUpdate(notePath, s.update);
+      fremdText = probe.getContent(notePath);
+    } catch {
+      return;
+    } finally {
+      probe.disposeDoc(notePath);
+    }
+    if (!this.deckt(fremdText, stand)) return;
+
+    this.crdtManager.undoFuer(notePath, SyncHandler.NACHTRAG_ORIGIN).undo();
+    this.nachgetragen.delete(notePath);
+  }
+
+  // WEG B — nach dem Merge die ueberzaehligen Zeilen entfernen. Der Merkposten
+  // liegt im Doc, ist also auch nach einem Neustart da und fuer andere Geraete
+  // sichtbar. Greift ohne Vorbedingung an den Doc-Zustand.
+  // Der Zieltext wird BERECHNET, nicht durch Zeilenzählen geraten:
+  //
+  //     ziel = unionMerge(lokaler Stand vor dem Merge, was die Fremdhistorie trägt)
+  //
+  // Der lokale Stand enthält den Nachtrag und jede spätere Bearbeitung; die
+  // Vereinigung fügt hinzu, was der Peer seither geschrieben hat. Was dabei NICHT
+  // herauskommt, ist die Konkatenation zweier Op-Ketten desselben Textes.
+  //
+  // Die erste Fassung zählte stattdessen Zeilen des Merkpostens und entfernte den
+  // „Überschuss". Das hat eine Zeile gelöscht, die der Nutzer nach dem Nachtrag
+  // absichtlich wiederholt hatte (`nachtrag-korrektur-risiko.test.ts`) — ein
+  // stiller Verlust, den der Fuzz-Treiber nicht finden kann, weil er nur
+  // einmalige Tokens zählt.
+  private korrigiereNachtrag(
+    notePath: string,
+    vorher: string,
+    siblings: DecodedSibling[]
+  ): void {
+    if (this.crdtManager.gemerkt(notePath, SyncHandler.MERK) === undefined) return;
+    const eigen = this.stateFilePath(notePath);
+    const fremde = siblings.filter((s) => s.path !== eigen);
+    if (fremde.length === 0) return;
+
+    const probe = new CrdtManager();
+    let fremdText: string;
+    try {
+      for (const s of fremde) probe.applyUpdate(notePath, s.update);
+      fremdText = probe.getContent(notePath);
+    } catch {
+      return;
+    } finally {
+      probe.disposeDoc(notePath);
+    }
+
+    // Deckt der lokale Stand die Fremdfassung schon ab, IST er der Zieltext.
+    // Nicht `unionMerge` nehmen: Der Union kann eine fremde Zeile nicht als
+    // dieselbe erkennen wie eine bereits vorhandene und hängt sie ein weiteres
+    // Mal an — gemessen im Risikofall „Nutzer wiederholt eine Zeile absichtlich",
+    // wo aus zwei Zeilen drei wurden.
+    const ziel = this.deckt(vorher, fremdText) ? vorher : unionMerge(vorher, fremdText);
+    // NUR bei tatsaechlicher Korrektur raeumen. Die erste Fassung loeschte die
+    // Markierung schon beim ersten Merge — der laeuft, BEVOR die Fremdhistorie
+    // eintrifft, findet nichts zu tun, und danach war der Nachtrag nicht mehr
+    // als solcher erkennbar. Die Korrektur griff nie.
+    if (ziel === this.crdtManager.getContent(notePath)) return;
+    this.crdtManager.setContent(notePath, ziel);
+    this.crdtManager.vergiss(notePath, SyncHandler.MERK);
+    this.nachgetragen.delete(notePath);
   }
 
   // Der Nachtrag hat fremden Text als eigene Op-Kette materialisiert, weil die

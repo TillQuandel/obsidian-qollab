@@ -170,6 +170,11 @@ export class CrdtManager {
   private docs = new Map<string, Y.Doc>();
   private disposed = false;
 
+  // MESSAUFBAU: gilt fuer alle `setContent`-Aufrufe, die keinen eigenen `origin`
+  // mitbringen — damit der Nachtrag seine Ops markieren kann, ohne dass der
+  // `origin` durch `applyLocalContent` durchgereicht werden muss.
+  standardOrigin: unknown = null;
+
   private getOrCreate(filePath: string): Y.Doc {
     if (this.disposed) throw new Error('CrdtManager already disposed');
     if (!this.docs.has(filePath)) {
@@ -183,7 +188,10 @@ export class CrdtManager {
   // Unveränderte Zeichen behalten ihre Yjs-Item-IDs — dadurch dedupliziert der
   // Merge zweier Replikate statt zu konkatenieren. Rohe Diffs (kein
   // diff_cleanupSemantic): Positionsgenauigkeit vor Lesbarkeit.
-  setContent(filePath: string, content: string): void {
+  // MESSAUFBAU (2026-08-04): `origin` markiert die Transaktion, damit ein
+  // `Y.UndoManager` mit `trackedOrigins` genau diese Ops spaeter zuruecknehmen
+  // kann. Ohne Argument ist das Verhalten unveraendert (`origin === null`).
+  setContent(filePath: string, content: string, origin?: unknown): void {
     const doc = this.getOrCreate(filePath);
     const text = doc.getText('content');
     const current = text.toString();
@@ -202,7 +210,46 @@ export class CrdtManager {
           text.delete(pos, data.length);
         }
       }
-    });
+    }, origin ?? this.standardOrigin);
+  }
+
+  // ---- Messaufbau fuer die Nachtrag-Verfahren -----------------------------
+  //
+  // WEG A: Ein UndoManager, der NUR Transaktionen mit `origin` verfolgt. Er lebt
+  // im Speicher — nach einem Neustart ist der Nachtrag nicht mehr identifizierbar.
+  // Genau das ist der zu messende Schwachpunkt.
+  private undoManager = new Map<string, Y.UndoManager>();
+
+  undoFuer(filePath: string, origin: unknown): Y.UndoManager {
+    let u = this.undoManager.get(filePath);
+    if (!u) {
+      u = new Y.UndoManager(this.getOrCreate(filePath).getText('content'), {
+        trackedOrigins: new Set([origin]),
+        captureTimeout: 0,
+      });
+      this.undoManager.set(filePath, u);
+    }
+    return u;
+  }
+
+  hatUndo(filePath: string): boolean {
+    return this.undoManager.has(filePath);
+  }
+
+  // WEG B: Ein Merkposten IM Doc. Er reist mit der Hilfsdatei mit, ueberlebt
+  // Neustarts und ist auch fuer andere Geraete sichtbar.
+  merke(filePath: string, schluessel: string, wert: string): void {
+    this.getOrCreate(filePath).getMap('qollab').set(schluessel, wert);
+  }
+
+  gemerkt(filePath: string, schluessel: string): string | undefined {
+    if (!this.docs.has(filePath)) return undefined;
+    const v = this.docs.get(filePath)!.getMap('qollab').get(schluessel);
+    return typeof v === 'string' ? v : undefined;
+  }
+
+  vergiss(filePath: string, schluessel: string): void {
+    if (this.docs.has(filePath)) this.docs.get(filePath)!.getMap('qollab').delete(schluessel);
   }
 
   hasDoc(filePath: string): boolean {

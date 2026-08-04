@@ -88,3 +88,15 @@ export const parken =
     for (const g of [a, b]) g.parkFrist = frist;
     return { a: async () => true, b: async () => true };
   };
+
+// Dieselbe Politik, aber mit waehlbarem Verfahren fuer den Fall, dass die
+// Fremdhistorie NACH dem Nachtrag eintrifft. Siehe `SyncHandler.nachtragVerfahren`.
+export const parkenMit =
+  (frist: number, verfahren: 'ersetzen' | 'undo' | 'korrigieren'): Fabrik =>
+  (a, b) => {
+    for (const g of [a, b]) {
+      g.parkFrist = frist;
+      g.sync.nachtragVerfahren = verfahren;
+    }
+    return { a: async () => true, b: async () => true };
+  };
