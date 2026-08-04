@@ -163,7 +163,10 @@ describe('WriteProvenance — Fallstrick 3: der Laufzeitzähler ist pfadbezogen'
     wp.install();
     a.sperren();
 
-    const p = a.write('eigen.md', 'Unser Text');
+    // Über `append`, denn nur dort trägt der Zähler noch: Bei `write`/`process`
+    // steht der Endstand synchron vor dem Aufruf fest, dort entscheidet die
+    // Inhaltsregel und der Zähler ist bewusst ausgeschaltet.
+    const p = a.append('eigen.md', ' Fragment');
 
     expect(wp.istEigen('eigen.md', 'beliebiger Zwischenstand')).toBe(true);
     // Ein globaler Zähler stünde hier ebenfalls auf >0 und würde die von außen

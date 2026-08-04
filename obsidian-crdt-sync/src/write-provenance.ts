@@ -60,6 +60,13 @@ type MethodenName = (typeof UMHUELLTE)[number];
 // Ständen war sie die teure — stiller, propagierender Verlust.
 export const MAX_STAENDE = 1;
 
+// Wie lange ein laufender eigener Schreibvorgang einen Pfad höchstens als
+// „eigen" ausweist. Gemessen an echtem Dateisystem: Median 3,3 ms, p95 11,8 ms,
+// Maximum 19,6 ms. 200 ms liegen weit darüber und greifen nur, wenn ein Write
+// wirklich klemmt (Netzlaufwerk, WSL, rehydrierender Cloud-Platzhalter) — genau
+// dort, wo die ungeprüfte Zusage am teuersten wäre.
+export const FENSTER_MS = 200;
+
 // djb2 mit XOR, gespeichert als `<Länge>:<32-Bit-Hash>`. Gespeichert wird der
 // Schlüssel, nicht der Volltext — sonst läge bei 1600+ Notizen der halbe Vault
 // vierfach im Speicher.
@@ -77,6 +84,8 @@ export function textSchluessel(text: string): string {
 export class WriteProvenance {
   private staende = new Map<string, string[]>();
   private laufend = new Map<string, number>();
+  // Wann der erste noch laufende Schreibvorgang dieses Pfades begonnen hat.
+  private laufendSeit = new Map<string, number>();
   private originale = new Map<MethodenName, Methode>();
   private eigene = new Map<MethodenName, Methode>();
 
@@ -126,13 +135,21 @@ export class WriteProvenance {
     // 2026-08-04) — `lauf.aktiv = false` schaltet die Umhuellung ohnehin still.
     this.staende.clear();
     this.laufend.clear();
+    this.laufendSeit.clear();
   }
 
   istEigen(pfad: string, text: string): boolean {
     // Der Zähler ist PRO PFAD geführt. Ein globaler Zähler stünde bei jedem
     // beliebigen anderen Write des Plugins auf >0 und würde in genau diesem
     // Moment eine von außen gelieferte Datei als eigene Änderung durchwinken.
-    if ((this.laufend.get(pfad) ?? 0) > 0) return true;
+    //
+    // Zusätzlich gedeckelt: Bleibt ein Schreibvorgang länger hängen als
+    // `FENSTER_MS`, zählt nur noch der Inhalt. Der Deckel liegt weit über dem
+    // gemessenen p95 von 11,8 ms, greift also nur, wenn die Platte tatsächlich
+    // klemmt — und dann ist die ungeprüfte Zusage „ist eigen" das Gefährlichere.
+    const seit = this.laufendSeit.get(pfad);
+    if ((this.laufend.get(pfad) ?? 0) > 0 && seit !== undefined && Date.now() - seit <= FENSTER_MS)
+      return true;
     const liste = this.staende.get(pfad);
     return liste !== undefined && liste.includes(textSchluessel(text));
   }
@@ -183,14 +200,28 @@ export class WriteProvenance {
       // fremd gelieferte Datei mit genau diesem Inhalt als eigen ausweisen. Die
       // Laufzeit des Aufrufs deckt der Zähler unten trotzdem ab.
 
-      spur.hebe(pfad);
+      // Der Laufzeitzähler gilt NUR für die beiden Methoden, bei denen kein
+      // Endstand zu merken ist: `append` bekommt nur das Fragment, `writeBinary`
+      // gar keinen Text. Bei `write` und `process` steht der Endstand durch
+      // `merke()` schon synchron VOR dem Aufruf fest — dort entscheidet die
+      // Inhaltsregel, und der Zähler brächte nur eine ungeprüfte Zusage mit.
+      //
+      // Gemessen: Hängt im Moment des `modify`-Ereignisses ein eigener Write auf
+      // demselben Pfad, winkte der Zähler einen per Sync gelieferten Fremdstand
+      // ungeprüft durch — er wurde nicht geparkt, sondern als eigene Bearbeitung
+      // verbucht, und der Text stand danach zweimal im Doc. Das Fenster ist die
+      // Laufzeit des Schreibvorgangs: lokal 3,3 ms im Median (p95 11,8 ms), auf
+      // einem Netzlaufwerk oder bei einem rehydrierenden Cloud-Platzhalter
+      // entsprechend länger.
+      const brauchtZaehler = name === 'append' || name === 'writeBinary';
+      if (brauchtZaehler) spur.hebe(pfad);
       let ergebnis: unknown;
       try {
         ergebnis = original.apply(this, args);
       } catch (e) {
         // Ohne dieses Senken bliebe der Pfad nach einem EPERM für den Rest der
         // Sitzung „eigen" und jede echte Fremdänderung würde verschluckt.
-        spur.senke(pfad);
+        if (brauchtZaehler) spur.senke(pfad);
         throw e;
       }
       if (ergebnis && typeof (ergebnis as Promise<unknown>).then === 'function') {
@@ -200,13 +231,15 @@ export class WriteProvenance {
         // oder ein einarmiges `.then` reichen den Fehler an ein Promise weiter,
         // das niemand mehr liest; in der Mutationsprobe beendete genau das den
         // Node-Prozess mitten im Testlauf.
-        (ergebnis as Promise<unknown>).then(
-          () => spur.senke(pfad),
-          () => spur.senke(pfad)
-        );
+        if (brauchtZaehler) {
+          (ergebnis as Promise<unknown>).then(
+            () => spur.senke(pfad),
+            () => spur.senke(pfad)
+          );
+        }
         return ergebnis;
       }
-      spur.senke(pfad);
+      if (brauchtZaehler) spur.senke(pfad);
       return ergebnis;
     };
   }
@@ -219,12 +252,16 @@ export class WriteProvenance {
   }
 
   private hebe(pfad: string): void {
+    if (!this.laufend.has(pfad)) this.laufendSeit.set(pfad, Date.now());
     this.laufend.set(pfad, (this.laufend.get(pfad) ?? 0) + 1);
   }
 
   private senke(pfad: string): void {
     const rest = (this.laufend.get(pfad) ?? 0) - 1;
     if (rest > 0) this.laufend.set(pfad, rest);
-    else this.laufend.delete(pfad);
+    else {
+      this.laufend.delete(pfad);
+      this.laufendSeit.delete(pfad);
+    }
   }
 }
