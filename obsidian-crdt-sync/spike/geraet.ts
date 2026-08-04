@@ -40,13 +40,17 @@ function decktAb(doc: string, text: string): boolean {
 }
 
 export class Geraet {
+  // DIE PLATTE. Sie ueberlebt einen Neustart — `_textFiles` sind die `.md`,
+  // `_files` die Hilfsdateien.
   readonly vault = makeVaultMock() as any;
-  readonly crdt = new CrdtManager();
-  readonly sync: SyncHandler;
+  // DER PROZESS. Alles hier ist nach einem Neustart weg und wird aus der Platte
+  // neu aufgebaut. Deshalb NICHT readonly.
+  crdt = new CrdtManager();
+  sync: SyncHandler;
   // DIE ECHTE SCHREIBSPUR, nicht die Grundwahrheit `quelle`. Damit misst dieser
   // Treiber das ganze System: Signal, Tor, Parkplatz, Frist und Nachtrag sind
   // Produktivcode, nachgebaut ist nur die Klammer aus main.ts.
-  readonly provenance: WriteProvenance;
+  provenance: WriteProvenance;
   // Was das Plugin selbst vor dem Ueberschreiben gesichert hat.
   readonly kopien = new Map<string, string[]>();
   private writingPaths = new Set<string>();
@@ -55,6 +59,49 @@ export class Geraet {
   aufschubZaehler = 0;
   praegeZaehler = 0;
   politikAktiv = false;
+
+  // NEUSTART — Obsidian wird geschlossen und wieder geoeffnet, das Plugin neu
+  // geladen, der Rechner faehrt hoch. Die Platte bleibt, der Prozess ist weg.
+  //
+  // Das ist keine Randbedingung, sondern der Regelfall: Der Nachtrag feuert nach
+  // vier Ticks, die Fremdhistorie kommt, wenn das andere Geraet das naechste Mal
+  // synchronisiert — Stunden bis Tage spaeter. Dazwischen wird Obsidian mit hoher
+  // Wahrscheinlichkeit mindestens einmal geschlossen. Alles, was `SyncHandler` im
+  // Speicher haelt (`parked`, `nachgetragen`, `localDiffBase`, `guids`), ist dann
+  // fort; die Docs werden beim naechsten `poll` aus den Hilfsdateien neu gebaut.
+  //
+  // NICHT zurueckgesetzt werden die Messzaehler und die Sicherungskopien: Sie sind
+  // Messwerte ueber den ganzen Lauf, kein Prozesszustand. Ebenso bleibt die
+  // Konfiguration (`parkFrist`, `nachtragVerfahren`, `politikAktiv`) — im Produkt
+  // steht sie in den Einstellungen und ueberlebt einen Neustart genauso.
+  async neustart(): Promise<void> {
+    const verfahren = this.sync.nachtragVerfahren;
+    this.crdt = new CrdtManager();
+    this.sync = this.baueSync();
+    this.sync.nachtragVerfahren = verfahren;
+    this.provenance = new WriteProvenance(this.vault.adapter);
+    this.provenance.install();
+    this.writingPaths.clear();
+  }
+
+  private baueSync(): SyncHandler {
+    return new SyncHandler(
+      this.vault,
+      this.crdt,
+      this.id,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      async (notePath: string, text: string) => {
+        const liste = this.kopien.get(notePath) ?? [];
+        liste.push(text);
+        this.kopien.set(notePath, liste);
+      }
+    );
+  }
 
   constructor(
     readonly id: string,
