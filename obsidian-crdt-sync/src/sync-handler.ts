@@ -1172,16 +1172,20 @@ export class SyncHandler {
       return false;
     }
 
-    // Sonde: Was trägt die Fremdhistorie, für sich allein genommen?
+    // Sonde: Was trägt die Fremdhistorie, für sich allein genommen? Der Doc wird
+    // danach freigegeben — sonst haelt jeder Ersatzversuch einen Y.Doc im
+    // Speicher, und bei einem Vault mit vielen Notizen summiert sich das.
     const probe = new CrdtManager();
-    for (const s of fremde) {
-      try {
-        probe.applyUpdate(notePath, s.update);
-      } catch {
-        return false; // unvollständige Sonde ⇒ kein Ersatz, lieber vereinigen
-      }
+    let fremdText: string;
+    try {
+      for (const s of fremde) probe.applyUpdate(notePath, s.update);
+      fremdText = probe.getContent(notePath);
+    } catch {
+      return false; // unvollständige Sonde ⇒ kein Ersatz, lieber vereinigen
+    } finally {
+      probe.disposeDoc(notePath);
     }
-    if (!this.deckt(probe.getContent(notePath), stand)) return false;
+    if (!this.deckt(fremdText, stand)) return false;
 
     this.crdtManager.disposeDoc(notePath);
     for (const s of fremde) {
