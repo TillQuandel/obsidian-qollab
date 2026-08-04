@@ -275,6 +275,12 @@ export class SyncHandler {
     return this.parked.get(notePath)?.text;
   }
 
+  // Die Uhr braucht die Liste, weil sie an keinem Datei-Ereignis haengt. Kopie,
+  // damit ein Nachtrag waehrend der Iteration den Parkplatz raeumen darf.
+  parkedPaths(): string[] {
+    return [...this.parked.keys()];
+  }
+
   // Deckt der Doc den geparkten Stand inzwischen ab? Dann ist die Historie
   // eingetroffen, das Parken hat seinen Zweck erfüllt und wird beendet — ohne
   // dass je eine eigene Op für fremden Text entstanden ist.

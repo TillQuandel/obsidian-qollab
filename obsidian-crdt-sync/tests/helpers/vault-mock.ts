@@ -111,7 +111,36 @@ export function makeVaultMock(): VaultMock {
     return { files: outFiles, folders: [...outFolders] };
   };
 
-  const adapter: SidecarAdapter = {
+  // Die drei als `@public` dokumentierten Textmethoden des DataAdapters. Sie
+  // gehoeren zum Mock, seit Herkunft eine Rolle spielt: Obsidians Vault-API
+  // schreibt `.md`-Dateien ueber genau sie, ein Datei-Sync schreibt am Prozess
+  // vorbei. Ohne sie waere im Mock beides ununterscheidbar — und alles „fremd".
+  //
+  // Faustregel fuer Tests:
+  //   `tippeMd(vault, pfad, text)`   = prozessintern (Nutzer tippt, Plugin schreibt)
+  //   `vault._textFiles.set(...)`    = von aussen geliefert (Datei-Sync, Notepad)
+  const adapter: SidecarAdapter & {
+    write(p: string, data: string): Promise<void>;
+    append(p: string, data: string): Promise<void>;
+    process(p: string, fn: (data: string) => string): Promise<string>;
+  } = {
+    write: async (p: string, data: string) => {
+      textFiles.set(p, data);
+      mdMtimes.set(p, ++clock);
+    },
+    append: async (p: string, data: string) => {
+      textFiles.set(p, (textFiles.get(p) ?? '') + data);
+      mdMtimes.set(p, ++clock);
+    },
+    process: async (p: string, fn: (data: string) => string) => {
+      const cur = textFiles.get(p) ?? '';
+      const next = fn(cur);
+      if (next !== cur) {
+        textFiles.set(p, next);
+        mdMtimes.set(p, ++clock);
+      }
+      return next;
+    },
     exists: async (p: string) => files.has(p) || textFiles.has(p) || folderExists(p),
     readBinary: async (p: string) => {
       if (!files.has(p)) throw new Error('ENOENT: ' + p);
@@ -153,15 +182,11 @@ export function makeVaultMock(): VaultMock {
     getFiles: () => [...textFiles.keys()].map(tfile),
     getMarkdownFiles: () => [...textFiles.keys()].filter((p) => p.endsWith('.md')).map(tfile),
     read: async (file: { path: string }) => textFiles.get(file.path) ?? '',
-    process: async (file: { path: string }, fn: (data: string) => string) => {
-      const cur = textFiles.get(file.path) ?? '';
-      const next = fn(cur);
-      if (next !== cur) {
-        textFiles.set(file.path, next);
-        mdMtimes.set(file.path, ++clock);
-      }
-      return next;
-    },
+    // Ueber den Adapter, nicht daran vorbei: Ein Write des Plugins muss im Mock
+    // denselben Weg nehmen wie in Obsidian, sonst sieht die Schreibspur ihn nicht
+    // und der eigene Write-Back gilt als fremd.
+    process: (file: { path: string }, fn: (data: string) => string) =>
+      adapter.process(file.path, fn),
     adapter,
     listYjsFiles: (notePath: string, cache?: DirListingCache) =>
       listYjsInDir(adapter, notePath, cache),
@@ -172,4 +197,17 @@ export function makeVaultMock(): VaultMock {
     _folders: folders,
     _writeCount: writeCount,
   };
+}
+
+// Ein Schreibvorgang DIESES Prozesses — was im echten Obsidian ein Tastendruck
+// mit Editor-Autosave, eine Kernfunktion oder ein fremdes Plugin auslöst. Läuft
+// über den Adapter und ist damit für die Schreibspur als eigen erkennbar.
+//
+// Das Gegenstück ist `vault._textFiles.set(...)`: die Datei erscheint, ohne dass
+// dieser Prozess sie geschrieben hat — ein Datei-Sync oder ein externer Editor.
+export async function tippeMd(vault: VaultMock, path: string, text: string): Promise<void> {
+  await (vault.adapter as unknown as { write(p: string, d: string): Promise<void> }).write(
+    path,
+    text
+  );
 }

@@ -1,6 +1,7 @@
 import { Notice, Plugin, TFile } from 'obsidian';
 import { CrdtManager } from './crdt-manager';
 import { SyncHandler, TombstoneStore, QOLLAB_DIR } from './sync-handler';
+import { WriteProvenance } from './write-provenance';
 import {
   SidecarAdapter,
   DirListingCache,
@@ -13,7 +14,7 @@ import {
   readSidecar,
   listAllSidecars,
 } from './sidecar-io';
-import { SidecarWatcher } from './sidecar-watcher';
+import { SidecarWatcher, SCAN_INTERVAL_MS } from './sidecar-watcher';
 import { CrdtSyncSettings, CrdtSyncSettingTab, DEFAULT_SETTINGS, generateClientId } from './settings';
 import { migrateTombstones, tombstoneKey } from './tombstones';
 import { PathQueue } from './path-queue';
@@ -72,6 +73,24 @@ export const FOREIGN_OWN_SIDECAR_NOTICE =
   'ein zweites Gerät dieselbe Geräte-ID, oder es wurde eine Sicherung zurückgespielt. ' +
   'Dieses Gerät arbeitet ab jetzt unter einer neuen Geräte-ID weiter.';
 
+// ERSTKONTAKT — die Frist des Parkens, ausdruecklich als UHR definiert.
+//
+// Ein Tick ist ein Durchlauf von `SCAN_INTERVAL_MS` — dieselbe Konstante, die
+// der Waechter benutzt, nicht eine zweite daneben. Vier Ticks sind zwei Minuten. Die Zahl ist
+// eine Produktentscheidung, keine Messgroesse: gemessen ist nur die Form der
+// Kurve (Frist 2 -> weniger Verlust, mehr Verdopplung; Frist 8 -> umgekehrt).
+//
+// Wann die Uhr NICHT laeuft, und warum:
+//   - `enabled: false` — dann parkt der modify-Handler auch nicht; die Uhr haette
+//     nichts zu tun, und ein Nachtrag im ausgeschalteten Zustand waere ein
+//     Schreibvorgang, den niemand angefordert hat.
+//   - `sweepRunning` — der Startlauf braucht bei 1638 Notizen rund 456 s, also
+//     15 Intervalle. Liefe die Uhr mit, verfiele jede Frist, bevor der erste Poll
+//     ueberhaupt eine Historie einsammeln konnte.
+//   - nach einem Neustart — der Parkplatz ist rein im Speicher. Der Sweep erfasst
+//     dann wie bisher; beim Start ist Herkunft ohnehin nicht ableitbar.
+const PARK_FRIST_TICKS = 4;
+
 export default class CrdtSyncPlugin extends Plugin {
   settings: CrdtSyncSettings;
   // Geräte-ID dieser Installation (gerätelokal, siehe CLIENT_ID_KEY).
@@ -103,6 +122,7 @@ export default class CrdtSyncPlugin extends Plugin {
   };
   // Guard: verhindert Endlos-Loop wenn wir selbst eine .md-Datei schreiben
   private writingPaths = new Set<string>();
+  private writeProvenance!: WriteProvenance;
   // R2: Pro-Pfad-Dedup für korrupte-Datei-Notices (einmal pro Session).
   private corruptNoticePaths = new Set<string>();
   // Task 12: Zähler für aufeinanderfolgende IO-Lesefehler pro Sidecar-Pfad. Ein
@@ -161,6 +181,17 @@ export default class CrdtSyncPlugin extends Plugin {
       );
     }
     const adapter = this.sidecarAdapter;
+
+    // Die Schreibspur muss VOR dem ersten modify-Handler stehen: sie beantwortet
+    // die Frage, ob ein Dateiinhalt aus diesem Prozess stammt, und ohne sie
+    // waere jede per Sync gelieferte `.md` von einem Tastendruck ununterscheidbar.
+    //
+    // Umhuellt wird der ROHE Adapter, nicht der Sidecar-Wrapper darueber: Die
+    // `.md` laeuft ueber die Vault-API, und deren Schreibvorgaenge landen genau
+    // hier — `write` und `process` des DataAdapters sind als `@public`
+    // dokumentiert. Der Wrapper kennt nur die Sidecar-Methoden.
+    this.writeProvenance = new WriteProvenance(rawAdapter as never);
+    this.writeProvenance.install();
 
     // Schlankes VaultLike: Vault-API für die indizierte .md, Adapter für Sidecars.
     const vaultLike = {
@@ -284,6 +315,21 @@ export default class CrdtSyncPlugin extends Plugin {
             this.syncHandler.noteUncapturedLocalContent(notePath, content);
             return;
           }
+          // DAS TOR. Hat dieser Prozess den Inhalt geschrieben? Wenn nicht, hat
+          // ihn ein Datei-Sync abgelegt (oder ein externer Editor) — dann wird er
+          // NICHT als eigene Operation verbucht, sondern geparkt. Das Signal
+          // trennt Prozesse, nicht Menschen: ein externer Editor gilt ebenfalls
+          // als fremd. Genau deshalb wird geparkt und nicht verworfen — Verwerfen
+          // frisst gemessen 65-100 % der externen Bearbeitungen, Parken keine
+          // einzige (der Nachtrag holt sie nach der Frist).
+          //
+          // Das Tor sitzt am EINGANG, nicht tiefer: `applyLocalContent` ruft ueber
+          // `mergeForLocalDiff` das `ensureDoc`, und dessen Adopt-Zweig
+          // materialisiert den `.md`-Text bereits selbst.
+          if (!this.writeProvenance.istEigen(notePath, content)) {
+            this.syncHandler.parkForeign(notePath, content);
+            return;
+          }
           const merged = await this.syncHandler.applyLocalContent(notePath, content);
           // Hier NICHT markieren: `applyLocalContent` ist durchgelaufen, der Edit
           // steht im Doc und in der eigenen Sidecar. Offen bleibt allein der
@@ -364,6 +410,10 @@ export default class CrdtSyncPlugin extends Plugin {
           // Pfad EINMAL festhalten (Obsidian mutiert `TFile.path` in place, siehe
           // modify-Handler oben) — Warteschlangen-Schlüssel und Arbeitspfad.
           const neuerPfad = file.path;
+          // Die Schreibspur haengt am Pfad und muss wie `guids`, `localDiffBase`
+          // und der Parkplatz mitziehen: sonst gilt ein eigener Tastendruck
+          // waehrend einer Umbenennung als fremd — gemessen.
+          this.writeProvenance.renameNote(oldPath, neuerPfad);
           // Szenariosuche R3-F8: Ändert sich nur die Groß-/Kleinschreibung eines
           // ORDNERS, muss dessen Name auf der Platte eigens nachgezogen werden —
           // der Umzug der einzelnen Dateien unten leistet das nicht (Begründung
@@ -456,6 +506,7 @@ export default class CrdtSyncPlugin extends Plugin {
           // anderen Halbwissen in diesem Pfad (`guidsToTombstone` → `null`) die
           // nicht-destruktive Seite wählen. Liegengebliebene Hilfsdateien lassen
           // sich später aufräumen, eine gelöschte Historie nicht.
+          this.writeProvenance.forget(file.path);
           const folder = dirname(file.path);
           const folderGone = folder
             ? await sidecarExists(this.sidecarAdapter, folder).then(
@@ -548,6 +599,15 @@ export default class CrdtSyncPlugin extends Plugin {
         }
         if (this.unloaded) return;
         this.startSidecarWatcher();
+        // Die Frist-Uhr. Bewusst ein EIGENES Intervall und nicht an
+        // `onRemoteYjsUpdate` gehaengt: dort feuert nur eine GEAENDERTE fremde
+        // Hilfsdatei. Eine Notiz, deren Hilfsdatei nie kommt — Peer ohne Qollab,
+        // `.qollab` vom Sync ausgeschlossen, externer Editor —, bekaeme sonst nie
+        // wieder einen Ausloeser, und aus „spaeter entscheiden" wuerde „nie
+        // entscheiden".
+        this.registerInterval(
+          window.setInterval(() => void this.tickParkedNotes(), SCAN_INTERVAL_MS)
+        );
         await this.sidecarWatcher.poll();
       })();
     });
@@ -1481,9 +1541,26 @@ export default class CrdtSyncPlugin extends Plugin {
     return !this.syncHandler.hasUnpersistedState(notePath);
   }
 
+  // Ein Durchlauf der Frist-Uhr ueber alle geparkten Notizen. Ueber dieselbe
+  // Warteschlange wie modify und Merge, damit ein Nachtrag nicht neben einem
+  // laufenden Merge derselben Notiz schreibt.
+  private async tickParkedNotes(): Promise<void> {
+    if (this.unloaded || !this.settings.enabled || this.sweepRunning) return;
+    for (const notePath of this.syncHandler.parkedPaths()) {
+      if (this.unloaded) return;
+      await this.pathQueue.run(notePath, () =>
+        this.syncHandler.tickParked(notePath, PARK_FRIST_TICKS)
+      );
+    }
+  }
+
   onunload() {
     this.unloaded = true;
     this.sidecarWatcher.stop();
+    // Die Umhuellung zurueckgeben, bevor der Adapter weiterlebt: haengt
+    // inzwischen ein anderes Plugin darueber, schaltet `uninstall` die eigene
+    // Umhuellung nur inaktiv, statt dessen Kette zu zerreissen.
+    this.writeProvenance?.uninstall();
     this.crdtManager.disposeAll();
   }
 
