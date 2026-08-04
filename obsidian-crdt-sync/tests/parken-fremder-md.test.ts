@@ -152,8 +152,12 @@ describe('Erstkontakt — gelieferte .md wird nicht als eigene Bearbeitung verbu
     await sync.applyLocalContent(NOTE, getippt);
 
     // Der eigene Tastendruck ist erfasst — der gelieferte Text aber NICHT als
-    // eigene Op. Der Parkplatz ist auf den neuen Dateistand nachgezogen.
+    // eigene Op. Das ist der Kern: Stünde die Diff-Basis noch auf dem Stand VOR
+    // dem Parken, wäre das Delta dieses Tastendrucks „FREMD und EIGEN eingefügt"
+    // und der gelieferte Text damit doch eine eigene Operation — das Parken hätte
+    // genau einen Tastendruck lang gehalten.
     expect(crdt.getContent(NOTE)).toContain('EIGEN');
+    expect(crdt.getContent(NOTE)).not.toContain('FREMD');
     expect(sync.hasParked(NOTE)).toBe(true);
     expect(sync.parkedText(NOTE)).toBe(getippt);
   });
@@ -300,3 +304,136 @@ describe('Erstkontakt — gelieferte .md wird nicht als eigene Bearbeitung verbu
 // Sicherheitsnetz für den Kern-Guard: `unionMerge` kann nur hinzufügen. Damit ist
 // ausgeschlossen, dass ein Nachtrag eine Zeile ENTFERNT — die teure Fehlerrichtung.
 export {};
+
+// ---------------------------------------------------------------------------
+// SCHÄRFUNG. Die erste Fassung dieser Datei war grün und bewachte trotzdem nur
+// drei von zehn Mechaniken: Nimmt man die anderen sieben testweise zurück, fällt
+// kein Test. Die folgenden Fälle schließen das — jeder ist gegen die Rücknahme
+// genau seiner Codezeile geprüft.
+// ---------------------------------------------------------------------------
+
+describe('Erstkontakt — die Mechaniken einzeln bewacht', () => {
+  // M7: `loadAndMerge` muss `null` liefern, solange etwas geparkt ist. `null`
+  // heißt für jeden Aufrufer „kein Write-Back, Trigger unverbraucht" — ohne das
+  // schreibt der Poll den Doc-Stand in die Datei und löscht den geparkten Text.
+  it('M7 — loadAndMerge liefert null, solange der Doc den Parkplatz nicht deckt', async () => {
+    const vault = makeVaultMock() as any;
+    const crdt = new CrdtManager();
+    const sync = new SyncHandler(vault, crdt, 'aaaa1111');
+
+    vault._textFiles.set(NOTE, 'kopf\n');
+    await sync.applyLocalContent(NOTE, 'kopf\n');
+
+    vault._textFiles.set(NOTE, 'kopf\nFREMD\n');
+    sync.parkForeign(NOTE, 'kopf\nFREMD\n');
+
+    // Es liegt eine fremde Hilfsdatei vor, die den geparkten Stand NICHT deckt.
+    fremdeSidecar(vault, FREMD_YJS, G_FREMD, 'kopf\nANDERES\n');
+    expect(await sync.loadAndMerge(NOTE)).toBeNull();
+    expect(sync.hasParked(NOTE)).toBe(true);
+  });
+
+  // M8: Guard „keine `.md` ⇒ kein Nachtrag". Ohne ihn prägt der Fristablauf eine
+  // Inkarnation für eine Notiz, die es nicht mehr gibt: `ensureDoc` setzt die
+  // GUID, bevor es den fehlenden `.md` bemerkt, und `saveState` schreibt eine
+  // Hilfsdatei, die kein Tombstone deckt.
+  it('M8 — Fristablauf ohne .md prägt keine Phantom-Hilfsdatei', async () => {
+    const vault = makeVaultMock() as any;
+    const crdt = new CrdtManager();
+    const sync = new SyncHandler(vault, crdt, 'aaaa1111');
+
+    vault._textFiles.set(NOTE, 'kopf\n');
+    await sync.applyLocalContent(NOTE, 'kopf\n');
+    sync.parkForeign(NOTE, 'kopf\nFREMD\n');
+
+    // Die Datei verschwindet, OHNE dass disposeNote läuft — genau das Fenster,
+    // in dem der Guard allein trägt (extern gelöscht, Sync-Löschung, Rename
+    // dazwischen).
+    vault._textFiles.delete(NOTE);
+    vault._files.delete(OWN_YJS);
+    crdt.disposeDoc(NOTE);
+
+    await sync.tickParked(NOTE, 1);
+
+    expect(sync.hasParked(NOTE)).toBe(false);
+    expect(vault._files.has(OWN_YJS)).toBe(false);
+  });
+
+  // M9: Die Diff-Basis wird VOR dem Nachtrag auf den Doc-Stand zurückgesetzt.
+  // Beim Parken steht sie auf dem geparkten Text; bliebe sie dort, wäre das
+  // Delta des Nachtrags leer und er ein No-op — der erste Entwurf verlor so
+  // 100 % der externen Bearbeitungen.
+  it('M9 — der Nachtrag ist kein No-op: der geparkte Text landet im Doc', async () => {
+    const vault = makeVaultMock() as any;
+    const crdt = new CrdtManager();
+    const sync = new SyncHandler(vault, crdt, 'aaaa1111');
+
+    vault._textFiles.set(NOTE, 'kopf\n');
+    await sync.applyLocalContent(NOTE, 'kopf\n');
+
+    // Ein externer Editor hängt eine Zeile an. Eine Hilfsdatei dazu kommt nie.
+    const extern = 'kopf\nEXTERN\n';
+    vault._textFiles.set(NOTE, extern);
+    sync.parkForeign(NOTE, extern);
+
+    await sync.tickParked(NOTE, 1);
+
+    expect(sync.hasParked(NOTE)).toBe(false);
+    // Der externe Edit ist jetzt erfasst — und zwar im CRDT, nicht nur in der
+    // Datei. Ohne Basis-Rücksetzung bliebe der Doc auf 'kopf\n' stehen.
+    expect(crdt.getContent(NOTE)).toContain('EXTERN');
+  });
+
+  // M4: Der Adopt-Zweig von `ensureDoc` liest die `.md` selbst. Solange geparkt
+  // ist, darf er sie nicht als lokalen Beitrag vereinigen — sonst wird fremder
+  // Text auf einem Pfad zur eigenen Op, den das Tor im modify-Handler gar nicht
+  // berührt.
+  it('M4 — der Adopt-Zweig bringt die geparkte .md nicht als eigenen Beitrag ein', async () => {
+    const vault = makeVaultMock() as any;
+    const crdt = new CrdtManager();
+    const sync = new SyncHandler(vault, crdt, 'aaaa1111');
+
+    // Frisches Gerät: kein Doc, kein eigener Zustand. Der Sync hat die `.md`
+    // eines Peers abgelegt und dazu die Hilfsdatei eines DRITTEN Geräts, die
+    // den Tie-Break gewinnt.
+    const gelieferte = 'kopf\nVON-B\n';
+    vault._textFiles.set(NOTE, gelieferte);
+    fremdeSidecar(vault, FREMD_YJS, G_FREMD, 'kopf\nVON-A\n');
+    sync.parkForeign(NOTE, gelieferte);
+
+    await sync.loadAndMerge(NOTE);
+
+    // Der Doc trägt die adoptierte fremde Kette — aber KEINE eigene Op für
+    // 'VON-B'. Der steht weiter nur in der Datei und wartet auf seine Historie.
+    expect(crdt.getContent(NOTE)).not.toContain('VON-B');
+    expect(sync.hasParked(NOTE)).toBe(true);
+  });
+
+  // M5: `switchToGuid` liest die `.md` ebenfalls selbst. Der Unterschied ist auf
+  // OP-Ebene und wird erst sichtbar, wenn die fremde Kette später erneut gemergt
+  // wird — Yjs dedupliziert nach Item-ID, nicht nach Inhalt.
+  it('M5 — nach dem Historienwechsel steht der gelieferte Text nicht doppelt', async () => {
+    const vault = makeVaultMock() as any;
+    const crdt = new CrdtManager();
+    const sync = new SyncHandler(vault, crdt, 'aaaa1111');
+
+    // Eigene, unterlegene Inkarnation mit eigenem Beitrag.
+    vault._textFiles.set(NOTE, 'kopf\nEIGEN\n');
+    await sync.applyLocalContent(NOTE, 'kopf\nEIGEN\n');
+
+    // Der Sync liefert die Fassung des Peers; sie wird geparkt.
+    const geliefert = 'kopf\nFREMD\n';
+    vault._textFiles.set(NOTE, geliefert);
+    sync.parkForeign(NOTE, geliefert);
+
+    // Die Hilfsdatei der gewinnenden fremden Inkarnation trifft ein.
+    fremdeSidecar(vault, FREMD_YJS, G_FREMD, geliefert);
+    await sync.loadAndMerge(NOTE);
+
+    // Und danach noch einmal — der reguläre Fall, jeder Poll mergt erneut.
+    await sync.loadAndMerge(NOTE);
+
+    expect(zaehle(crdt.getContent(NOTE), 'FREMD')).toBe(1);
+    expect(crdt.getContent(NOTE)).toContain('EIGEN');
+  });
+});
