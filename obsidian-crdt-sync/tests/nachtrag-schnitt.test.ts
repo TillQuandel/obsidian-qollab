@@ -27,7 +27,7 @@ function fremdeSidecarAuf(basis: CrdtManager, guid: string, text: string): Array
 const zaehle = (t: string, n: string): number => t.split(n).length - 1;
 
 function bau(
-  verfahren: 'ersetzen' | 'schnitt',
+  verfahren: 'ersetzen' | 'schnitt' | 'adoptieren',
   vault = makeVaultMock() as any,
   crdt = new CrdtManager()
 ): { vault: any; crdt: CrdtManager; sync: SyncHandler } {
@@ -65,9 +65,9 @@ async function bisNachtrag(
   return peer;
 }
 
-describe('Herkunfts-Schnitt', () => {
+describe.each([['schnitt'], ['adoptieren']] as const)('Weg %s', (VERF) => {
   it('GRUNDFALL: schneidet den Nachtrag, wenn die Fremdhistorie ihn traegt', async () => {
-    const { vault, crdt, sync } = bau('schnitt');
+    const { vault, crdt, sync } = bau(VERF);
     const peer = await bisNachtrag(vault, crdt, sync);
     vault._files.set(FREMD_YJS, peer);
     await sync.loadAndMerge(NOTE);
@@ -76,14 +76,14 @@ describe('Herkunfts-Schnitt', () => {
   });
 
   it('LAGE 1 — Neustart: der Vermerk liegt im Doc und ueberlebt ihn', async () => {
-    const { vault, crdt, sync } = bau('schnitt');
+    const { vault, crdt, sync } = bau(VERF);
     const peer = await bisNachtrag(vault, crdt, sync);
 
     // Obsidian wird geschlossen: neuer Prozess, Doc aus dem State neu gebaut.
     const state = crdt.encodeState(NOTE);
     const crdt2 = new CrdtManager();
     crdt2.applyUpdate(NOTE, state);
-    const { sync: sync2 } = bau('schnitt', vault, crdt2);
+    const { sync: sync2 } = bau(VERF, vault, crdt2);
 
     vault._files.set(FREMD_YJS, peer);
     await sync2.loadAndMerge(NOTE);
@@ -92,7 +92,7 @@ describe('Herkunfts-Schnitt', () => {
   });
 
   it('LAGE 2 — der Nutzer hat seit dem Nachtrag getippt', async () => {
-    const { vault, crdt, sync } = bau('schnitt');
+    const { vault, crdt, sync } = bau(VERF);
     const peer = await bisNachtrag(vault, crdt, sync);
 
     await sync.applyLocalContent(NOTE, 'kopf\nFREMD\nMEIN\n');
@@ -104,7 +104,7 @@ describe('Herkunfts-Schnitt', () => {
   });
 
   it('LAGE 3 — der Nutzer wiederholt dieselbe Zeile absichtlich', async () => {
-    const { vault, crdt, sync } = bau('schnitt');
+    const { vault, crdt, sync } = bau(VERF);
     const peer = await bisNachtrag(vault, crdt, sync, 'kopf\nTODO\n');
 
     // Eine zweite, eigene TODO-Zeile. Sie liegt AUSSERHALB des clock-Bereichs
@@ -117,7 +117,7 @@ describe('Herkunfts-Schnitt', () => {
   });
 
   it('SICHERUNG: traegt die Fremdhistorie den Text NICHT, wird nicht geschnitten', async () => {
-    const { vault, crdt, sync } = bau('schnitt');
+    const { vault, crdt, sync } = bau(VERF);
     await bisNachtrag(vault, crdt, sync, 'kopf\nFREMD\nNUR-IN-DATEI\n');
 
     // Die eintreffende Historie kennt nur einen Teil des nachgetragenen Textes.

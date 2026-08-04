@@ -92,7 +92,7 @@ export const parken =
 // Dieselbe Politik, aber mit waehlbarem Verfahren fuer den Fall, dass die
 // Fremdhistorie NACH dem Nachtrag eintrifft. Siehe `SyncHandler.nachtragVerfahren`.
 export const parkenMit =
-  (frist: number, verfahren: 'ersetzen' | 'undo' | 'korrigieren' | 'schnitt'): Fabrik =>
+  (frist: number, verfahren: 'ersetzen' | 'undo' | 'korrigieren' | 'schnitt' | 'adoptieren'): Fabrik =>
   (a, b) => {
     for (const g of [a, b]) {
       g.parkFrist = frist;

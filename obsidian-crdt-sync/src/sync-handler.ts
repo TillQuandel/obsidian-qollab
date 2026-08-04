@@ -275,7 +275,7 @@ export class SyncHandler {
   //                 vermerkt (reist mit, ueberlebt den Neustart); trifft die
   //                 Fremdhistorie ein, werden genau diese Zeichen entfernt.
   //                 Braucht weder „Doc unveraendert" noch „Fremdhistorie deckt".
-  nachtragVerfahren: 'ersetzen' | 'undo' | 'korrigieren' | 'schnitt' = 'ersetzen';
+  nachtragVerfahren: 'ersetzen' | 'undo' | 'korrigieren' | 'schnitt' | 'adoptieren' = 'ersetzen';
 
   hatNachtrag(notePath: string): boolean {
     return this.nachgetragen.has(notePath);
@@ -437,7 +437,9 @@ export class SyncHandler {
     }
     // WEG C: den clock-Stand VOR dem Nachtrag festhalten.
     const vorClock =
-      this.nachtragVerfahren === 'schnitt' ? this.crdtManager.clockStand(notePath) : null;
+      this.nachtragVerfahren === 'schnitt' || this.nachtragVerfahren === 'adoptieren'
+        ? this.crdtManager.clockStand(notePath)
+        : null;
     try {
       await this.applyLocalContent(notePath, vereinigt);
     } finally {
@@ -1211,7 +1213,89 @@ export class SyncHandler {
       this.korrigiereNachtrag(notePath, vorher, passend);
     } else if (this.nachtragVerfahren === 'schnitt') {
       this.schneideNachtrag(notePath, passend);
+    } else if (this.nachtragVerfahren === 'adoptieren') {
+      this.adoptiereUndDiffe(notePath, vorher, passend);
     }
+  }
+
+  // WEG D — ADOPT-AND-DIFF. Die Erkenntnis aus vier gemessenen Verfahren:
+  //
+  //   ersetzen      Weglassen (Doc neu aufbauen)   stiller Verlust  0,0 %
+  //   korrigieren   setContent -> Delete-Ops                        0,2 %
+  //   schnitt       gezieltes delete                          2,8–50,0 %
+  //   undo          delete ueber UndoManager                 29,9–50,7 %
+  //
+  // Die Verlustmenge skaliert damit, WIE VIEL geloescht wird, und jede Loeschung
+  // propagiert. Nur `ersetzen` loescht nicht — es ist aber an die Bedingung
+  // gebunden, dass der Doc seit dem Nachtrag unveraendert ist.
+  //
+  // Dieser Weg loest die Bedingung, ohne je zu loeschen:
+  //   1. Auf einer KOPIE den Nachtrags-clock-Bereich wegschneiden — nur um den
+  //      Zieltext zu bestimmen. Die Kopie wird verworfen, nichts propagiert.
+  //   2. Den eigenen Doc verwerfen und aus den fremden Historien neu aufbauen.
+  //      `disposeDoc` erzeugt keine Op; `applyUpdate` uebertraegt die
+  //      Original-Item-IDs, es entstehen also keine neuen Ketten.
+  //   3. Den lokalen Anteil per Vereinigung wieder einbringen. Weil die
+  //      Vereinigung nie etwas wegnimmt, erzeugt `setContent` hier nur
+  //      Einfuegungen — keine Delete-Ops, nichts zu propagieren.
+  private adoptiereUndDiffe(
+    notePath: string,
+    vorher: string,
+    siblings: DecodedSibling[]
+  ): void {
+    const vermerk = this.crdtManager.gemerkt(notePath, SyncHandler.SCHNITT);
+    if (vermerk === undefined) return;
+    const [c, v, b] = vermerk.split(':').map(Number);
+    if (!Number.isFinite(c) || !Number.isFinite(v) || !Number.isFinite(b)) return;
+
+    const eigen = this.stateFilePath(notePath);
+    const fremde = siblings.filter((s) => s.path !== eigen);
+    if (fremde.length === 0) return;
+
+    // (1) Zieltext bestimmen — auf einer Kopie, die danach verworfen wird.
+    const kopie = new CrdtManager();
+    let ohneNachtrag: string;
+    try {
+      kopie.applyUpdate(notePath, this.crdtManager.encodeState(notePath));
+      kopie.schneideOps(notePath, c, v, b);
+      ohneNachtrag = kopie.getContent(notePath);
+    } catch {
+      return;
+    } finally {
+      kopie.disposeDoc(notePath);
+    }
+
+    const probe = new CrdtManager();
+    let fremdText: string;
+    try {
+      for (const s of fremde) probe.applyUpdate(notePath, s.update);
+      fremdText = probe.getContent(notePath);
+    } catch {
+      return;
+    } finally {
+      probe.disposeDoc(notePath);
+    }
+
+    // Sicherung: Keine Zeile darf ganz verschwinden. Ein Vorkommen weniger ist
+    // der Zweck, null Vorkommen waere Verlust.
+    const ziel = unionMerge(fremdText, ohneNachtrag);
+    const vorhanden = new Set(ziel.split('\n'));
+    for (const z of vorher.split('\n')) if (z !== '' && !vorhanden.has(z)) return;
+
+    // (2) Weglassen statt loeschen.
+    this.crdtManager.disposeDoc(notePath);
+    for (const s of fremde) {
+      try {
+        this.crdtManager.applyUpdate(notePath, s.update);
+      } catch {
+        this.onCorruptFile?.(s.path);
+      }
+    }
+    // (3) Lokalen Anteil wieder einbringen. `ziel` enthaelt `fremdText`
+    // vollstaendig, also entstehen hier nur Einfuegungen.
+    this.crdtManager.setContent(notePath, ziel);
+    this.crdtManager.vergiss(notePath, SyncHandler.SCHNITT);
+    this.nachgetragen.delete(notePath);
   }
 
   // WEG C — die Zeichen des Nachtrags gezielt entfernen.
