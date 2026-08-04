@@ -37,10 +37,28 @@ type Methode = (...args: any[]) => unknown;
 const UMHUELLTE = ['write', 'process', 'append', 'writeBinary'] as const;
 type MethodenName = (typeof UMHUELLTE)[number];
 
-// Wieviele Stände je Pfad gehalten werden. Bei 1600+ Notizen wäre eine
-// unbegrenzte Liste ein stiller Speicherfresser, und ein Stand, der mehr als ein
-// paar Schritte zurückliegt, kann ohnehin nicht mehr der Dateiinhalt sein.
-export const MAX_STAENDE = 4;
+// Wieviele Stände je Pfad gehalten werden. Die Antwort ist EINER, und das ist
+// keine Sparmaßnahme, sondern Korrektheit.
+//
+// Der erste Entwurf hielt vier — mit der Begründung, ein Stand, der mehr als ein
+// paar Schritte zurückliegt, könne ohnehin nicht mehr der Dateiinhalt sein. Das
+// ist falsch: Ein Datei-Sync spielt ältere Fassungen zurück (Microsoft
+// dokumentiert das für OneDrive ausdrücklich). Steht die zurückgespielte Fassung
+// noch im Puffer, gilt sie als „eigen", wird nicht geparkt — und der Diff gegen
+// den neueren Stand macht aus der Differenz eine LÖSCHUNG, die zum anderen Gerät
+// propagiert. Gemessen in `rueckgespielte-eigenfassung.test.ts`: bei vier und
+// bei zwei Ständen tritt der Verlust ein und verlässt das Gerät, bei einem nicht.
+//
+// Warum einer reicht: Der modify-Handler liest den AKTUELLEN Dateiinhalt, und
+// der Puffer wird synchron VOR dem Schreiben gesetzt. Der gelesene Inhalt ist
+// damit entweder der zuletzt gemerkte Stand oder ein noch laufender Write — und
+// den deckt der Laufzeitzähler ab. Kommen zwischen Ereignis und Lesung weitere
+// Writes dazu, liest der Handler deren Ergebnis, also wieder den neuesten Stand.
+//
+// Die Fehlerrichtung bei einem Stand ist die billige: Ein eigener Edit, der doch
+// einmal danebenfällt, wird geparkt und mit Verzögerung erfasst. Bei vier
+// Ständen war sie die teure — stiller, propagierender Verlust.
+export const MAX_STAENDE = 1;
 
 // djb2 mit XOR, gespeichert als `<Länge>:<32-Bit-Hash>`. Gespeichert wird der
 // Schlüssel, nicht der Volltext — sonst läge bei 1600+ Notizen der halbe Vault
