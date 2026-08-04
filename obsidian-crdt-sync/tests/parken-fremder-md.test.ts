@@ -495,3 +495,58 @@ describe('Erstkontakt — der Nachtrag dedupliziert', () => {
     expect(crdt.getContent(NOTE)).toContain('VOM-PEER');
   });
 });
+
+// Das Kanal-Tor. Die Frist ist keine reine Zeitkonstante: Liefert der Datei-Sync
+// für diese Notiz gerade nach, beginnt sie neu. Der Kanal hat zwei Moden — beide
+// Geräte online (Zustellung ~2 s, Maximum am gesunden Kanal 37,6 s) und „der
+// Peer war stundenlang weg" (unbeschränkt). Im zweiten verfällt jede feste Frist,
+// bevor die Historie kommen konnte, und genau dort liegt der Schaden.
+describe('Erstkontakt — die Frist läuft nur, während der Kanal steht', () => {
+  it('eine Lieferung, die den Parkplatz noch nicht deckt, setzt die Frist zurück', async () => {
+    const vault = makeVaultMock() as any;
+    const crdt = new CrdtManager();
+    const sync = new SyncHandler(vault, crdt, 'aaaa1111');
+
+    fremdeSidecar(vault, FREMD_YJS, G_FREMD, 'kopf\n');
+    vault._textFiles.set(NOTE, 'kopf\n');
+    await sync.applyLocalContent(NOTE, 'kopf\n');
+
+    const geliefert = 'kopf\nTEIL-A\nTEIL-B\n';
+    vault._textFiles.set(NOTE, geliefert);
+    sync.parkForeign(NOTE, geliefert);
+
+    // Drei Ticks vergehen — einer fehlt bis zur Frist von 4.
+    for (let i = 0; i < 3; i++) await sync.tickParked(NOTE, 4);
+    expect(sync.hasParked(NOTE)).toBe(true);
+
+    // Jetzt liefert der Kanal: die Historie kommt an, aber nur zur Hälfte.
+    fremdeSidecar(vault, FREMD_YJS, G_FREMD, 'kopf\nTEIL-A\n');
+    expect(await sync.loadAndMerge(NOTE)).toBeNull();
+
+    // Die Frist beginnt neu — der vierte Tick darf jetzt NICHT nachtragen.
+    await sync.tickParked(NOTE, 4);
+    expect(sync.hasParked(NOTE)).toBe(true);
+  });
+
+  it('ohne Lieferung läuft die Frist wie bisher ab — der externe Editor wartet nicht ewig', async () => {
+    const vault = makeVaultMock() as any;
+    const crdt = new CrdtManager();
+    const sync = new SyncHandler(vault, crdt, 'aaaa1111');
+
+    vault._textFiles.set(NOTE, 'kopf\n');
+    await sync.applyLocalContent(NOTE, 'kopf\n');
+
+    // Ein externer Editor schreibt. Es gibt keinen Peer, also liefert nie jemand
+    // nach — hier darf das Tor die Notiz nicht dauerhaft aus dem Sync halten.
+    vault._textFiles.set(NOTE, 'kopf\nEXTERN\n');
+    sync.parkForeign(NOTE, 'kopf\nEXTERN\n');
+
+    for (let i = 0; i < 4; i++) {
+      await sync.loadAndMerge(NOTE);
+      await sync.tickParked(NOTE, 4);
+    }
+
+    expect(sync.hasParked(NOTE)).toBe(false);
+    expect(crdt.getContent(NOTE)).toContain('EXTERN');
+  });
+});

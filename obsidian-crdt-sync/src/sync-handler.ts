@@ -1401,6 +1401,7 @@ export class SyncHandler {
   }
 
   async loadAndMerge(notePath: string): Promise<string | null> {
+    let vorDemMerge = '';
     const yjsFiles = await this.vault.listYjsFiles(notePath);
     // Leere Liste: unverändert „nichts zu mergen" (kein IO-Fehler-Fall).
     if (yjsFiles.length === 0) return null;
@@ -1432,6 +1433,9 @@ export class SyncHandler {
       ) {
         return null;
       }
+
+      // Stand vor dem Merge — Grundlage des Kanal-Tors unten.
+      vorDemMerge = this.crdtManager.getContent(notePath);
 
       // Rückgabewert („hat adoptiert und den .md-Text vereinigt") hier bewusst
       // ignoriert: loadAndMerge spielt den .md-Text ohnehin nicht als lokalen Diff
@@ -1473,7 +1477,29 @@ export class SyncHandler {
     // sagt dem Aufrufer „kein Write-Back, Trigger unverbraucht" (dieselbe
     // Semantik wie beim abgebrochenen Sidecar-Lesen). Ein Write-Back loeschte
     // sonst den geparkten Text aus der Datei.
-    if (!this.resolveParked(notePath)) return null;
+    if (!this.resolveParked(notePath)) {
+      // DAS KANAL-TOR. Hat dieser Merge den Doc verändert, hat der Datei-Sync
+      // für diese Notiz gerade geliefert — die Historie ist unterwegs, nur noch
+      // nicht vollständig. Dann beginnt die Frist neu.
+      //
+      // Ohne das Tor ist die Frist eine reine Zeitkonstante, und der Kanal hat
+      // zwei Moden: beide Geräte online (Zustellung ~2 s, Maximum am gesunden
+      // Kanal 37,6 s) und „der Peer war stundenlang weg" (unbeschränkt). Im
+      // zweiten Modus verfällt jede feste Frist, bevor die Historie kommen
+      // konnte — und genau dort liegt der Schaden, den eine Kalibrierung des
+      // ersten Modus nicht sieht.
+      //
+      // Der Reset haengt bewusst an einer TATSAECHLICHEN Doc-Aenderung und nicht
+      // am blossen Aufruf: `loadAndMerge` laeuft auch beim Oeffnen einer Notiz,
+      // und daran duerfte sich die Frist nicht verlaengern lassen. Liefert der
+      // Kanal fuer diese Notiz gar nichts — externer Editor, Peer ohne Qollab —,
+      // greift der Reset nie und die Frist laeuft wie bisher ab.
+      if (this.crdtManager.getContent(notePath) !== vorDemMerge) {
+        const p = this.parked.get(notePath);
+        if (p) p.ticks = 0;
+      }
+      return null;
+    }
 
     return this.crdtManager.getContent(notePath);
   }
