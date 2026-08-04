@@ -273,6 +273,10 @@ export class SyncHandler {
   //                 nach dem Merge die ueberzaehligen Zeilen entfernen.
   nachtragVerfahren: 'ersetzen' | 'undo' | 'korrigieren' = 'ersetzen';
 
+  hatNachtrag(notePath: string): boolean {
+    return this.nachgetragen.has(notePath);
+  }
+
   static readonly NACHTRAG_ORIGIN = Symbol.for('qollab.nachtrag');
   private static readonly MERK = 'nachtrag';
 
@@ -676,6 +680,13 @@ export class SyncHandler {
     // praegte ein spaeterer Fristablauf eine Inkarnation fuer eine geloeschte
     // Notiz.
     this.parked.delete(notePath);
+    // Aus demselben Grund der Merkposten des Nachtrags: Er haelt einen Textstand
+    // fest, den es nicht mehr gibt. Bliebe er stehen, saehe eine gleichnamig neu
+    // angelegte Notiz eine Zusage, die nichts mehr beschreibt — und der Ersatz
+    // wuerde ihre Kette gegen eine fremde Historie tauschen, die mit ihr nichts
+    // zu tun hat. Alle anderen Zustandskarten werden hier bereits geraeumt; diese
+    // fehlte (Code-Audit 2026-08-04).
+    this.nachgetragen.delete(notePath);
     // Task 16: Die Datei ist weg; ihr letzter gesehener Inhalt beschreibt nichts
     // mehr.
     //
