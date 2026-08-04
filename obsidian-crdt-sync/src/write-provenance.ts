@@ -166,7 +166,11 @@ export class WriteProvenance {
       }
       if (ergebnis && typeof (ergebnis as Promise<unknown>).then === 'function') {
         // Beide Zweige: eine Ablehnung (ENOSPC, Datei gesperrt) darf den Zähler
-        // genauso wenig oben lassen wie ein synchroner Wurf.
+        // genauso wenig oben lassen wie ein synchroner Wurf. Der zweite Handler
+        // hält die Ablehnung zugleich vom abgeleiteten Promise fern — `.finally`
+        // oder ein einarmiges `.then` reichen den Fehler an ein Promise weiter,
+        // das niemand mehr liest; in der Mutationsprobe beendete genau das den
+        // Node-Prozess mitten im Testlauf.
         (ergebnis as Promise<unknown>).then(
           () => spur.senke(pfad),
           () => spur.senke(pfad)
