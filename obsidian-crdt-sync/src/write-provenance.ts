@@ -95,7 +95,17 @@ export class WriteProvenance {
   // wieder aufwacht — zwei aktive Schichten würden den Zähler doppelt heben.
   private lauf: { aktiv: boolean } | null = null;
 
-  constructor(private adapter: ProvenanceAdapter) {}
+  // Die Uhr ist injizierbar, damit der Messtreiber sie deterministisch stellen
+  // kann. Mit `Date.now` haengt das Fenster unten an der Maschinenlast: Zwei
+  // identische Laeufe lieferten in den Zellen MIT externem Schreiber 29 gegen 32
+  // Verdopplungen, ohne dass sich eine Zeile geaendert haette (gemessen
+  // 2026-08-04). Die Zellen ohne externen Schreiber waren dagegen bitgleich —
+  // dort feuert das Fenster nicht. Vorbild ist `tombstones.ts`, das denselben
+  // Weg schon geht.
+  constructor(
+    private adapter: ProvenanceAdapter,
+    private uhr: () => number = Date.now
+  ) {}
 
   install(): void {
     if (this.lauf) return;
@@ -148,7 +158,7 @@ export class WriteProvenance {
     // gemessenen p95 von 11,8 ms, greift also nur, wenn die Platte tatsächlich
     // klemmt — und dann ist die ungeprüfte Zusage „ist eigen" das Gefährlichere.
     const seit = this.laufendSeit.get(pfad);
-    if ((this.laufend.get(pfad) ?? 0) > 0 && seit !== undefined && Date.now() - seit <= FENSTER_MS)
+    if ((this.laufend.get(pfad) ?? 0) > 0 && seit !== undefined && this.uhr() - seit <= FENSTER_MS)
       return true;
     const liste = this.staende.get(pfad);
     return liste !== undefined && liste.includes(textSchluessel(text));
@@ -252,7 +262,7 @@ export class WriteProvenance {
   }
 
   private hebe(pfad: string): void {
-    if (!this.laufend.has(pfad)) this.laufendSeit.set(pfad, Date.now());
+    if (!this.laufend.has(pfad)) this.laufendSeit.set(pfad, this.uhr());
     this.laufend.set(pfad, (this.laufend.get(pfad) ?? 0) + 1);
   }
 

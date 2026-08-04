@@ -79,7 +79,7 @@ export class Geraet {
     this.crdt = new CrdtManager();
     this.sync = this.baueSync();
     this.sync.nachtragVerfahren = verfahren;
-    this.provenance = new WriteProvenance(this.vault.adapter);
+    this.provenance = new WriteProvenance(this.vault.adapter, () => this.uhrStand);
     this.provenance.install();
     this.writingPaths.clear();
   }
@@ -126,9 +126,18 @@ export class Geraet {
         this.kopien.set(notePath, liste);
       }
     );
-    this.provenance = new WriteProvenance(this.vault.adapter);
+    this.provenance = new WriteProvenance(this.vault.adapter, () => this.uhrStand);
     this.provenance.install();
   }
+
+  // DIE UHR DES TREIBERS. Sie tickt an Ereignissen, nicht an der Wanduhr — sonst
+  // haengt das Schreibfenster in  an der Maschinenlast, und
+  // zwei identische Laeufe liefern verschiedene Zahlen (gemessen 2026-08-04:
+  // 29 gegen 32 Verdopplungen in derselben Zelle, ohne Codeaenderung).
+  //
+  // Ein Tick je modify-Ereignis. Das Fenster (200) bleibt damit offen, wie es
+  // auch im Betrieb der Regelfall ist — nur eben reproduzierbar.
+  uhrStand = 0;
 
   setPolitik(p: Praegepolitik): void {
     this.politik = p;
@@ -194,6 +203,7 @@ export class Geraet {
 
   // Nutzer tippt (oder ein externer Schreiber aendert die Datei) -> modify-Event.
   async modify(notePath: string, quelle: Quelle = 'nutzer'): Promise<void> {
+    this.uhrStand++;
     if (this.writingPaths.has(notePath)) return;
     if (quelle !== 'nutzer' && this.fremdErfassungAus) return;
     const file = this.vault.getAbstractFileByPath(notePath);

@@ -65,7 +65,9 @@ const aufLf = (text: string): string => text.replace(/\r+\n/g, '\n');
 // Rückfallzweig braucht, trifft hier nicht: der Zeilen-Modus ist innerhalb von
 // `diff_main` nur eine Beschleunigung, das Ergebnis bleibt ein Zeichen-Diff.
 // Diese Funktion bildet keine Diff-Indizes auf Zeilen zurück.
-const dmp = new diff_match_patch();
+// Siehe crdt-manager.ts: kein Zeitlimit, sonst haengt das Diff-Ergebnis an der
+// Maschinenlast und zwei Geraete berechnen aus demselben Text verschiedene Ops.
+const dmp = Object.assign(new diff_match_patch(), { Diff_Timeout: 0 });
 
 export function threeWayMerge(base: string, local: string, other: string): string {
   const localBom = local.startsWith(BOM);

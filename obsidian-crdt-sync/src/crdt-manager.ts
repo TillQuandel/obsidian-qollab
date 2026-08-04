@@ -166,7 +166,14 @@ export function isEmptyYjsState(update: Uint8Array): boolean {
 }
 
 export class CrdtManager {
-  private dmp = new diff_match_patch();
+  // Diff_Timeout = 0 heisst: kein Zeitlimit, der Diff laeuft immer vollstaendig
+  // durch. Der Default von diff-match-patch ist 1,0 s — laeuft die Zeit ab, bricht
+  // der Algorithmus ab und liefert ein GROEBERES Ergebnis. Das ist nicht nur eine
+  // Messstoerung: Zwei Geraete mit identischem Text koennen so verschiedene Ops
+  // erzeugen, je nach Maschinenlast. Gemessen 2026-08-04: zwei identische Laeufe
+  // lieferten fuer dasselbe Verfahren 17 gegen 16 Verdopplungen, nachdem die
+  // Wanduhr in write-provenance bereits ausgeschaltet war.
+  private dmp = Object.assign(new diff_match_patch(), { Diff_Timeout: 0 });
   private docs = new Map<string, Y.Doc>();
   private disposed = false;
 
