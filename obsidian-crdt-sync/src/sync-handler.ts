@@ -251,6 +251,17 @@ export class SyncHandler {
   // (verliert nie, verdoppelt genau einmal sichtbar).
   private parked = new Map<string, { text: string; ticks: number; gesamt: number }>();
 
+  // Was der Nachtrag als EIGENE Op materialisiert hat, obwohl es fremder Text war
+  // — der Doc-Stand unmittelbar danach. Solange er unverändert ist, trägt der Doc
+  // nichts, was nicht auch der Fremdhistorie entstammt; trifft sie später ein,
+  // darf die eigene Kette durch sie ERSETZT statt mit ihr vereinigt werden.
+  //
+  // Gemessen (`spike/zz9-detektor.spec.ts`): 100 % der verbliebenen
+  // Duplikat-Geburten liegen in `mergeCompatible` → `applyUpdate`, und JEDER Lauf
+  // mit Verdopplung hatte einen Fristablauf-Nachtrag (28/28 bei drei Geräten,
+  // 42/42 bei drei Notizen, 0 ohne). Genau diese Kette wird hier geschlossen.
+  private nachgetragen = new Map<string, string>();
+
   // Obergrenze des Kanal-Tors. Der Reset unten haengt daran, dass der Merge den
   // Doc VERAENDERT hat — nicht daran, dass er dem geparkten Text naeherkommt.
   // Ein Peer, der laufend Updates schickt, die den geparkten Stand nie decken,
@@ -395,6 +406,9 @@ export class SyncHandler {
     const vereinigt = unionMerge(p.text, doc);
     if (vereinigt !== p.text) await this.onSaveCopy?.(notePath, p.text);
     await this.applyLocalContent(notePath, vereinigt);
+    // Ab hier trägt der Doc fremden Text unter EIGENER Client-ID. Den Stand
+    // merken: Kommt die Fremdhistorie doch noch, ist unsere Kette redundant.
+    this.nachgetragen.set(notePath, this.crdtManager.getContent(notePath));
   }
 
   // Solange etwas geparkt ist, trägt die `.md` Text, den dieses Gerät nicht
@@ -1112,15 +1126,73 @@ export class SyncHandler {
   // der Gesamtmerge läuft mit den verbleibenden validen Siblings weiter.
   private mergeCompatible(notePath: string, siblings: DecodedSibling[]): void {
     const guid = this.guids.get(notePath);
-    for (const s of siblings) {
-      if (s.guid === null || s.guid === guid) {
-        try {
-          this.crdtManager.applyUpdate(notePath, s.update);
-        } catch {
-          this.onCorruptFile?.(s.path);
-        }
+    const passend = siblings.filter((s) => s.guid === null || s.guid === guid);
+    if (this.ersetzeNachtrag(notePath, passend)) return;
+    for (const s of passend) {
+      try {
+        this.crdtManager.applyUpdate(notePath, s.update);
+      } catch {
+        this.onCorruptFile?.(s.path);
       }
     }
+  }
+
+  // Der Nachtrag hat fremden Text als eigene Op-Kette materialisiert, weil die
+  // Historie nicht rechtzeitig kam. Kommt sie jetzt, stünden zwei unabhängige
+  // Ketten für denselben Text im Doc — Yjs dedupliziert nach Item-ID, nicht nach
+  // Inhalt, und der Text stünde zweimal da.
+  //
+  // Statt zu vereinigen wird die eigene Kette dann VERWORFEN und der Doc aus der
+  // Fremdhistorie neu aufgebaut. Das ist verlustfrei, weil beide Bedingungen
+  // geprüft werden — und wenn eine nicht hält, bleibt es beim Vereinigen:
+  //
+  //   1. Seit dem Nachtrag ist der Doc-Text unverändert. Hätte jemand getippt,
+  //      trüge die eigene Kette mehr als wiederholten Fremdtext.
+  //   2. Die Fremdhistorie DECKT den nachgetragenen Stand vollständig ab. Sonst
+  //      verlöre der Ersatz genau die Differenz.
+  //
+  // Die Prüfung ist konservativ: Im Zweifel wird vereinigt. Verdopplung ist
+  // sichtbar und reparierbar, Verlust ist es nicht.
+  private ersetzeNachtrag(notePath: string, siblings: DecodedSibling[]): boolean {
+    const stand = this.nachgetragen.get(notePath);
+    if (stand === undefined) return false;
+
+    // NUR die fremden Historien. Die eigene Hilfsdatei trägt die Nachtrags-Kette
+    // selbst — nähme man sie mit, brächte der „Ersatz" genau das Duplikat zurück,
+    // das er verhindern soll (beim ersten Entwurf gemessen: die Sonde trug FREMD
+    // bereits zweimal).
+    const eigen = this.stateFilePath(notePath);
+    const fremde = siblings.filter((s) => s.path !== eigen);
+    if (fremde.length === 0) return false;
+
+    if (this.crdtManager.getContent(notePath) !== stand) {
+      // Eigene Bearbeitung seit dem Nachtrag — ab hier ist die Kette nicht mehr
+      // bloss wiederholter Fremdtext, der Merkposten ist verbraucht.
+      this.nachgetragen.delete(notePath);
+      return false;
+    }
+
+    // Sonde: Was trägt die Fremdhistorie, für sich allein genommen?
+    const probe = new CrdtManager();
+    for (const s of fremde) {
+      try {
+        probe.applyUpdate(notePath, s.update);
+      } catch {
+        return false; // unvollständige Sonde ⇒ kein Ersatz, lieber vereinigen
+      }
+    }
+    if (!this.deckt(probe.getContent(notePath), stand)) return false;
+
+    this.crdtManager.disposeDoc(notePath);
+    for (const s of fremde) {
+      try {
+        this.crdtManager.applyUpdate(notePath, s.update);
+      } catch {
+        this.onCorruptFile?.(s.path);
+      }
+    }
+    this.nachgetragen.delete(notePath);
+    return true;
   }
 
   // C.4 Verlierer-Fall: eigene Historie verwerfen, auf die Gewinner-Inkarnation
