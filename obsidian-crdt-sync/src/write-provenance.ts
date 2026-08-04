@@ -29,7 +29,12 @@ export interface ProvenanceAdapter {
 
 type Methode = (...args: any[]) => unknown;
 
-const UMHUELLTE = ['write', 'process', 'append'] as const;
+// `writeBinary` gehoert zur selben `@public`-Familie und wurde uebersehen: Jedes
+// Plugin, das eine `.md` ueber `vault.modifyBinary` schreibt, galt damit als
+// fremd (Recherche 2026-08-04). Ein Volltext ist daraus nicht zu gewinnen — die
+// Bytes sind kein `string` —, aber der Laufzeitzaehler deckt das Schreibfenster
+// ab, und genau darin feuert Obsidians `modify`.
+const UMHUELLTE = ['write', 'process', 'append', 'writeBinary'] as const;
 type MethodenName = (typeof UMHUELLTE)[number];
 
 // Wieviele Stände je Pfad gehalten werden. Bei 1600+ Notizen wäre eine
