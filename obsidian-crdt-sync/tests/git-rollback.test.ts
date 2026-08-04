@@ -41,7 +41,7 @@ import { TFile } from 'obsidian';
 import CrdtSyncPlugin from '../src/main';
 import { CrdtManager } from '../src/crdt-manager';
 import { decodeStateFile } from '../src/state-file';
-import { makeVaultMock, makeLocalStorage, type VaultMock } from './helpers/vault-mock';
+import { makeVaultMock, makeLocalStorage, tippeMd, type VaultMock } from './helpers/vault-mock';
 
 const NOTE = 'note.md';
 const OWN_ID = 'aaaa1111';
@@ -93,8 +93,10 @@ async function type(
   handlers: Map<string, (...args: any[]) => any>,
   text: string
 ): Promise<void> {
-  vault._textFiles.set(NOTE, text);
-  vault._mdMtimes.set(NOTE, (vault._mdMtimes.get(NOTE) ?? 0) + 1);
+  // Die Nutzerin tippt: prozessintern, im Gegensatz zum `git checkout` unten.
+  const mtime = (vault._mdMtimes.get(NOTE) ?? 0) + 1;
+  await tippeMd(vault, NOTE, text);
+  vault._mdMtimes.set(NOTE, mtime);
   await handlers.get('modify')!(tfile(NOTE));
 }
 

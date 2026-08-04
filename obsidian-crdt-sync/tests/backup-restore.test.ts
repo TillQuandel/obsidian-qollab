@@ -44,6 +44,7 @@ import { decodeStateFile } from '../src/state-file';
 import {
   makeVaultMock,
   makeLocalStorage,
+  tippeMd,
   type VaultMock,
   type LocalStorageMock,
 } from './helpers/vault-mock';
@@ -103,7 +104,9 @@ async function tippen(
   text: string,
   mtime: number
 ): Promise<void> {
-  vault._textFiles.set(NOTE, text);
+  // Prozessintern geschrieben — genau das, was der Name sagt: die Nutzerin tippt.
+  // Der Zeitstempel wird danach gesetzt, weil `tippeMd` selbst einen vergibt.
+  await tippeMd(vault, NOTE, text);
   vault._mdMtimes.set(NOTE, mtime);
   await handlers.get('modify')!(tfile(NOTE));
 }

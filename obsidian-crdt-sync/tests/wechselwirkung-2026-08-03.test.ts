@@ -18,6 +18,7 @@ import { encodeStateFile, decodeStateFile } from '../src/state-file';
 import {
   makeVaultMock,
   makeLocalStorage,
+  tippeMd,
   toArrayBuffer as toAB,
   VaultMock,
 } from './helpers/vault-mock';
@@ -248,7 +249,7 @@ describe('A) reconcileSweepCursor: eine einzige Datei entwertet den Fix', () => 
       return {};
     };
     await laufend.onload();
-    vault._textFiles.set('alpha/note-2.md', 'Inhalt alpha 2\nneue Zeile\n');
+    await tippeMd(vault, 'alpha/note-2.md', 'Inhalt alpha 2\nneue Zeile\n');
     await handlers.get('modify')!(tfile('alpha/note-2.md'));
     laufend.onunload();
 
@@ -492,11 +493,12 @@ describe('B) modify-Abbruch bei Umbenennung: der Edit ist ungeschützt', () => {
   // dessen modify-Lauf durch eine Umbenennung abbricht.
   async function abgebrochenerEdit() {
     const vault = makeVaultMock();
-    vault._textFiles.set(ALT, BASIS);
     const { plugin, handlers } = await loadPlugin(vault);
     const datei = tfile(ALT);
 
-    // 1) Erster Lauf: Historie unter a.md.
+    // 1) Erster Lauf: Historie unter a.md. Der Ausgangstext stammt aus diesem
+    //    Prozess — sonst wäre er von aussen geliefert und würde geparkt.
+    await tippeMd(vault, ALT, BASIS);
     await handlers.get('modify')!(datei);
     const eigen = `.qollab/${ALT}.${plugin.clientId}.yjs`;
     expect(vault._files.has(eigen)).toBe(true);
@@ -504,7 +506,7 @@ describe('B) modify-Abbruch bei Umbenennung: der Edit ist ungeschützt', () => {
     const basisBytes = vault._files.get(eigen)!;
 
     // 2) Der Nutzer tippt. Obsidian schreibt die Datei und feuert modify.
-    vault._textFiles.set(ALT, MIT_LOKAL);
+    await tippeMd(vault, ALT, MIT_LOKAL);
 
     // 3) Im `vault.read`-Fenster benennt der Auto-Note-Mover um: dasselbe
     //    TFile-Objekt, `path` in place geändert, Inhalt wandert mit.
@@ -575,14 +577,14 @@ describe('B) modify-Abbruch bei Umbenennung: der Edit ist ungeschützt', () => {
   // ------------------------------------------------------------------
   it('KONTROLLE B3 — ohne Umbenennung überlebt der lokale Edit', async () => {
     const vault = makeVaultMock();
-    vault._textFiles.set(ALT, BASIS);
     const { plugin, handlers } = await loadPlugin(vault);
     const datei = tfile(ALT);
+    await tippeMd(vault, ALT, BASIS);
     await handlers.get('modify')!(datei);
     const eigen = `.qollab/${ALT}.${plugin.clientId}.yjs`;
     const basisBytes = vault._files.get(eigen)!;
 
-    vault._textFiles.set(ALT, MIT_LOKAL);
+    await tippeMd(vault, ALT, MIT_LOKAL);
     await handlers.get('modify')!(datei);
 
     vault._files.set(`.qollab/${ALT}.cafebabe.yjs`, fremdSidecar(basisBytes, BASIS + 'FREMD\n'));
@@ -657,9 +659,9 @@ describe('B) modify-Abbruch bei Umbenennung: der Edit ist ungeschützt', () => {
 
   it('KONTROLLE B4 — beim IO-Abbruch (SidecarReadError) überlebt er, weil die Markierung steht', async () => {
     const vault = makeVaultMock();
-    vault._textFiles.set(ALT, BASIS);
     const { plugin, handlers } = await loadPlugin(vault);
     const datei = tfile(ALT);
+    await tippeMd(vault, ALT, BASIS);
     await handlers.get('modify')!(datei);
     const eigen = `.qollab/${ALT}.${plugin.clientId}.yjs`;
 
@@ -675,7 +677,7 @@ describe('B) modify-Abbruch bei Umbenennung: der Edit ist ungeschützt', () => {
       return origRead(p);
     };
 
-    vault._textFiles.set(ALT, MIT_LOKAL);
+    await tippeMd(vault, ALT, MIT_LOKAL);
     await handlers.get('modify')!(datei);
     expect(plugin.syncHandler.hasAbortedRead(ALT)).toBe(true);
 

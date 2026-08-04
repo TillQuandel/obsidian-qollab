@@ -34,6 +34,7 @@ import { decodeStateFile, encodeStateFile } from '../src/state-file';
 import {
   makeVaultMock,
   makeLocalStorage,
+  tippeMd,
   toArrayBuffer,
   VaultMock,
 } from './helpers/vault-mock';
@@ -120,6 +121,9 @@ function benenneUm(vault: VaultMock, datei: TFile): void {
 // der Fall, für den es den Sweep gibt (externer Edit bei geschlossener App).
 async function lebendeHistorie(vault: VaultMock) {
   const geladen = await loadPlugin(vault);
+  // Prozessintern getippt — die lebende Historie entsteht aus einem eigenen Edit,
+  // nicht aus einer von aussen gelieferten Fassung.
+  await tippeMd(vault, ALT, TEXT);
   await geladen.handlers.get('modify')!(tfile(ALT));
   const echteGuid = guidOf(vault, sidecarOf(geladen.plugin, ALT));
   expect(echteGuid).not.toBeNull();
@@ -130,7 +134,6 @@ async function lebendeHistorie(vault: VaultMock) {
 describe('Umbenennung während des Startup-Sweeps', () => {
   it('prägt bei Umbenennung im vault.read-Fenster keine zweite Inkarnation', async () => {
     const vault = makeVaultMock();
-    vault._textFiles.set(ALT, TEXT);
     const { plugin, handlers, echteGuid } = await lebendeHistorie(vault);
 
     // Der `vault.read` INNERHALB der Warteschlange benennt um. Damit hält der
@@ -174,7 +177,6 @@ describe('Umbenennung während des Startup-Sweeps', () => {
 
   it('prägt bei Umbenennung im Hilfsdatei-stat-Fenster keine zweite Inkarnation', async () => {
     const vault = makeVaultMock();
-    vault._textFiles.set(ALT, TEXT);
     const { plugin, handlers, echteGuid } = await lebendeHistorie(vault);
 
     // Zweite `await`-Grenze, weit VOR der Warteschlange: Der Sweep bildet den
@@ -222,7 +224,6 @@ describe('Umbenennung während des Startup-Sweeps', () => {
     // exakt das Split-Brain, das die Adoptionsfrage verhindern soll — nur eine
     // await-Grenze weiter hinten.
     const vault = makeVaultMock();
-    vault._textFiles.set(ALT, TEXT);
     const fremd = new CrdtManager();
     fremd.setContent(ALT, TEXT);
     vault._files.set(
@@ -231,6 +232,8 @@ describe('Umbenennung während des Startup-Sweeps', () => {
     );
 
     const { plugin, handlers } = await loadPlugin(vault);
+    // Die Note selbst stammt aus diesem Prozess (nur die Hilfsdatei ist fremd).
+    await tippeMd(vault, ALT, TEXT);
     const dateien = pinneIndex(vault);
 
     // `hasAdoptableGuid` listet das Sidecar-Verzeichnis — das ist die einzige
@@ -267,7 +270,6 @@ describe('Umbenennung während des Startup-Sweeps', () => {
   // der Sweep den bei geschlossener App entstandenen Edit wie bisher.
   it('Kontrolle: Sweep ohne Umbenennung erfasst den externen Edit wie bisher', async () => {
     const vault = makeVaultMock();
-    vault._textFiles.set(ALT, TEXT);
     const { plugin, echteGuid } = await lebendeHistorie(vault);
 
     const EXTERN = TEXT + 'Von aussen ergaenzt\n';
