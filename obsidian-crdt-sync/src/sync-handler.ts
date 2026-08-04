@@ -244,7 +244,15 @@ export class SyncHandler {
   // ableitbar (gemessen, sechs Änderungswege, kein eindeutiger Merkmalsvektor),
   // und für den Sweep ist der Bestand nachweislich die beste bekannte Regel
   // (verliert nie, verdoppelt genau einmal sichtbar).
-  private parked = new Map<string, { text: string; ticks: number }>();
+  private parked = new Map<string, { text: string; ticks: number; gesamt: number }>();
+
+  // Obergrenze des Kanal-Tors. Der Reset unten haengt daran, dass der Merge den
+  // Doc VERAENDERT hat — nicht daran, dass er dem geparkten Text naeherkommt.
+  // Ein Peer, der laufend Updates schickt, die den geparkten Stand nie decken,
+  // haelt die Frist sonst unbegrenzt zurueck (Cross-Model-Review 2026-08-04).
+  // `gesamt` zaehlt jeden Tick und wird NIE zurueckgesetzt: nach diesem Vielfachen
+  // der Frist wird nachgetragen, egal was der Kanal tut.
+  private static readonly PARK_OBERGRENZE = 8;
 
   // Deckt `doc` den Text `text` bereits ab — trägt `text` also nichts bei, was im
   // Doc fehlt? `unionMerge(text, doc)` gibt `doc` zurück und hängt nur die Zeilen
@@ -263,7 +271,11 @@ export class SyncHandler {
   // erzeugte den Schaden, den er verhindern soll.
   parkForeign(notePath: string, content: string): void {
     const alt = this.parked.get(notePath);
-    this.parked.set(notePath, { text: content, ticks: alt?.ticks ?? 0 });
+    this.parked.set(notePath, {
+      text: content,
+      ticks: alt?.ticks ?? 0,
+      gesamt: alt?.gesamt ?? 0,
+    });
     this.localDiffBase.set(notePath, content);
   }
 
@@ -279,6 +291,23 @@ export class SyncHandler {
   // damit ein Nachtrag waehrend der Iteration den Parkplatz raeumen darf.
   parkedPaths(): string[] {
     return [...this.parked.keys()];
+  }
+
+  // Beim Abschalten des Plugins: Der Parkplatz haelt `.md`-Texte im Speicher, und
+  // ohne laufende Uhr wird er weder aufgeloest noch nachgetragen. Statt ihn
+  // liegen zu lassen, wird jeder Stand JETZT nachgetragen — der Nutzer schaltet
+  // Qollab aus, also gilt ab hier wieder Bestandsverhalten.
+  async flushParked(frist: number): Promise<void> {
+    for (const notePath of this.parkedPaths()) {
+      await this.tickParked(notePath, frist);
+      // Auch ein noch nicht faelliger Stand wird hier faellig: die Uhr steht ab
+      // jetzt, ein spaeterer Nachtrag kaeme nie.
+      const p = this.parked.get(notePath);
+      if (p) {
+        p.ticks = frist;
+        await this.tickParked(notePath, frist);
+      }
+    }
   }
 
   // Deckt der Doc den geparkten Stand inzwischen ab? Dann ist die Historie
@@ -303,7 +332,10 @@ export class SyncHandler {
     if (!p) return;
     if (this.resolveParked(notePath)) return;
     p.ticks++;
-    if (p.ticks < frist) return;
+    p.gesamt++;
+    // Entweder die Frist ist abgelaufen — oder die Obergrenze ist erreicht und
+    // das Kanal-Tor hat lange genug zurueckgesetzt.
+    if (p.ticks < frist && p.gesamt < frist * SyncHandler.PARK_OBERGRENZE) return;
 
     // Guard „keine `.md` ⇒ kein Nachtrag". Ohne ihn prägt ein Fristablauf nach
     // dem Löschen eine PHANTOM-INKARNATION: `ensureDoc` setzt die frische GUID,
@@ -1283,7 +1315,11 @@ export class SyncHandler {
     //      Stelle statt in jedem Aufrufer einzeln.
     const geparkt = this.parked.get(notePath);
     if (geparkt !== undefined) {
-      this.parked.set(notePath, { text: content, ticks: geparkt.ticks });
+      this.parked.set(notePath, {
+        text: content,
+        ticks: geparkt.ticks,
+        gesamt: geparkt.gesamt,
+      });
       return content;
     }
     // Task 16: Der gemergte Stand für den Aufrufer. Weicht er von `content` ab, ist
@@ -1496,6 +1532,8 @@ export class SyncHandler {
       // greift der Reset nie und die Frist laeuft wie bisher ab.
       if (this.crdtManager.getContent(notePath) !== vorDemMerge) {
         const p = this.parked.get(notePath);
+        // `gesamt` bleibt stehen — sonst kann ein Peer, dessen Updates den
+        // geparkten Stand nie decken, den Nachtrag unbegrenzt verzoegern.
         if (p) p.ticks = 0;
       }
       return null;

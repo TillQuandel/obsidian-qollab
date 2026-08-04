@@ -97,6 +97,12 @@ export class WriteProvenance {
     }
     this.originale.clear();
     this.eigene.clear();
+    // Haengt inzwischen ein anderes Plugin ueber unserer Umhuellung, bleibt sie in
+    // dessen Kette und ihre Closure haelt diese Maps am Leben. Sie hier zu leeren
+    // ist der einzige Weg, den Speicher freizugeben (Cross-Model-Review
+    // 2026-08-04) — `lauf.aktiv = false` schaltet die Umhuellung ohnehin still.
+    this.staende.clear();
+    this.laufend.clear();
   }
 
   istEigen(pfad: string, text: string): boolean {
