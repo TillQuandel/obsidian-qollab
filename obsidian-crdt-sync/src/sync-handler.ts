@@ -375,12 +375,26 @@ export class SyncHandler {
     // einen bewussten Löschvorgang im externen Editor unterläuft. Der Diff bildet
     // den Willen des Schreibers ab; die Fassung, die er verdrängt, liegt in der
     // Sicherung.
-    // Gefragt ist, ob der geparkte Text den Doc-Stand ABDECKT — nicht umgekehrt.
-    // Deckt er ihn, geht beim Diff nichts verloren und es gibt nichts zu sichern.
-    // Deckt er ihn nicht, trägt der Doc etwas, das der Schreiber nicht hatte:
-    // genau das, was der Diff gleich als Löschung wegschreibt.
-    if (!this.deckt(p.text, doc) && doc !== '') await this.onSaveCopy?.(notePath, doc);
-    await this.applyLocalContent(notePath, p.text);
+    // VEREINIGEN, nicht diffen — und die reine Fassung sichern.
+    //
+    // Beide Wege sind verlustfrei, sie unterscheiden sich darin, WO die Unordnung
+    // landet. Ein Diff bildet den Willen des Schreibers ab, verdrängt aber alles,
+    // was nur der Doc kennt: gemessen 18–22 % der Läufe mit einer Extra-Datei.
+    // Vereinigen kann nie etwas löschen, mischt dafür zwei Fassungen in der Notiz
+    // — und belebt gelöschte Zeilen wieder, was ein `git checkout` unterläuft.
+    //
+    // Die Auflösung ist nicht die Wahl zwischen beiden, sondern die Sicherung:
+    // Die Notiz bekommt die Vereinigung (nichts geht verloren), und die REINE
+    // Fassung des fremden Schreibers liegt als eigene Notiz daneben — damit ist
+    // ein `git checkout` mit einem Handgriff wiederherstellbar, statt in der
+    // Mischung unterzugehen.
+    //
+    // Gesichert wird nur, wenn die Vereinigung dem geparkten Text tatsächlich
+    // etwas hinzufügt. Deckt er den Doc-Stand ohnehin ab, ist die Vereinigung
+    // gleich dem geparkten Text und es gibt keine reine Fassung zu retten.
+    const vereinigt = unionMerge(p.text, doc);
+    if (vereinigt !== p.text) await this.onSaveCopy?.(notePath, p.text);
+    await this.applyLocalContent(notePath, vereinigt);
   }
 
   // Solange etwas geparkt ist, trägt die `.md` Text, den dieses Gerät nicht

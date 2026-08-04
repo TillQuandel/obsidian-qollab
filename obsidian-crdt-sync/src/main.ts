@@ -1541,34 +1541,34 @@ export default class CrdtSyncPlugin extends Plugin {
     return !this.syncHandler.hasUnpersistedState(notePath);
   }
 
-  // Sichert einen Textstand als eigene Notiz, BEVOR der Nachtrag ihn verdraengt.
+  // Sichert einen Textstand als eigene Notiz, BEVOR der Nachtrag ihn verdrängt.
   //
   // Als `.md` NEBEN der Originalnotiz, nicht in einem Sammelordner und nicht als
   // versteckte Datei: Die Kopie muss in Obsidian sichtbar, durchsuchbar und im
   // Graph auffindbar sein. Joplin legt Konflikte in ein eigenes Notebook — es
-  // steht am Listenende und wird dokumentiert uebersehen; Syncthings
+  // steht am Listenende und wird dokumentiert übersehen; Syncthings
   // `.sync-conflict-*` heisst nicht mehr `.md` und ist im Vault unsichtbar. Ein
   // Nutzer fand so nach Jahren 27 unbemerkte Konfliktdateien.
   //
   // Kein Dialog. Warnungen, die bei einem einstelligen Prozentsatz der
-  // Schreibvorgaenge kaemen, werden gemessen weggeklickt (70 % Click-through bei
+  // Schreibvorgänge kämen, werden gemessen weggeklickt (70 % Click-through bei
   // SSL-Warnungen), und Wegklicken ist destruktiv — eine liegengebliebene Datei
   // ist es nicht.
   private async saveConflictCopy(notePath: string, text: string): Promise<void> {
     const punkt = notePath.lastIndexOf('.');
     const basis = punkt > 0 ? notePath.slice(0, punkt) : notePath;
     const stempel = new Date().toISOString().slice(0, 16).replace('T', ' ').replace(':', '-');
-    const ziel = `${basis} (ungeklaerte Fassung ${stempel}).md`;
+    const ziel = `${basis} (ungeklärte Fassung ${stempel}).md`;
     if (this.app.vault.getAbstractFileByPath(ziel)) return;
     try {
       await this.app.vault.create(ziel, text);
       new Notice(
-        `Qollab: Diese Notiz hatte zwei Fassungen. Die verdraengte liegt jetzt daneben: ${ziel}`,
+        `Qollab: Diese Notiz hatte zwei Fassungen. Die verdrängte liegt jetzt daneben: ${ziel}`,
         10000
       );
     } catch (err) {
-      // Schlaegt das Schreiben fehl, wird der Nachtrag NICHT verhindert — er
-      // laeuft im Aufrufer weiter. Lieber eine Meldung als ein blockierter Sync.
+      // Schlägt das Schreiben fehl, wird der Nachtrag NICHT verhindert — er
+      // läuft im Aufrufer weiter. Lieber eine Meldung als ein blockierter Sync.
       console.error('Qollab: Sicherungskopie fehlgeschlagen', ziel, err);
     }
   }

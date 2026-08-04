@@ -187,19 +187,19 @@ describe('Erstkontakt — gelieferte .md wird nicht als eigene Bearbeitung verbu
     expect(sync.parkedText(NOTE)).toBe(getippt);
   });
 
-  // Der Nachtrag DIFFT — und sichert vorher die Fassung, die er verdrängt.
+  // Der Nachtrag VEREINIGT — und sichert die reine fremde Fassung daneben.
   //
-  // Die erste Fassung vereinigte stattdessen, weil ein Diff eine im geparkten
-  // Text fehlende Zeile als Löschung liest und zum Peer propagiert (gemessen: 36
-  // stille Verluste). Vereinigen kann aber nie etwas löschen — und belebt damit
-  // gelöschte Zeilen wieder, was ein `git checkout` oder einen bewussten
-  // Löschvorgang im externen Editor unterläuft.
+  // Zwei Wege wurden gemessen, beide verlustfrei; sie unterscheiden sich darin,
+  // WO die Unordnung landet. Ein Diff bildet den Willen des Schreibers ab,
+  // verdrängt aber alles, was nur der Doc kennt — gemessen 18–22 % der Läufe mit
+  // einer Extra-Datei. Vereinigen kann nie etwas löschen, mischt dafür zwei
+  // Fassungen in der Notiz und belebt gelöschte Zeilen wieder.
   //
-  // Aufgelöst wird das nicht durch die Wahl zwischen beiden, sondern durch die
-  // Sicherung: Der Diff bildet den Willen des Schreibers ab, die verdrängte
-  // Fassung bleibt als eigene Notiz erhalten. Der stille Verlust wird damit zu
-  // einer sichtbaren zweiten Datei.
-  it('Fristablauf: der Nachtrag difft — und sichert die verdrängte Fassung', async () => {
+  // Aufgelöst wird das durch die Sicherung: Die Notiz bekommt die Vereinigung,
+  // die reine Fassung liegt als eigene Notiz daneben. Ein `git checkout` ist
+  // damit mit einem Handgriff wiederherstellbar, statt in der Mischung
+  // unterzugehen.
+  it('Fristablauf: der Nachtrag vereinigt — und sichert die reine fremde Fassung', async () => {
     const vault = makeVaultMock() as any;
     const crdt = new CrdtManager();
     const gesichert: Array<[string, string]> = [];
@@ -217,14 +217,18 @@ describe('Erstkontakt — gelieferte .md wird nicht als eigene Bearbeitung verbu
 
     expect(sync.hasParked(NOTE)).toBe(false);
     const doc = crdt.getContent(NOTE);
+    // Die Notiz bekommt die VEREINIGUNG: nichts geht verloren, beide Fassungen
+    // stehen darin. Das ist die billige Fehlerrichtung — sichtbare Unordnung
+    // statt fehlendem Text.
     expect(doc).toContain('FREMD');
-    // EIGEN ist aus dem Doc verdrängt — das ist der Wille des Schreibers, der
-    // die Zeile nicht mehr in der Datei hatte.
-    expect(doc).not.toContain('EIGEN');
-    // …und genau deshalb MUSS es gesichert sein.
+    expect(doc).toContain('EIGEN');
+    // Die REINE Fassung des fremden Schreibers liegt daneben. Nur so ist ein
+    // `git checkout` mit einem Handgriff wiederherstellbar, statt in der
+    // Mischung unterzugehen.
     expect(gesichert).toHaveLength(1);
     expect(gesichert[0][0]).toBe(NOTE);
-    expect(gesichert[0][1]).toContain('EIGEN');
+    expect(gesichert[0][1]).toBe(geliefert);
+    expect(gesichert[0][1]).not.toContain('EIGEN');
   });
 
   it('deckt der Doc den geparkten Stand, wird nichts gesichert', async () => {
