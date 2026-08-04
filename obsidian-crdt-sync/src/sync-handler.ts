@@ -271,7 +271,11 @@ export class SyncHandler {
   //                 Speicher und ueberlebt keinen Neustart.
   //   'korrigieren' Weg B: Merkposten IM Doc (reist mit, ueberlebt Neustart),
   //                 nach dem Merge die ueberzaehligen Zeilen entfernen.
-  nachtragVerfahren: 'ersetzen' | 'undo' | 'korrigieren' = 'ersetzen';
+  //   'schnitt'     Weg C: der beim Nachtrag erzeugte clock-Bereich wird im Doc
+  //                 vermerkt (reist mit, ueberlebt den Neustart); trifft die
+  //                 Fremdhistorie ein, werden genau diese Zeichen entfernt.
+  //                 Braucht weder „Doc unveraendert" noch „Fremdhistorie deckt".
+  nachtragVerfahren: 'ersetzen' | 'undo' | 'korrigieren' | 'schnitt' = 'ersetzen';
 
   hatNachtrag(notePath: string): boolean {
     return this.nachgetragen.has(notePath);
@@ -279,6 +283,7 @@ export class SyncHandler {
 
   static readonly NACHTRAG_ORIGIN = Symbol.for('qollab.nachtrag');
   private static readonly MERK = 'nachtrag';
+  private static readonly SCHNITT = 'schnitt';
 
   // Obergrenze des Kanal-Tors. Der Reset unten haengt daran, dass der Merge den
   // Doc VERAENDERT hat — nicht daran, dass er dem geparkten Text naeherkommt.
@@ -430,10 +435,26 @@ export class SyncHandler {
       this.crdtManager.undoFuer(notePath, SyncHandler.NACHTRAG_ORIGIN);
       this.crdtManager.standardOrigin = SyncHandler.NACHTRAG_ORIGIN;
     }
+    // WEG C: den clock-Stand VOR dem Nachtrag festhalten.
+    const vorClock =
+      this.nachtragVerfahren === 'schnitt' ? this.crdtManager.clockStand(notePath) : null;
     try {
       await this.applyLocalContent(notePath, vereinigt);
     } finally {
       this.crdtManager.standardOrigin = null;
+    }
+    if (vorClock !== null) {
+      const nach = this.crdtManager.clockStand(notePath);
+      // Der Vermerk liegt IM Doc und reist mit der Hilfsdatei — anders als eine
+      // Map im Speicher ueberlebt er das Schliessen von Obsidian. Genau daran
+      // scheitert `ersetzen` heute (belegt in `spike/zz14-neustart.spec.ts`).
+      if (nach.clock > vorClock.clock && nach.client === vorClock.client) {
+        this.crdtManager.merke(
+          notePath,
+          SyncHandler.SCHNITT,
+          `${nach.client}:${vorClock.clock}:${nach.clock}`
+        );
+      }
     }
 
     // Ab hier trägt der Doc fremden Text unter EIGENER Client-ID. Den Stand
@@ -1188,7 +1209,76 @@ export class SyncHandler {
     if (this.nachtragVerfahren === 'undo') this.undoNachtrag(notePath, passend);
     else if (this.nachtragVerfahren === 'korrigieren') {
       this.korrigiereNachtrag(notePath, vorher, passend);
+    } else if (this.nachtragVerfahren === 'schnitt') {
+      this.schneideNachtrag(notePath, passend);
     }
+  }
+
+  // WEG C — die Zeichen des Nachtrags gezielt entfernen.
+  //
+  // Der Vermerk `<client>:<von>:<bis>` liegt im Doc und reist mit; er ueberlebt
+  // damit den Neustart, an dem `ersetzen` scheitert. Der Schnitt braucht KEINE
+  // der beiden Bedingungen von `ersetzeNachtrag`: Was der Nutzer seither getippt
+  // hat, liegt ausserhalb des clock-Bereichs und bleibt unberuehrt — auch wenn er
+  // mitten in den nachgetragenen Text hineingeschrieben hat.
+  //
+  // Die eine Bedingung, die bleibt: Die Fremdhistorie muss den Text tatsaechlich
+  // tragen. Sonst entfernt der Schnitt etwas, das es danach nirgends mehr gibt.
+  private schneideNachtrag(notePath: string, siblings: DecodedSibling[]): void {
+    const vermerk = this.crdtManager.gemerkt(notePath, SyncHandler.SCHNITT);
+    if (vermerk === undefined) return;
+    const [c, v, b] = vermerk.split(':').map(Number);
+    if (!Number.isFinite(c) || !Number.isFinite(v) || !Number.isFinite(b)) return;
+
+    const eigen = this.stateFilePath(notePath);
+    const fremde = siblings.filter((s) => s.path !== eigen);
+    if (fremde.length === 0) return;
+
+    // Was traegt die Fremdhistorie fuer sich allein? Nur wenn der Text nach dem
+    // Schnitt noch vollstaendig da ist, darf geschnitten werden.
+    const probe = new CrdtManager();
+    let fremdText: string;
+    try {
+      for (const s of fremde) probe.applyUpdate(notePath, s.update);
+      fremdText = probe.getContent(notePath);
+    } catch {
+      return;
+    } finally {
+      probe.disposeDoc(notePath);
+    }
+
+    // Gegenprobe auf einer KOPIE, bevor am lebenden Doc geschnitten wird.
+    const jetzt = this.crdtManager.getContent(notePath);
+    const kopie = new CrdtManager();
+    let danach: string;
+    try {
+      kopie.applyUpdate(notePath, this.crdtManager.encodeState(notePath));
+      kopie.schneideOps(notePath, c, v, b);
+      danach = kopie.getContent(notePath);
+    } catch {
+      return;
+    } finally {
+      kopie.disposeDoc(notePath);
+    }
+
+    // Die Frage ist NICHT, ob der Text danach noch den heutigen deckt — der
+    // heutige trägt ja gerade das Duplikat, das weg soll, und wäre nach jedem
+    // erfolgreichen Schnitt „ungedeckt". Die Frage ist, ob eine Zeile GANZ
+    // verschwindet. Ein Vorkommen weniger ist der Zweck, null Vorkommen ist
+    // Verlust.
+    //
+    // `fremdText` geht mit ein: Was die Fremdhistorie trägt, ist auch dann sicher,
+    // wenn es im geschnittenen Doc gerade nicht steht (Zustellreihenfolge).
+    const vorhanden = new Set<string>();
+    for (const z of danach.split('\n')) vorhanden.add(z);
+    for (const z of fremdText.split('\n')) vorhanden.add(z);
+    for (const z of jetzt.split('\n')) {
+      if (z !== '' && !vorhanden.has(z)) return; // diese Zeile gäbe es danach nicht mehr
+    }
+
+    this.crdtManager.schneideOps(notePath, c, v, b);
+    this.crdtManager.vergiss(notePath, SyncHandler.SCHNITT);
+    this.nachgetragen.delete(notePath);
   }
 
   // WEG A — die Nachtrags-Transaktion gezielt zuruecknehmen. Anders als beim

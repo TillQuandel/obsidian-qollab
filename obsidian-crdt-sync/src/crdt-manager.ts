@@ -252,6 +252,64 @@ export class CrdtManager {
     if (this.docs.has(filePath)) this.docs.get(filePath)!.getMap('qollab').delete(schluessel);
   }
 
+  // ---- WEG C: der Herkunfts-Schnitt --------------------------------------
+  //
+  // Jedes Yjs-Item traegt `id.client` und `id.clock`. Der Zaehler laeuft pro
+  // Client monoton; alles, was EIN Schreibvorgang erzeugt, liegt deshalb in einem
+  // zusammenhaengenden clock-Bereich. Haelt man ihn beim Nachtrag fest, sind
+  // dessen Zeichen spaeter arithmetisch identifizierbar — unabhaengig davon, was
+  // seither sonst geschah.
+
+  // Der naechste clock-Wert dieses Docs. Vor und nach einem Schreibvorgang
+  // gelesen ergibt das den Bereich, den er erzeugt hat.
+  clockStand(filePath: string): { client: number; clock: number } {
+    const doc = this.getOrCreate(filePath);
+    return { client: doc.clientID, clock: Y.getState(doc.store, doc.clientID) };
+  }
+
+  // Entfernt genau die Zeichen, die `client` im Bereich [von, bis) eingefuegt hat.
+  // Gibt die Zahl der entfernten Zeichen zurueck.
+  //
+  // Das ist eine echte Loeschung und propagiert — anders als das Weglassen beim
+  // Neuaufbau. Gemessen an yjs 13.6.30: Sie trifft NUR die adressierten Items;
+  // eine inhaltsgleiche fremde Kette mit anderer clientID bleibt unversehrt.
+  // Genau das unterscheidet den gezielten Schnitt vom UndoManager, der breiter
+  // erfasste.
+  schneideOps(filePath: string, client: number, von: number, bis: number): number {
+    if (!this.docs.has(filePath) || bis <= von) return 0;
+    const doc = this.docs.get(filePath)!;
+    const text = doc.getText('content');
+
+    // Erst sammeln, dann rueckwaerts loeschen — sonst verschieben sich die
+    // Positionen unter der eigenen Hand weg.
+    const treffer: Array<[number, number]> = [];
+    let item = (text as any)._start;
+    let pos = 0;
+    while (item) {
+      if (!item.deleted) {
+        const len = item.length as number;
+        if (item.id.client === client) {
+          // Ein Item kann den Bereich nur teilweise ueberlappen — Yjs splittet
+          // Items, wenn dazwischen eingefuegt wird.
+          const a = Math.max(item.id.clock, von);
+          const b = Math.min(item.id.clock + len, bis);
+          if (b > a) treffer.push([pos + (a - item.id.clock), b - a]);
+        }
+        pos += len;
+      }
+      item = item.right;
+    }
+
+    let entfernt = 0;
+    doc.transact(() => {
+      for (const [p, l] of treffer.reverse()) {
+        text.delete(p, l);
+        entfernt += l;
+      }
+    });
+    return entfernt;
+  }
+
   hasDoc(filePath: string): boolean {
     return this.docs.has(filePath);
   }

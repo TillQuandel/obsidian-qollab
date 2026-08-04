@@ -21,7 +21,7 @@ const MODUS = (process.env.SPIKE_MODUS as 'kopie' | 'ohne') ?? 'kopie';
 const S = Number(process.env.SPIKE_STICHPROBE ?? 24);
 const SZENARIEN: Szenario[] = ['geteilt', 'alltag'];
 const EDITFAELLE: Editfall[] = ['nurA', 'nurB', 'beide'];
-const VERFAHREN = ['ersetzen', 'undo', 'korrigieren'] as const;
+const VERFAHREN = ['ersetzen', 'korrigieren', 'schnitt'] as const;
 
 jest.setTimeout(3600000);
 
