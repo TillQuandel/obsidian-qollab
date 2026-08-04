@@ -157,6 +157,69 @@ describe('Nachtrag — die letzte Quelle der Verdopplung', () => {
     expect(zaehle(crdt.getContent(NOTE), 'FREMD')).toBe(1);
   });
 
+  // Die drei Schutzmechaniken des Ersatz-Zweigs, jede einzeln bewacht. Ohne sie
+  // waere „0 rot" nur ungeprueft, nicht sicher.
+  describe('Schutzbedingungen', () => {
+    it('eigene Bearbeitung seit dem Nachtrag ⇒ NICHT ersetzen, sondern vereinigen', async () => {
+      const vault = makeVaultMock() as any;
+      const crdt = new CrdtManager();
+      const senke: Array<[string, string]> = [];
+      const sync = mitSicherung(vault, crdt, senke);
+
+      vault._files.set(FREMD_YJS, fremdeSidecarAuf(vault, new CrdtManager(), G_FREMD, 'kopf\n'));
+      vault._textFiles.set(NOTE, 'kopf\n');
+      await sync.applyLocalContent(NOTE, 'kopf\n');
+      const peerSidecar = fremdeSidecarAuf(vault, crdt, G_FREMD, 'kopf\nFREMD\n');
+
+      vault._textFiles.set(NOTE, 'kopf\nFREMD\n');
+      sync.parkForeign(NOTE, 'kopf\nFREMD\n');
+      for (let i = 0; i < 5 && sync.hasParked(NOTE); i++) await sync.tickParked(NOTE, 4);
+
+      // Der Nutzer tippt nach dem Nachtrag. Diese Zeile kennt NUR die eigene
+      // Kette — ein Ersatz wuerde sie verlieren.
+      vault._textFiles.set(NOTE, 'kopf\nFREMD\nMEIN\n');
+      await sync.applyLocalContent(NOTE, 'kopf\nFREMD\nMEIN\n');
+
+      vault._files.set(FREMD_YJS, peerSidecar);
+      await sync.loadAndMerge(NOTE);
+
+      // Verlust waere der teurere Fehler: MEIN muss stehen bleiben.
+      expect(zaehle(crdt.getContent(NOTE), 'MEIN')).toBe(1);
+    });
+
+    it('Fremdhistorie deckt den Stand nicht ⇒ NICHT ersetzen', async () => {
+      const vault = makeVaultMock() as any;
+      const crdt = new CrdtManager();
+      const senke: Array<[string, string]> = [];
+      const sync = mitSicherung(vault, crdt, senke);
+
+      vault._files.set(FREMD_YJS, fremdeSidecarAuf(vault, new CrdtManager(), G_FREMD, 'kopf\n'));
+      vault._textFiles.set(NOTE, 'kopf\n');
+      await sync.applyLocalContent(NOTE, 'kopf\n');
+
+      // Der geparkte Stand traegt ZWEI Zeilen; die Historie, die spaeter kommt,
+      // kennt nur eine davon.
+      vault._textFiles.set(NOTE, 'kopf\nFREMD\nNUR-IN-DATEI\n');
+      sync.parkForeign(NOTE, 'kopf\nFREMD\nNUR-IN-DATEI\n');
+      for (let i = 0; i < 5 && sync.hasParked(NOTE); i++) await sync.tickParked(NOTE, 4);
+
+      vault._files.set(FREMD_YJS, fremdeSidecarAuf(vault, new CrdtManager(), G_FREMD, 'kopf\nFREMD\n'));
+      await sync.loadAndMerge(NOTE);
+
+      // Der Ersatz haette NUR-IN-DATEI verworfen — er darf hier nicht greifen.
+      expect(zaehle(crdt.getContent(NOTE), 'NUR-IN-DATEI')).toBe(1);
+    });
+
+    it('die EIGENE Hilfsdatei geht nicht in den Ersatz ein', async () => {
+      // Sie traegt die Nachtrags-Kette selbst. Naehme der Ersatz sie mit, brächte
+      // er genau das Duplikat zurueck, das er verhindern soll — gemessen beim
+      // ersten Entwurf: die Sonde trug FREMD bereits zweimal.
+      const { text } = await fahreKette(4);
+      expect(zaehle(text, 'FREMD')).toBe(1);
+      expect(text).toBe('kopf\nFREMD\n');
+    });
+  });
+
   it('ZIEL: auch nach Fristablauf steht FREMD genau einmal, und nichts geht verloren', async () => {
     const { text, sicherungen } = await fahreKette(4);
     expect(zaehle(text, 'FREMD')).toBe(1);
