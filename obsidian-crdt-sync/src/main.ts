@@ -326,7 +326,10 @@ export default class CrdtSyncPlugin extends Plugin {
           // Das Tor sitzt am EINGANG, nicht tiefer: `applyLocalContent` ruft ueber
           // `mergeForLocalDiff` das `ensureDoc`, und dessen Adopt-Zweig
           // materialisiert den `.md`-Text bereits selbst.
-          if (!this.writeProvenance.istEigen(notePath, content)) {
+          if (
+            !this.writeProvenance.istEigen(notePath, content) &&
+            !(await this.gitSchreibtGerade())
+          ) {
             this.syncHandler.parkForeign(notePath, content);
             return;
           }
@@ -1539,6 +1542,35 @@ export default class CrdtSyncPlugin extends Plugin {
     // Wiederholungsversuch. Ohne diese Zeile bliebe der Schreibfehler folgenlos
     // stehen, bis zufällig ein anderer Trigger dieselbe Note trifft.
     return !this.syncHandler.hasUnpersistedState(notePath);
+  }
+
+  // Schreibt git gerade ins Arbeitsverzeichnis?
+  //
+  // git legt jede Datei NEU an (`unlink` + `open(O_CREAT|O_EXCL)`, entry.c), am
+  // Obsidian-Adapter vorbei — für das Herkunftssignal ist ein `git checkout`
+  // deshalb ununterscheidbar von einem Sync-Overwrite. Er ist aber das Gegenteil:
+  // eine ausdrückliche Anweisung des Nutzers, die wirken soll. Würde sie geparkt
+  // und später vereinigt, kämen die ausgecheckten Zeilen wieder — der Checkout
+  // wäre still unterlaufen.
+  //
+  // `.git/index.lock` ist das einzige taugliche Signal dafür: Er wird VOR dem
+  // Schreiben genommen und erst danach freigegeben, deckt also die ganze
+  // Schreibphase ab (gemessen an einem künstlich gebremsten Checkout). `HEAD`
+  // und das Reflog ändern sich erst, wenn die Dateien längst geschrieben sind.
+  //
+  // Zwei bekannte Lücken, beide bewusst in Kauf genommen: Ein konfliktbehafteter
+  // Merge hinterlässt die Marker OHNE Lock im Arbeitsverzeichnis, und `add` oder
+  // `commit` nehmen den Lock ebenfalls — dort wird aber nichts im
+  // Arbeitsverzeichnis geschrieben, also feuert auch kein `modify`.
+  //
+  // Nur im Vault-Wurzelverzeichnis. Liegt das Repository oberhalb des Vaults
+  // (eine verbreitete Empfehlung), greift die Prüfung nicht.
+  private async gitSchreibtGerade(): Promise<boolean> {
+    try {
+      return await this.sidecarAdapter.exists('.git/index.lock');
+    } catch {
+      return false;
+    }
   }
 
   // Sichert einen Textstand als eigene Notiz, BEVOR der Nachtrag ihn verdrängt.
