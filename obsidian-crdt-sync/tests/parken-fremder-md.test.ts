@@ -35,6 +35,31 @@ function fremdeSidecar(vault: any, path: string, guid: string, text: string): vo
 
 const zaehle = (text: string, nadel: string): number => text.split(nadel).length - 1;
 
+// Der SyncHandler nimmt zehn Positionsargumente; die Sicherung ist das letzte.
+// Ein Helfer statt sechs `undefined` in Folge — sonst landet der Rueckkanal
+// lautlos auf dem falschen Parameter (genau das ist beim Schreiben dieses Tests
+// passiert).
+function mitSicherung(
+  vault: any,
+  crdt: CrdtManager,
+  senke: Array<[string, string]>
+): SyncHandler {
+  return new SyncHandler(
+    vault,
+    crdt,
+    'aaaa1111',
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    async (pfad: string, text: string) => {
+      senke.push([pfad, text]);
+    }
+  );
+}
+
 describe('Erstkontakt — gelieferte .md wird nicht als eigene Bearbeitung verbucht', () => {
   // Der Ablauf ist der belegte Regelfall: der Datei-Sync legt die `.md` des Peers
   // ab, BEVOR dessen Hilfsdatei ankommt. Genau in diesem Fenster feuert Obsidians
@@ -162,33 +187,63 @@ describe('Erstkontakt — gelieferte .md wird nicht als eigene Bearbeitung verbu
     expect(sync.parkedText(NOTE)).toBe(getippt);
   });
 
-  // Bedingung 3: „Das Nachtragen darf kein Differenz-Verfahren sein." Der geparkte
-  // Stand ist kein Nachfolger des Docs — eine dort fehlende Zeile würde sonst als
-  // Löschung gelesen und zum Peer propagiert (gemessen: 36 stille Verluste, mit
-  // Vereinigung 0).
-  it('Fristablauf: der Nachtrag vereinigt, statt zu diffen', async () => {
+  // Der Nachtrag DIFFT — und sichert vorher die Fassung, die er verdrängt.
+  //
+  // Die erste Fassung vereinigte stattdessen, weil ein Diff eine im geparkten
+  // Text fehlende Zeile als Löschung liest und zum Peer propagiert (gemessen: 36
+  // stille Verluste). Vereinigen kann aber nie etwas löschen — und belebt damit
+  // gelöschte Zeilen wieder, was ein `git checkout` oder einen bewussten
+  // Löschvorgang im externen Editor unterläuft.
+  //
+  // Aufgelöst wird das nicht durch die Wahl zwischen beiden, sondern durch die
+  // Sicherung: Der Diff bildet den Willen des Schreibers ab, die verdrängte
+  // Fassung bleibt als eigene Notiz erhalten. Der stille Verlust wird damit zu
+  // einer sichtbaren zweiten Datei.
+  it('Fristablauf: der Nachtrag difft — und sichert die verdrängte Fassung', async () => {
     const vault = makeVaultMock() as any;
     const crdt = new CrdtManager();
-    const sync = new SyncHandler(vault, crdt, 'aaaa1111');
+    const gesichert: Array<[string, string]> = [];
+    const sync = mitSicherung(vault, crdt, gesichert);
 
     vault._textFiles.set(NOTE, 'kopf\nEIGEN\n');
     await sync.applyLocalContent(NOTE, 'kopf\nEIGEN\n');
 
-    // Der gelieferte Stand kennt EIGEN nicht (der Peer hatte ihn noch nicht) und
-    // bringt dafür FREMD mit.
+    // Der gelieferte Stand kennt EIGEN nicht und bringt dafür FREMD mit.
     const geliefert = 'kopf\nFREMD\n';
     vault._textFiles.set(NOTE, geliefert);
     sync.parkForeign(NOTE, geliefert);
 
-    // Die Hilfsdatei kommt nie. Nach Ablauf der Frist wird doch erfasst.
     for (let i = 0; i < 4; i++) await sync.tickParked(NOTE, 4);
 
     expect(sync.hasParked(NOTE)).toBe(false);
     const doc = crdt.getContent(NOTE);
     expect(doc).toContain('FREMD');
-    // Als Diff nachgetragen wäre EIGEN jetzt eine Delete-Op — und zum Peer
-    // propagiert.
-    expect(doc).toContain('EIGEN');
+    // EIGEN ist aus dem Doc verdrängt — das ist der Wille des Schreibers, der
+    // die Zeile nicht mehr in der Datei hatte.
+    expect(doc).not.toContain('EIGEN');
+    // …und genau deshalb MUSS es gesichert sein.
+    expect(gesichert).toHaveLength(1);
+    expect(gesichert[0][0]).toBe(NOTE);
+    expect(gesichert[0][1]).toContain('EIGEN');
+  });
+
+  it('deckt der Doc den geparkten Stand, wird nichts gesichert', async () => {
+    const vault = makeVaultMock() as any;
+    const crdt = new CrdtManager();
+    const gesichert: Array<[string, string]> = [];
+    const sync = mitSicherung(vault, crdt, gesichert);
+
+    vault._textFiles.set(NOTE, 'kopf\n');
+    await sync.applyLocalContent(NOTE, 'kopf\n');
+    // Der gelieferte Stand ergänzt nur — er verdrängt nichts.
+    vault._textFiles.set(NOTE, 'kopf\nDAZU\n');
+    sync.parkForeign(NOTE, 'kopf\nDAZU\n');
+
+    for (let i = 0; i < 4; i++) await sync.tickParked(NOTE, 4);
+
+    expect(crdt.getContent(NOTE)).toContain('DAZU');
+    // Keine überflüssige Sicherung: Es ging nichts verloren.
+    expect(gesichert).toHaveLength(0);
   });
 
   // Ohne Frist fielen gemessen 60 % bzw. 12,9 % der Notizen dauerhaft aus dem

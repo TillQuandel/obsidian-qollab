@@ -174,7 +174,12 @@ export class SyncHandler {
     // systematisch die falsche Seite erreicht: Es meldet nur, wo vereinigt wird,
     // also beim Wechsel auf die fremde Kette. Gewinnt die eigene Kette, wird die
     // fremde still verworfen — und genau dort fehlt dem Nutzer hinterher Text.
-    private onDiscardedIncarnation?: (notePath: string, guid: string) => void
+    private onDiscardedIncarnation?: (notePath: string, guid: string) => void,
+    // Sichert einen Textstand als eigene Notiz im Vault, BEVOR er überschrieben
+    // wird. Der Aufrufer bestimmt Ort und Namen; der Handler kennt nur den
+    // Anlass. Fehlt der Kanal, unterbleibt die Sicherung — dann verhält sich der
+    // Nachtrag wie zuvor.
+    private onSaveCopy?: (notePath: string, text: string) => Promise<void>
   ) {}
 
   // Task 17/F-6: Notes, deren Stand beim letzten `saveState` NICHT auf die Platte
@@ -352,13 +357,30 @@ export class SyncHandler {
     // 100 % der externen Bearbeitungen verloren.
     const doc = this.crdtManager.getContent(notePath);
     this.localDiffBase.set(notePath, doc);
-    // VEREINIGEN, nicht diffen. Der geparkte Text ist kein Nachfolger des Docs,
-    // sondern ein Zustand ohne gemeinsamen Vorfahren — eine dort fehlende Zeile
-    // würde als Delete-Op gelesen und zum Peer propagiert (gemessen: 36 stille
-    // Verluste; mit `unionMerge`: 0). Preis, wie in text-merge.ts dokumentiert:
-    // eine extern GELÖSCHTE Zeile kommt zurück — Wiederauferstehung statt
-    // stillem Verlust, die billigere Fehlerrichtung.
-    await this.applyLocalContent(notePath, unionMerge(p.text, doc));
+
+    // SICHERN VOR DEM ÜBERSCHREIBEN. Der geparkte Text und der Doc-Stand sind
+    // zwei Fassungen ohne gemeinsamen Vorfahren; welche die gewollte ist, kann
+    // dieses Gerät nicht wissen — genau das ist das Herkunftsproblem. Statt zu
+    // raten wird die Fassung gesichert, die der Nachtrag gleich verdrängt.
+    //
+    // Das ist die Regel des Kompensations-Musters: eine Korrektur darf einen
+    // alten Zustand nie ZURÜCKSCHREIBEN, nur als zusätzliche Fassung
+    // wiederherstellen — sonst überschreibt sie parallele Änderungen. Und es ist
+    // das Muster, das Obsidian Sync selbst fährt (`storeTextFileBackup` vor
+    // jedem Download-Write).
+    //
+    // Erst dadurch ist der nächste Schritt vertretbar: Der geparkte Stand wird
+    // als DIFF erfasst statt vereinigt. Vereinigen konnte nie etwas löschen und
+    // hat deshalb gelöschte Zeilen wiederbelebt — was ein `git checkout` oder
+    // einen bewussten Löschvorgang im externen Editor unterläuft. Der Diff bildet
+    // den Willen des Schreibers ab; die Fassung, die er verdrängt, liegt in der
+    // Sicherung.
+    // Gefragt ist, ob der geparkte Text den Doc-Stand ABDECKT — nicht umgekehrt.
+    // Deckt er ihn, geht beim Diff nichts verloren und es gibt nichts zu sichern.
+    // Deckt er ihn nicht, trägt der Doc etwas, das der Schreiber nicht hatte:
+    // genau das, was der Diff gleich als Löschung wegschreibt.
+    if (!this.deckt(p.text, doc) && doc !== '') await this.onSaveCopy?.(notePath, doc);
+    await this.applyLocalContent(notePath, p.text);
   }
 
   // Solange etwas geparkt ist, trägt die `.md` Text, den dieses Gerät nicht
