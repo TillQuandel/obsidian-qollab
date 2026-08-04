@@ -225,6 +225,115 @@ export class SyncHandler {
   // des Watchers (Write-Back vor dem ersten modify), nicht diese Map.
   private localDiffBase = new Map<string, string>();
 
+  // ERSTKONTAKT — der Parkplatz: `.md`-Text, den nicht dieser Prozess geschrieben
+  // hat und der deshalb NICHT als eigene Operation verbucht wird.
+  //
+  // Der Schaden entsteht nicht dadurch, dass zwei Geräte unabhängig prägen,
+  // sondern dadurch, dass eine per Datei-Sync gelieferte `.md` als eigene
+  // Bearbeitung materialisiert wird — vier unabhängige Untersuchungen führen
+  // 100 % des gemessenen Schadens dorthin.
+  //
+  // Warum ein EIGENER Zustand und nicht `abortedReads` mitbenutzt: Der Poll holt
+  // einen dort abgelegten Text über `pendingLocalContent` ungeprüft nach — mit
+  // genau dem Inhalt, den das Tor abgewiesen hat. Gemessen: das Tor wäre
+  // wirkungslos.
+  //
+  // Rein in-memory, wie `localDiffBase` und `abortedReads`. Nach einem Neustart
+  // ist ein Parkplatz weg, und der Startup-Sweep erfasst die Datei wie bisher —
+  // Bestandsverhalten. Das ist bewusst so: Beim Start ist Herkunft nicht
+  // ableitbar (gemessen, sechs Änderungswege, kein eindeutiger Merkmalsvektor),
+  // und für den Sweep ist der Bestand nachweislich die beste bekannte Regel
+  // (verliert nie, verdoppelt genau einmal sichtbar).
+  private parked = new Map<string, { text: string; ticks: number }>();
+
+  // Deckt `doc` den Text `text` bereits ab — trägt `text` also nichts bei, was im
+  // Doc fehlt? `unionMerge(text, doc)` gibt `doc` zurück und hängt nur die Zeilen
+  // an, die ausschließlich `text` kennt. Bleibt das Ergebnis `doc`, ist nichts
+  // offen. Die Argumentreihenfolge ist der ganze Punkt: andersherum gefragt
+  // („trägt der Doc nichts bei?") ist die Bedingung fast nur bei Gleichheit wahr,
+  // und ein geparkter Stand löste sich nicht mehr auf, sobald der Doc etwas
+  // Eigenes trug — etwa einen Tastendruck.
+  private deckt(doc: string, text: string): boolean {
+    return unionMerge(text, doc) === doc;
+  }
+
+  // Der gelesene Text stammt nicht aus diesem Prozess: zwischenlagern statt
+  // erfassen. Die Diff-Basis wandert MIT — sonst ist das Delta des nächsten
+  // Tastendrucks („Basis → Datei") die Löschung genau dieses Textes, und der Fix
+  // erzeugte den Schaden, den er verhindern soll.
+  parkForeign(notePath: string, content: string): void {
+    const alt = this.parked.get(notePath);
+    this.parked.set(notePath, { text: content, ticks: alt?.ticks ?? 0 });
+    this.localDiffBase.set(notePath, content);
+  }
+
+  hasParked(notePath: string): boolean {
+    return this.parked.has(notePath);
+  }
+
+  parkedText(notePath: string): string | undefined {
+    return this.parked.get(notePath)?.text;
+  }
+
+  // Deckt der Doc den geparkten Stand inzwischen ab? Dann ist die Historie
+  // eingetroffen, das Parken hat seinen Zweck erfüllt und wird beendet — ohne
+  // dass je eine eigene Op für fremden Text entstanden ist.
+  resolveParked(notePath: string): boolean {
+    const p = this.parked.get(notePath);
+    if (!p) return true;
+    if (!this.deckt(this.crdtManager.getContent(notePath), p.text)) return false;
+    this.parked.delete(notePath);
+    return true;
+  }
+
+  // Ein Tick der Frist-Uhr. Sie hängt bewusst am 30-s-Intervall des Wächters und
+  // nicht an eintreffenden Hilfsdateien: Eine Notiz, deren Hilfsdatei NIE kommt
+  // (Peer ohne Qollab, `.qollab` vom Sync ausgeschlossen, externer Editor),
+  // bekäme sonst nie wieder einen Auslöser — aus „später entscheiden" würde „nie
+  // entscheiden", und gemessen fielen so 60 % der Notizen dauerhaft aus dem
+  // Abgleich.
+  async tickParked(notePath: string, frist: number): Promise<void> {
+    const p = this.parked.get(notePath);
+    if (!p) return;
+    if (this.resolveParked(notePath)) return;
+    p.ticks++;
+    if (p.ticks < frist) return;
+
+    // Guard „keine `.md` ⇒ kein Nachtrag". Ohne ihn prägt ein Fristablauf nach
+    // dem Löschen eine PHANTOM-INKARNATION: `ensureDoc` setzt die frische GUID,
+    // bevor es den fehlenden `.md` bemerkt, und `saveState` legt danach eine
+    // Hilfsdatei für eine Notiz an, die es nicht mehr gibt — von keinem Tombstone
+    // gedeckt, weil der auf die alte GUID gesetzt wurde.
+    this.parked.delete(notePath);
+    if (!this.vault.getAbstractFileByPath(notePath)) return;
+
+    // Die Basis wird VOR dem Nachtrag auf den Doc-Stand zurückgesetzt. Beim
+    // Parken steht sie auf dem geparkten Text (damit ein Tastendruck darauf nur
+    // seine eigene Differenz erzeugt); bliebe sie stehen, wäre das Delta hier
+    // leer und der Nachtrag ein No-op — der erste Entwurf hat auf diese Weise
+    // 100 % der externen Bearbeitungen verloren.
+    const doc = this.crdtManager.getContent(notePath);
+    this.localDiffBase.set(notePath, doc);
+    // VEREINIGEN, nicht diffen. Der geparkte Text ist kein Nachfolger des Docs,
+    // sondern ein Zustand ohne gemeinsamen Vorfahren — eine dort fehlende Zeile
+    // würde als Delete-Op gelesen und zum Peer propagiert (gemessen: 36 stille
+    // Verluste; mit `unionMerge`: 0). Preis, wie in text-merge.ts dokumentiert:
+    // eine extern GELÖSCHTE Zeile kommt zurück — Wiederauferstehung statt
+    // stillem Verlust, die billigere Fehlerrichtung.
+    await this.applyLocalContent(notePath, unionMerge(p.text, doc));
+  }
+
+  // Solange etwas geparkt ist, trägt die `.md` Text, den dieses Gerät nicht
+  // geschrieben hat. Sie ist dann KEIN Zeuge des lokalen Stands — der Doc ist es.
+  //
+  // Das ist die zweite Tür: `ensureDoc` (Adopt-Zweig) und `switchToGuid` lesen die
+  // `.md` selbst und vereinigen sie, ohne je durch `applyLocalContent` zu laufen.
+  // Ein Tor allein im modify-Pfad deckte einen von vier Aufrufern ab.
+  private lokalerZeuge(notePath: string, mdText: string): string {
+    if (!this.parked.has(notePath)) return mdText;
+    return this.crdtManager.getContent(notePath);
+  }
+
   // Setzt die Basis explizit. Zwei Anlässe in onRemoteYjsUpdate: nach dem
   // Write-Back (die Datei trägt jetzt den gemergten Stand) und vor dem
   // `applyLocalContent(threeWay)` des pending-Zweigs (dessen Text setzt auf dem
@@ -438,6 +547,11 @@ export class SyncHandler {
   disposeNote(notePath: string): void {
     this.guids.delete(notePath);
     this.abortedReads.delete(notePath);
+    // Der Parkplatz ist der Zwilling von `abortedReads` (Text, der nur in der
+    // `.md` lebt) und gehoert deshalb an dieselbe Stelle. Bliebe er stehen,
+    // praegte ein spaeterer Fristablauf eine Inkarnation fuer eine geloeschte
+    // Notiz.
+    this.parked.delete(notePath);
     // Task 16: Die Datei ist weg; ihr letzter gesehener Inhalt beschreibt nichts
     // mehr.
     //
@@ -481,6 +595,13 @@ export class SyncHandler {
     const uncaptured = this.abortedReads.get(oldPath);
     this.abortedReads.delete(oldPath);
     if (uncaptured !== undefined) this.abortedReads.set(newPath, uncaptured);
+
+    // Wie `abortedReads`: Der geparkte Stand gehoert zur NOTIZ, nicht zum Pfad.
+    // Bliebe er auf dem alten Pfad, liefe ein Fristablauf dort ins Leere — die
+    // `.md` und die Hilfsdateien sind laengst umgezogen.
+    const geparkt = this.parked.get(oldPath);
+    this.parked.delete(oldPath);
+    if (geparkt !== undefined) this.parked.set(newPath, geparkt);
     // Task 16: Der Inhalt zieht beim Rename mit — es ist dieselbe Datei unter neuem
     // Namen. Bliebe der Eintrag auf dem alten Pfad, wäre die Basis unter dem neuen
     // Pfad leer und fiele auf den Doc-Text zurück (der Vorlauf wäre wieder blind).
@@ -862,7 +983,7 @@ export class SyncHandler {
     // fremder Edits durch eine veraltete .md.
     const file = this.vault.getAbstractFileByPath(notePath);
     if (!file) return false;
-    const mdText = await this.vault.read(file);
+    const mdText = this.lokalerZeuge(notePath, await this.vault.read(file));
     this.crdtManager.setContent(
       notePath,
       this.unite(notePath, this.crdtManager.getContent(notePath), mdText)
@@ -944,7 +1065,7 @@ export class SyncHandler {
     // — eigene Inkarnation behalten und verschieben, bis die .md wieder da ist.
     const file = this.vault.getAbstractFileByPath(notePath);
     if (!file) return;
-    const mdText = await this.vault.read(file);
+    const mdText = this.lokalerZeuge(notePath, await this.vault.read(file));
     // Task 13/A: Den lokalen Stand VOR dem Verwerfen sichern — Doc UND .md. Der
     // Doc kann der Datei voraus sein (bereits gemergter, noch nicht
     // zurückgeschriebener Stand) und die Datei dem Doc (externer Edit).
@@ -1143,6 +1264,22 @@ export class SyncHandler {
     // (onRemoteYjsUpdate, pending-Zweig), korrigiert sein Write-Back die Basis
     // unmittelbar danach über `noteLocalDiffBase`.
     this.localDiffBase.set(notePath, content);
+
+    // Solange etwas geparkt ist, traegt die `.md` Text, den der Doc nicht kennt.
+    // Zwei Folgen, beide zwingend:
+    //   1. Der Parkplatz zieht auf den NEUEN Dateistand nach — sonst faende der
+    //      Fristablauf spaeter einen veralteten Text vor und der eben erfasste
+    //      Tastendruck stuende zweimal darin.
+    //   2. KEIN Write-Back: Der Aufrufer wuerde den Doc-Stand in die Datei
+    //      schreiben und damit genau den geparkten Text loeschen, den das Parken
+    //      schuetzt. `content` zurueckzugeben heisst fuer jeden Aufrufer „die
+    //      Datei ist der Stand, schreib nichts" — der Riegel sitzt damit an einer
+    //      Stelle statt in jedem Aufrufer einzeln.
+    const geparkt = this.parked.get(notePath);
+    if (geparkt !== undefined) {
+      this.parked.set(notePath, { text: content, ticks: geparkt.ticks });
+      return content;
+    }
     // Task 16: Der gemergte Stand für den Aufrufer. Weicht er von `content` ab, ist
     // der Doc der Datei voraus — der Aufrufer schreibt ihn dann sofort zurück
     // (main.ts writeBackMerged), statt den Zustand bis zum 30-s-Poll stehen zu
@@ -1323,6 +1460,14 @@ export class SyncHandler {
     await this.saveState(notePath);
     // R1: Eigener GUID-State ist jetzt geschrieben — Legacy-Datei aufräumen.
     await this.cleanupLegacyFile(notePath);
+
+    // Der Auflöse-Punkt des Parkens, und zwar HIER: erst nach dem Merge stehen
+    // die fremden Ops im Doc. Deckt er den geparkten Stand, ist die Historie da
+    // und das Parken beendet. Deckt er ihn nicht, bleibt geparkt — und `null`
+    // sagt dem Aufrufer „kein Write-Back, Trigger unverbraucht" (dieselbe
+    // Semantik wie beim abgebrochenen Sidecar-Lesen). Ein Write-Back loeschte
+    // sonst den geparkten Text aus der Datei.
+    if (!this.resolveParked(notePath)) return null;
 
     return this.crdtManager.getContent(notePath);
   }
