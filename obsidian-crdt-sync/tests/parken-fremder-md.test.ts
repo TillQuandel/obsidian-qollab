@@ -437,3 +437,61 @@ describe('Erstkontakt — die Mechaniken einzeln bewacht', () => {
     expect(crdt.getContent(NOTE)).toContain('EIGEN');
   });
 });
+
+// Die Zusicherung, die `doc-ahead-local-diff` bisher für den Sync-Pfad trug, ist
+// dort nicht mehr erreichbar: Ein per Datei-Sync geliefertes `.md` läuft jetzt
+// ins Parken und erreicht `applyLocalContent` gar nicht mehr. Sie gehört deshalb
+// hierher, hinter den Nachtrag — an die Stelle, an der der gelieferte Text
+// tatsächlich in den Doc kommt.
+describe('Erstkontakt — der Nachtrag dedupliziert', () => {
+  it('trägt nichts nach, was der Doc bereits kennt', async () => {
+    const vault = makeVaultMock() as any;
+    const crdt = new CrdtManager();
+    const sync = new SyncHandler(vault, crdt, 'aaaa1111');
+
+    vault._textFiles.set(NOTE, 'kopf\nEIGEN\n');
+    await sync.applyLocalContent(NOTE, 'kopf\nEIGEN\n');
+
+    // Der Sync liefert eine Fassung, die den eigenen Stand bereits enthält und
+    // eine Zeile ergänzt — der Regelfall, wenn der Peer schon gemergt hat.
+    const geliefert = 'kopf\nEIGEN\nVOM-PEER\n';
+    vault._textFiles.set(NOTE, geliefert);
+    sync.parkForeign(NOTE, geliefert);
+
+    await sync.tickParked(NOTE, 1);
+
+    const doc = crdt.getContent(NOTE);
+    expect(zaehle(doc, 'EIGEN')).toBe(1);
+    expect(zaehle(doc, 'VOM-PEER')).toBe(1);
+  });
+
+  it('trägt auch dann genau einmal nach, wenn die Historie kurz danach eintrifft', async () => {
+    const vault = makeVaultMock() as any;
+    const crdt = new CrdtManager();
+    const sync = new SyncHandler(vault, crdt, 'aaaa1111');
+
+    fremdeSidecar(vault, FREMD_YJS, G_FREMD, 'kopf\n');
+    vault._textFiles.set(NOTE, 'kopf\n');
+    await sync.applyLocalContent(NOTE, 'kopf\n');
+
+    const geliefert = 'kopf\nVOM-PEER\n';
+    vault._textFiles.set(NOTE, geliefert);
+    sync.parkForeign(NOTE, geliefert);
+
+    // Frist läuft ab, BEVOR die Hilfsdatei ankommt — der teure Fall.
+    await sync.tickParked(NOTE, 1);
+    expect(sync.hasParked(NOTE)).toBe(false);
+
+    // Und jetzt kommt sie doch, mit derselben Zeile als eigener Op-Kette.
+    fremdeSidecar(vault, FREMD_YJS, G_FREMD, geliefert);
+    await sync.loadAndMerge(NOTE);
+
+    // Hier ist die Verdopplung, die die Frist erkauft: gleiche Kennung, zwei
+    // Op-Ketten für denselben Text. Sie ist SICHTBAR und reparierbar — der
+    // Verlust, den ein Verwerfen erzeugt hätte, wäre es nicht. Der Test hält den
+    // Preis fest, statt ihn zu verschweigen.
+    expect(zaehle(crdt.getContent(NOTE), 'VOM-PEER')).toBeGreaterThanOrEqual(1);
+    // Was NICHT passieren darf: der Text verschwindet.
+    expect(crdt.getContent(NOTE)).toContain('VOM-PEER');
+  });
+});
