@@ -4,7 +4,7 @@ Du kennst das: Du und eine Kollegin arbeitet im selben Obsidian-Vault über OneD
 Ihr bearbeitet gleichzeitig dieselbe Note — und am nächsten Morgen findet ihr das:
 
 ```
-Meetingprotokoll (Marias conflicted copy 2026-05-18).md
+Meetingprotokoll (DESKTOP-A1B2C3s in Konflikt stehende Kopie 2026-05-18).md
 ```
 
 Jetzt müsst ihr manuell schauen was die andere geschrieben hat und die Änderungen zusammenführen.
