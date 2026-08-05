@@ -25,7 +25,7 @@
 import { TFile } from 'obsidian';
 import CrdtSyncPlugin from '../src/main';
 import { decodeStateFile } from '../src/state-file';
-import { makeVaultMock, makeLocalStorage, VaultMock } from './helpers/vault-mock';
+import { makeVaultMock, makeLocalStorage, tippeMd, VaultMock } from './helpers/vault-mock';
 
 const ALT = 'a.md';
 const NEU = 'b.md';
@@ -85,12 +85,13 @@ const zaehle = (text: string, nadel: string) => text.split(nadel).length - 1;
 describe('Umbenennung während eines laufenden modify-Laufs', () => {
   it('prägt unter dem neuen Pfad keine zweite Inkarnation und verdoppelt den Text nicht', async () => {
     const vault = makeVaultMock();
-    vault._textFiles.set(ALT, TEXT);
 
     const { plugin, handlers } = await loadPlugin(vault);
     const datei = tfile(ALT);
 
     // 1) Regulärer Edit → lebende Historie unter a.md (eigene Hilfsdatei + GUID).
+    //    Prozessintern geschrieben: ein Tastendruck, kein geliefertes Fremd-.md.
+    await tippeMd(vault, ALT, TEXT);
     await handlers.get('modify')!(datei);
     const echteGuid = guidOf(vault, sidecarOf(plugin, ALT));
     expect(echteGuid).not.toBeNull();
@@ -147,17 +148,17 @@ describe('Umbenennung während eines laufenden modify-Laufs', () => {
   // modify-Handler den Edit wie bisher.
   it('Kontrolle: modify ohne Umbenennung erfasst den Edit wie bisher', async () => {
     const vault = makeVaultMock();
-    vault._textFiles.set(ALT, TEXT);
 
     const { plugin, handlers } = await loadPlugin(vault);
     const datei = tfile(ALT);
 
+    await tippeMd(vault, ALT, TEXT);
     await handlers.get('modify')!(datei);
     expect(vault._files.has(sidecarOf(plugin, ALT))).toBe(true);
     expect(plugin.crdtManager.getContent(ALT)).toBe(TEXT);
 
     const TEXT2 = TEXT + 'Zeile 4\n';
-    vault._textFiles.set(ALT, TEXT2);
+    await tippeMd(vault, ALT, TEXT2);
     await handlers.get('modify')!(datei);
 
     expect(plugin.crdtManager.getContent(ALT)).toBe(TEXT2);

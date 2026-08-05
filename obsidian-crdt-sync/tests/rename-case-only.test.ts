@@ -50,7 +50,13 @@ import CrdtSyncPlugin from '../src/main';
 import { CrdtManager } from '../src/crdt-manager';
 import { decodeStateFile, encodeStateFile } from '../src/state-file';
 import { dirname } from '../src/sidecar-io';
-import { makeVaultMock, makeLocalStorage, toArrayBuffer, VaultMock } from './helpers/vault-mock';
+import {
+  makeVaultMock,
+  makeLocalStorage,
+  tippeMd,
+  toArrayBuffer,
+  VaultMock,
+} from './helpers/vault-mock';
 
 const ORDNER_ALT = 'Ordner';
 const ORDNER_NEU = 'ordner';
@@ -207,10 +213,10 @@ function fremdenStandLegen(vault: VaultMock, eigenerPfad: string, notePath: stri
 // sie als `rename`-Event je `.md` zu (aus dem Adapter-Code gelesen).
 async function ordnerSchreibweiseUmbenennen() {
   const vault = caseInsensitiv(makeVaultMock());
-  vault._textFiles.set(ALT, TEXT);
 
   const { plugin, handlers } = await ladePlugin(vault);
   const datei = tfile(ALT);
+  await tippeMd(vault, ALT, TEXT); // prozessintern: ein Tastendruck, kein Sync
   await handlers.get('modify')!(datei);
 
   fremdenStandLegen(vault, eigenePfad(plugin, ALT), ALT, `${TEXT}PEER\n`);
@@ -255,9 +261,9 @@ describe('Umbenennung nur der Groß-/Kleinschreibung', () => {
     // Messung 1: ein Blattname zieht mit um. Dieser Test hält fest, dass der Fix
     // an der richtigen Stelle sitzt — nicht am Dateinamen, sondern am Ordner.
     const vault = caseInsensitiv(makeVaultMock());
-    vault._textFiles.set('Notiz.md', TEXT);
     const { plugin, handlers } = await ladePlugin(vault);
     const datei = tfile('Notiz.md');
+    await tippeMd(vault, 'Notiz.md', TEXT);
     await handlers.get('modify')!(datei);
     fremdenStandLegen(vault, eigenePfad(plugin, 'Notiz.md'), 'Notiz.md', `${TEXT}PEER\n`);
 
@@ -273,9 +279,9 @@ describe('Umbenennung nur der Groß-/Kleinschreibung', () => {
 
   it('Kontrolle: ein gewöhnlicher Ordner-Umzug bleibt unberührt', async () => {
     const vault = caseInsensitiv(makeVaultMock());
-    vault._textFiles.set(ALT, TEXT);
     const { plugin, handlers } = await ladePlugin(vault);
     const datei = tfile(ALT);
+    await tippeMd(vault, ALT, TEXT);
     await handlers.get('modify')!(datei);
     fremdenStandLegen(vault, eigenePfad(plugin, ALT), ALT, `${TEXT}PEER\n`);
 

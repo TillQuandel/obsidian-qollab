@@ -25,6 +25,7 @@ import { decodeStateFile, encodeStateFile } from '../src/state-file';
 import {
   makeVaultMock,
   makeLocalStorage,
+  tippeMd,
   toArrayBuffer,
   type VaultMock,
 } from './helpers/vault-mock';
@@ -75,14 +76,16 @@ async function bootDevice(vault: VaultMock): Promise<{
   return { plugin, handlers };
 }
 
-// Ein Tastendruck: neuer .md-Inhalt + Obsidians modify-Event.
+// Ein Tastendruck: neuer .md-Inhalt + Obsidians modify-Event. Der Inhalt läuft
+// über den Adapter — prozessintern, wie jeder Editor-Save in Obsidian.
 async function type(
   vault: VaultMock,
   handlers: Map<string, (...args: any[]) => any>,
   text: string
 ): Promise<void> {
-  vault._textFiles.set(NOTE, text);
-  vault._mdMtimes.set(NOTE, (vault._mdMtimes.get(NOTE) ?? 0) + 1);
+  const mtime = (vault._mdMtimes.get(NOTE) ?? 0) + 1;
+  await tippeMd(vault, NOTE, text);
+  vault._mdMtimes.set(NOTE, mtime);
   await handlers.get('modify')!(tfile(NOTE));
 }
 
@@ -185,7 +188,8 @@ describe('Doc-Vorlauf: lokaler Diff darf einen gemergten Fremd-Edit nicht lösch
     vault.process = async (file: { path: string }, fn: (data: string) => string) => {
       if (!raced) {
         raced = true;
-        vault._textFiles.set(NOTE, `${vault._textFiles.get(NOTE)}LOKAL2\n`);
+        // Obsidians Editor-Save — prozessintern, nur eben mitten im Merge-Fenster.
+        await tippeMd(vault, NOTE, `${vault._textFiles.get(NOTE)}LOKAL2\n`);
       }
       return origProcess(file, fn);
     };
@@ -260,7 +264,8 @@ describe('Doc-Vorlauf: lokaler Diff darf einen gemergten Fremd-Edit nicht lösch
     vault.process = async (file: { path: string }, fn: (data: string) => string) => {
       if (!raced) {
         raced = true;
-        vault._textFiles.set(NOTE, `${vault._textFiles.get(NOTE)}LOKAL2\n`);
+        // Obsidians Editor-Save — prozessintern, nur eben mitten im Merge-Fenster.
+        await tippeMd(vault, NOTE, `${vault._textFiles.get(NOTE)}LOKAL2\n`);
       }
       return origProcess(file, fn);
     };
@@ -444,7 +449,7 @@ describe('Doc-Vorlauf: lokaler Diff darf einen gemergten Fremd-Edit nicht lösch
     vault.adapter.readBinary = async (p: string) => {
       if (!injected && p === FOREIGN_PATH) {
         injected = true;
-        vault._textFiles.set(NOTE, `${BASE}EDIT1\n`);
+        await tippeMd(vault, NOTE, `${BASE}EDIT1\n`);
       }
       return origRead(p);
     };
@@ -455,7 +460,7 @@ describe('Doc-Vorlauf: lokaler Diff darf einen gemergten Fremd-Edit nicht lösch
     let calls = 0;
     vault.process = async (file: { path: string }, fn: (data: string) => string) => {
       calls += 1;
-      if (calls === 2) vault._textFiles.set(NOTE, `${BASE}EDIT2\n`);
+      if (calls === 2) await tippeMd(vault, NOTE, `${BASE}EDIT2\n`);
       return origProcess(file, fn);
     };
 

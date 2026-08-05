@@ -22,7 +22,7 @@
 import { TFile } from 'obsidian';
 import CrdtSyncPlugin from '../src/main';
 import { decodeStateFile } from '../src/state-file';
-import { makeVaultMock, makeLocalStorage, VaultMock } from './helpers/vault-mock';
+import { makeVaultMock, makeLocalStorage, tippeMd, VaultMock } from './helpers/vault-mock';
 
 const ALT = 'a.md';
 const NEU = 'tief/b.md';
@@ -85,12 +85,13 @@ const zaehle = (text: string, nadel: string) => text.split(nadel).length - 1;
 // stoppt die erste fehlschlagende Zusicherung alle folgenden).
 async function umzugMitFehler(opts: { fremdeDatei?: boolean } = {}) {
   const vault = makeVaultMock();
-  vault._textFiles.set(ALT, TEXT);
 
   const { plugin, handlers } = await loadPlugin(vault);
   const datei = tfile(ALT);
 
-  // 1) Regulärer Edit → eigene Hilfsdatei mit lebender Kennung.
+  // 1) Regulärer Edit → eigene Hilfsdatei mit lebender Kennung. Prozessintern
+  //    geschrieben, also ein Tastendruck und keine gelieferte Fassung.
+  await tippeMd(vault, ALT, TEXT);
   await handlers.get('modify')!(datei);
   const echteKennung = kennung(vault, eigenePfad(plugin, ALT));
 
@@ -158,7 +159,7 @@ describe('Rename: eine Hilfsdatei zieht nicht mit um', () => {
     const { vault, plugin, handlers, datei, echteKennung } = await umzugMitFehler();
 
     const TEXT2 = TEXT + 'Zeile 4\n';
-    vault._textFiles.set(NEU, TEXT2);
+    await tippeMd(vault, NEU, TEXT2);
     await handlers.get('modify')!(datei);
 
     expect(kennung(vault, eigenePfad(plugin, NEU))).toBe(echteKennung);
@@ -184,10 +185,10 @@ describe('Rename: eine Hilfsdatei zieht nicht mit um', () => {
     // Ein `saveState` wäre hier falsch: ohne Doc schriebe er einen LEEREN Stand
     // unter die lebende Kennung.
     const vault = makeVaultMock();
-    vault._textFiles.set(ALT, TEXT);
     const { plugin, handlers } = await loadPlugin(vault);
     const datei = tfile(ALT);
 
+    await tippeMd(vault, ALT, TEXT);
     await handlers.get('modify')!(datei);
     const echteKennung = kennung(vault, eigenePfad(plugin, ALT));
     // Sitzungsende simulieren: der Stand liegt auf der Platte, im Speicher nicht.
@@ -209,7 +210,7 @@ describe('Rename: eine Hilfsdatei zieht nicht mit um', () => {
 
     // Und der nächste Edit arbeitet auf derselben Inkarnation weiter.
     const TEXT2 = TEXT + 'Zeile 4\n';
-    vault._textFiles.set(NEU, TEXT2);
+    await tippeMd(vault, NEU, TEXT2);
     await handlers.get('modify')!(datei);
     expect(kennung(vault, eigenePfad(plugin, NEU))).toBe(echteKennung);
     expect(zaehle(plugin.crdtManager.getContent(NEU), 'Zeile 1')).toBe(1);
@@ -222,10 +223,10 @@ describe('Rename: eine Hilfsdatei zieht nicht mit um', () => {
     // Pfad aus der Platte neu aufgebaut zu werden — der Neuaufbau fände dort
     // nichts und prägte eine frische Inkarnation über einer lebenden Historie.
     const vault = makeVaultMock();
-    vault._textFiles.set(ALT, TEXT);
     const { plugin, handlers } = await loadPlugin(vault);
     const datei = tfile(ALT);
 
+    await tippeMd(vault, ALT, TEXT);
     await handlers.get('modify')!(datei);
     const echteKennung = kennung(vault, eigenePfad(plugin, ALT));
 
@@ -249,7 +250,7 @@ describe('Rename: eine Hilfsdatei zieht nicht mit um', () => {
     expect(kennung(vault, eigenePfad(plugin, NEU))).toBe(echteKennung);
 
     const TEXT2 = TEXT + 'Zeile 4\n';
-    vault._textFiles.set(NEU, TEXT2);
+    await tippeMd(vault, NEU, TEXT2);
     await handlers.get('modify')!(datei);
     expect(kennung(vault, eigenePfad(plugin, NEU))).toBe(echteKennung);
     expect(plugin.crdtManager.getContent(NEU)).toBe(TEXT2);
@@ -258,10 +259,10 @@ describe('Rename: eine Hilfsdatei zieht nicht mit um', () => {
 
   it('Kontrolle: ohne Fehler zieht alles um und die Note synct weiter', async () => {
     const vault = makeVaultMock();
-    vault._textFiles.set(ALT, TEXT);
     const { plugin, handlers } = await loadPlugin(vault);
     const datei = tfile(ALT);
 
+    await tippeMd(vault, ALT, TEXT);
     await handlers.get('modify')!(datei);
     const echteKennung = kennung(vault, eigenePfad(plugin, ALT));
 
@@ -275,7 +276,7 @@ describe('Rename: eine Hilfsdatei zieht nicht mit um', () => {
     expect(kennung(vault, eigenePfad(plugin, NEU))).toBe(echteKennung);
 
     const TEXT2 = TEXT + 'Zeile 4\n';
-    vault._textFiles.set(NEU, TEXT2);
+    await tippeMd(vault, NEU, TEXT2);
     await handlers.get('modify')!(datei);
     expect(kennung(vault, eigenePfad(plugin, NEU))).toBe(echteKennung);
     expect(plugin.crdtManager.getContent(NEU)).toBe(TEXT2);

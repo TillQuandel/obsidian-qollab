@@ -5,6 +5,7 @@ import { decodeStateFile, encodeStateFile } from '../src/state-file';
 import {
   makeVaultMock,
   makeLocalStorage,
+  tippeMd,
   VaultMock,
   toArrayBuffer as toAB,
 } from './helpers/vault-mock';
@@ -100,7 +101,7 @@ describe('Task 13/B: Sweep prägt keine GUID ohne echten Edit', () => {
     const { plugin, handlers } = await bootPlugin(vault, 'aaaa1111');
     await plugin.snapshotStaleMarkdownFiles();
 
-    vault._textFiles.set(NOTE, BASE + 'Lokaler Edit\n');
+    await tippeMd(vault, NOTE, BASE + 'Lokaler Edit\n');
     await handlers.get('modify')!(tfile(NOTE));
 
     expect(vault._files.has(ownPath('aaaa1111'))).toBe(true);
@@ -113,7 +114,7 @@ describe('Task 13/B: Sweep prägt keine GUID ohne echten Edit', () => {
 
     const { plugin, handlers } = await bootPlugin(vault, 'aaaa1111');
     // Eigene Sidecar entsteht durch einen echten Edit.
-    vault._textFiles.set(NOTE, BASE + 'Erster Edit\n');
+    await tippeMd(vault, NOTE, BASE + 'Erster Edit\n');
     await handlers.get('modify')!(tfile(NOTE));
     const guidBefore = guidOf(vault, ownPath('aaaa1111'));
 
@@ -219,7 +220,7 @@ describe('Task 13: Zwei-Geräte-Rollout (Szenario-2-Semantik)', () => {
     expect([...vB._files.keys()]).toEqual([]);
 
     // A editiert → nur A prägt eine GUID.
-    vA._textFiles.set(NOTE, BASE + 'A-Edit\n');
+    await tippeMd(vA, NOTE, BASE + 'A-Edit\n');
     await A.handlers.get('modify')!(tfile(NOTE));
     const guidA = guidOf(vA, ownPath('aaaa1111'));
     expect(guidA).not.toBeNull();
@@ -234,7 +235,7 @@ describe('Task 13: Zwei-Geräte-Rollout (Szenario-2-Semantik)', () => {
     expect(vB._textFiles.get(NOTE)).toContain('A-Edit');
 
     // B editiert auf dem gemergten Stand.
-    vB._textFiles.set(NOTE, vB._textFiles.get(NOTE)! + 'B-Edit\n');
+    await tippeMd(vB, NOTE, vB._textFiles.get(NOTE)! + 'B-Edit\n');
     await B.handlers.get('modify')!(tfile(NOTE));
 
     // Rück-Sync (nur Sidecars) und beidseitiger Merge.
@@ -265,7 +266,7 @@ describe('Task 13: Zwei-Geräte-Rollout (Szenario-2-Semantik)', () => {
     await A.plugin.snapshotStaleMarkdownFiles();
     await B.plugin.snapshotStaleMarkdownFiles();
 
-    vA._textFiles.set(NOTE, NO_NL + '\nA-Edit');
+    await tippeMd(vA, NOTE, NO_NL + '\nA-Edit');
     await A.handlers.get('modify')!(tfile(NOTE));
 
     vB._files.set(ownPath('aaaa1111'), vA._files.get(ownPath('aaaa1111'))!);
