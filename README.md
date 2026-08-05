@@ -35,11 +35,11 @@ All figures come from a deterministic simulation of two or more devices exchangi
 | **A line you deleted comes back** | **47.4 %** of runs containing a deletion (4–26 % if the note has shared history, 53–83 % if not) | Yes, but possibly hours later |
 | More devices or several contested notes at once | duplication rises to 9–16 % | Yes |
 | A program **outside Obsidian** edits the file (script, other editor, `git checkout`) | text loss up to 19.4 % | Yes — the text stays in a conflict copy, never silently gone |
-| A `.yjs` helper file arrives **corrupted** (zero-filled at unchanged size — happens with cloud sync and interrupted writes) | base text destroyed, **silently** | **No** |
+| A `.yjs` helper file arrives **corrupted** (zero-filled at unchanged size — happens with cloud sync and interrupted writes) | caught by the checksum, file skipped and reported | Yes |
 | Obsidian is closed while a note is in an undecided state | the pending state is lost, duplication rises | No |
 | Obsidian Mobile | the provenance detection largely does not work there | No |
 
-**The honest summary:** Qollab reliably prevents *loss* in the two-device case, and it removes conflict copies. It does **not** yet reliably preserve *deletions*, and it has **no integrity check** on its own helper files. If your workflow involves deleting a lot — cleaning up notes, removing finished tasks — expect deleted lines to reappear.
+**The honest summary:** Qollab reliably prevents *loss* in the two-device case, and it removes conflict copies. Its helper files now carry a checksum, so a corrupted one is caught and skipped instead of silently rewriting your text. It does **not** yet reliably preserve *deletions*. If your workflow involves deleting a lot — cleaning up notes, removing finished tasks — expect deleted lines to reappear.
 
 ## Install
 
@@ -51,6 +51,8 @@ All figures come from a deterministic simulation of two or more devices exchangi
 Works with OneDrive, Dropbox, Google Drive, iCloud, Syncthing — any service that syncs files.
 
 **Requires Obsidian 1.8.7 or newer.** Qollab stores its device ID in the vault-specific profile store, which only exists from that version on.
+
+**Update all your devices together.** The helper file format changed in this version, and a device still on v0.4.0 cannot read the new one. It does not simply ignore those files: at first it treats them as damaged and starts a competing history of its own, and on a later run it **deletes them without a word** — after which your file sync carries that deletion to every other device. A half-updated vault therefore loses helper files, and with them the edit history behind the affected notes. The notes themselves stay; the merging does not. So update every device before you edit again, or stay on the old version everywhere until you can.
 
 **Device ID, sync toggle and deletion markers live outside the vault.** Each installation gets its own random device ID on first start (visible in the plugin settings). It lives in that device's Obsidian profile, not in the synced `data.json`. Up to v0.4.0 the ID lived in `data.json`: if that file got synced, both devices used the same ID, wrote the same helper file, and the automatic merge **never** happened.
 
@@ -84,7 +86,9 @@ Files arrive in **any order** over a file sync — the note may show up long bef
 
 The reverse case is reported too: on one of the two devices Qollab keeps its own version and does **not** adopt the other. Which device that is comes down to an internal identifier comparison — effectively chance. Look at the *other* device for the text that is missing here.
 
-**No integrity check on helper files.** The Yjs update format carries neither checksum nor length field. A truncated file is caught reliably, but a file that was zero-filled at unchanged size passes every check and destroys the base text without any error. This is not yet fixed.
+**Helper files carry a checksum.** The Yjs update format itself has neither checksum nor length field, so Qollab writes its own: four bytes covering the rest of the file. A helper file that was zero-filled at unchanged size — the cloud-sync and interrupted-write case — used to pass every check and rewrite your text without a word. It no longer does: it is reported and skipped, and it is **never deleted**, because the same file may still be intact on the other device. If it is *this* device's own file, the run stops rather than write over it. Measured: 367 of 367 partially zero-filled files caught, 0 false alarms.
+
+The price, and it is a real one: a **truncated** helper file from another device now yields nothing at all instead of a partial state — the checksum rejects it before its contents are looked at. That is unavoidable. At the level of contents a truncation and a zero-filling are the same thing, which is the entire reason the checksum sits in front of them. Nothing is lost either way: the file stays where it is, you are told about it, and the original is still on the other device. Helper files written by older versions carry no checksum and are read exactly as before.
 
 **A deleted note coming back — fixed, with two exceptions.** Delete a note and create a new one under the same name, and a late-arriving old helper file no longer resurrects the old text: deleting marks that incarnation locally, and stale helper files carrying that marker are ignored and cleaned up. The first exception: if Qollab was **switched off** on this device at the moment of the deletion, no marker is set — off means *change nothing*, otherwise a disabled plugin would bury a note that your sync provider had merely renamed. The second: if the **device profile is lost** (reinstall, new machine), every existing marker goes with it, and putting them anywhere else would mean writing them into the synced `data.json` — the mistake described above. In both cases a helper file arriving later can bring the old text back into a same-named new note.
 
@@ -114,7 +118,7 @@ node esbuild.config.mjs production   # → main.js
 npx jest                             # tests
 ```
 
-Every figure in this README comes from a deterministic multi-device simulator. That measurement harness is **not part of this branch**: it lives under `obsidian-crdt-sync/spike/` on the `mess/*` branches, together with the runs the numbers were read off. Checking a figure means checking out one of those.
+Every figure in this README comes from the measurement harness — a deterministic multi-device simulator plus the corruption spikes. It is **not part of this branch**: it lives under `obsidian-crdt-sync/spike/` on the `mess/*` branches, together with the runs the numbers were read off. Checking a figure means checking out one of those.
 
 ## License
 

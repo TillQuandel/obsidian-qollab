@@ -12,7 +12,7 @@ import { SCAN_INTERVAL_MS } from '../src/sidecar-watcher';
 import { filterYjsFiles, SyncHandler, QOLLAB_DIR } from '../src/sync-handler';
 import { CrdtManager } from '../src/crdt-manager';
 import { DEFAULT_SETTINGS } from '../src/settings';
-import { encodeStateFile, decodeStateFile } from '../src/state-file';
+import { encodeStateFile, decodeStateFile, StateFileIntegrityError } from '../src/state-file';
 import CrdtSyncPlugin, { FOREIGN_OWN_SIDECAR_NOTICE } from '../src/main';
 import {
   makeVaultMock,
@@ -198,6 +198,70 @@ describe('Fund 37: README hält, was die Meldung wirklich sagt', () => {
     expect(CLAIMS).toContain('the notice cannot say which one it is');
     expect(CLAIMS).toContain('the same device ID');
     expect(CLAIMS).toContain('a backup of the `.qollab` folder was restored');
+  });
+});
+
+// QLB2 — bis zu diesem Format sagte der README „no integrity check … This is not
+// yet fixed.", und das stimmte. Jetzt stimmt es nicht mehr, und eine stehen
+// gebliebene Einschraenkung ist genauso eine falsche Zusage wie eine zu grosse:
+// Wer liest, sein Grundtext koenne still zerstoert werden, schaltet ab.
+// Gehalten wird beides am FORMAT, nicht an einer zweiten Textkopie — faellt der
+// Nachweis je weg, faellt dieser Block, und der README ist neu zu fassen.
+describe('QLB2: README hält, was der Nachweis leistet — und was er kostet', () => {
+  const GUID = '0'.repeat(32);
+  // Ein Rumpf-Update. Inhalt egal — geprueft wird der Nachweis, nicht Yjs.
+  const UPDATE = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
+
+  it('nennt den Nachweis — und das Format traegt ihn', () => {
+    // Code-Anker: 24 Byte Kopf (4 Magic + 4 Hash + 16 GUID), der Hash deckt
+    // GUID UND Update.
+    const datei = encodeStateFile(GUID, UPDATE);
+    expect(datei.length).toBe(24 + UPDATE.length);
+    expect(decodeStateFile(datei).update).toEqual(UPDATE);
+
+    // Der Schadensfall, den der README als gefangen ausweist: Nullfuellung bei
+    // ERHALTENER Groesse, Nutzlast nur teilweise getroffen. Genau die Klasse,
+    // die vorher fehlerfrei parste und den Grundtext still verfaelschte.
+    const genullt = Uint8Array.from(datei);
+    genullt.fill(0, 24 + 2);
+    expect(genullt.length).toBe(datei.length);
+    expect(() => decodeStateFile(genullt)).toThrow(StateFileIntegrityError);
+
+    expect(CLAIMS).toContain('**Helper files carry a checksum.**');
+    expect(CLAIMS).toContain('it is reported and skipped, and it is **never deleted**');
+    // Und die widerrufene Einschraenkung steht nirgends mehr im Fliesstext.
+    expect(CLAIMS).not.toMatch(/no integrity check/i);
+  });
+
+  it('nennt den Preis: abgeschnitten heisst gar nichts, Altformate bleiben ungeprueft', () => {
+    const datei = encodeStateFile(GUID, UPDATE);
+    // Code-Anker 1: abgeschnitten liefert keinen Teilstand, sondern einen Wurf —
+    // unter wie ueber der Kopflaenge. Das ist der Preis, den der README nennt.
+    expect(() => decodeStateFile(datei.subarray(0, datei.length - 3))).toThrow(
+      StateFileIntegrityError
+    );
+    expect(() => decodeStateFile(datei.subarray(0, 20))).toThrow(StateFileIntegrityError);
+
+    // Code-Anker 2: QLB1 (bis v0.4.0) und headerlose v0.1 werden weiter gelesen,
+    // und zwar UNGEPRUEFT — ein Wurf hier waere der Datenverlust, den das Update
+    // verhindern soll.
+    const qlb1 = new Uint8Array(20 + UPDATE.length);
+    qlb1.set([0x51, 0x4c, 0x42, 0x31], 0); // 'QLB1'
+    qlb1.set(UPDATE, 20);
+    expect(decodeStateFile(qlb1)).toEqual({ guid: '0'.repeat(32), update: UPDATE });
+    expect(decodeStateFile(UPDATE)).toEqual({ guid: null, update: UPDATE });
+
+    expect(CLAIMS).toContain('yields nothing at all instead of a partial state');
+    expect(CLAIMS).toContain('Helper files written by older versions carry no checksum');
+  });
+
+  it('sagt die Mischflotten-Folge an, bevor jemand halb aktualisiert', () => {
+    // Kein Code-Anker moeglich: der Schaden liegt im ausgelieferten v0.4.0-Code
+    // (`tests/_v040/`), nicht in diesem. Gehalten wird deshalb der Wortlaut —
+    // die Ansage darf nicht stillschweigend verschwinden, weil sie unbequem ist.
+    expect(CLAIMS).toContain('**Update all your devices together.**');
+    expect(CLAIMS).toContain('deletes them without a word');
+    expect(CLAIMS).toContain('A half-updated vault therefore loses helper files');
   });
 });
 
