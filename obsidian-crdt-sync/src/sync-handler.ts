@@ -1,4 +1,10 @@
-import { CrdtManager, carriesYjsOps, isEmptyYjsState, textFromUpdate } from './crdt-manager';
+import {
+  CrdtManager,
+  carriesYjsOps,
+  isEmptyYjsState,
+  isNulledYjsState,
+  textFromUpdate,
+} from './crdt-manager';
 import { encodeStateFile, decodeStateFile, generateGuid } from './state-file';
 import type { SidecarAdapter, DirListingCache } from './sidecar-io';
 import {
@@ -862,8 +868,18 @@ export class SyncHandler {
       decoded.push(await this.readStateFile(path));
     }
 
+    // Nullfüllungs-Fix: Welche Datei ist auf NULL gesetzt worden? Einmal pro
+    // Sibling berechnet — das Prädikat ist ein `applyUpdate` auf einem
+    // Wegwerf-Doc, und die Antwort wird unten zweimal gebraucht.
+    const genullt = decoded.map((d) => d !== null && isNulledYjsState(d.update));
+
     // R1: Prüfen ob mindestens ein GUID-tragender Sidecar existiert.
-    const hasGuidState = decoded.some((d) => d !== null && d.guid !== null);
+    //
+    // Nullfüllungs-Fix: „GUID-tragend" verlangt jetzt auch einen INHALT. Eine
+    // nullgefüllte Fremd-Sidecar mit intaktem Kopf setzte diese Flagge bisher
+    // allein wegen des Kopfes — und die R1-Regel unten löschte daraufhin die
+    // v0.1-Legacy-Datei, die den einzigen echten Stand trug (gemessen).
+    const hasGuidState = decoded.some((d, i) => d !== null && d.guid !== null && !genullt[i]);
 
     const ownPath = this.stateFilePath(notePath);
     const legacyPath = this.legacyFilePath(notePath);
@@ -880,6 +896,22 @@ export class SyncHandler {
         // Trigger. Ausschließen genügt; ihr Stand steckt bereits im Doc
         // (ensureDoc hat ihn im own-Branch angewandt).
         if (paths[i] !== ownPath) await this.removeSidecar(paths[i]);
+        continue;
+      }
+
+      // Nullfüllungs-Fix: der INHALTS-Nachweis für GUID-tragende Siblings. Er
+      // fehlte hier ganz — er saß ausschließlich im `guid === null`-Zweig unten,
+      // sodass ein intakter Kopf jede Beurteilung der Nutzlast ersetzte. Eine
+      // nullgefüllte Fremd-Sidecar (Größe erhalten, ab Offset NUL) trat damit im
+      // Tie-Break an und konnte per kleinerer GUID die eigene lebende Historie
+      // verdrängen, obwohl sie nichts trägt.
+      //
+      // Eng auf die Nullfüllung gefasst: Eine TRUNKIERTE Datei bleibt drin, ihr
+      // Teilstand ist gewollt (`truncated-sibling-merge.test.ts`). Die genullte
+      // hat keinen — für sie gilt die R2-Behandlung jedes unvollständigen Stands:
+      // melden, überspringen, NIE löschen. Der Sync kann sie noch vervollständigen.
+      if (d.guid !== null && genullt[i]) {
+        this.onCorruptFile?.(paths[i]);
         continue;
       }
 
@@ -963,6 +995,29 @@ export class SyncHandler {
     }
 
     const own = await this.readStateFile(this.stateFilePath(notePath));
+    // Nullfüllungs-Fix: Kopf intakt, Nutzlast auf NULL gesetzt. Das ist der Fall,
+    // den die Bedingung unten NICHT abfängt — sie fragt die GUID zuerst und lässt
+    // `carriesYjsOps` dann per Kurzschluss aus. Bei der Trunkierung fällt das nicht
+    // auf, weil `applyUpdate` dort wirft; bei der Nullfüllung wirft es NIE (Yjs
+    // liest die Nullbytes als „0 Clients" und ignoriert den Rest), und der leere
+    // Doc bekam die GUID der echten Inkarnation — mit den zwei Folgen, die der
+    // Kommentar unten beschreibt: der nächste lokale Diff materialisiert den
+    // GESAMTEN Notiztext als EIGENE Ops, und die später vollständig nachgelieferte
+    // Datei mergt GUID-gleich dazu. Jede Zeile zweimal.
+    //
+    // Deshalb hier derselbe Abbruch wie beim Wurf unten, aus demselben Grund: Der
+    // Kopf bezeugt eine LEBENDE Inkarnation, deren Inhalt uns fehlt. Sie zu
+    // ignorieren (Adopt-Zweig) prägte mangels Fremd-Datei eine frische GUID über
+    // die lebende Historie — die Spaltung, die dieser Zweig gerade verhindert.
+    //
+    // Eng auf die Nullfüllung gefasst: Die TRUNKIERTE eigene Datei nimmt
+    // unverändert den Weg unten über den `applyUpdate`-Wurf (samt `disposeDoc`),
+    // und der leere State einer nie befüllten Note bleibt gesund (Task 19/A) —
+    // beides schließt `isNulledYjsState` aus.
+    if (own && own.guid !== null && isNulledYjsState(own.update)) {
+      this.onCorruptFile?.(own.path);
+      throw new SidecarReadError(own.path);
+    }
     // Task 17/F-1, zweite Schadensrichtung: Der own-Branch lief bisher für JEDE
     // vorhandene eigene Datei — auch für eine 0-Byte-Datei. `applyUpdate` warf,
     // wurde gefangen, und `own.guid ?? generateGuid()` prägte eine FRISCHE

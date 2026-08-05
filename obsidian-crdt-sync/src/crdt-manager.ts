@@ -165,6 +165,31 @@ export function isEmptyYjsState(update: Uint8Array): boolean {
   return update.length === 2 && update[0] === 0 && update[1] === 0;
 }
 
+// Nullfüllungs-Fix: Der Befund „diese Nutzlast wurde auf NULL gesetzt" — als
+// eigenes Prädikat, weil `carriesYjsOps` ihn mit der TRUNKIERUNG in einem `false`
+// zusammenwirft und die beiden verschieden behandelt werden müssen:
+//   - Trunkiert: `Y.applyUpdate` WIRFT, integriert dabei aber Structs, die es
+//     schon gelesen hat. Dieser Teilstand ist gewollt und geprüft (siehe
+//     `truncated-sibling-merge.test.ts`) — die Datei bleibt im Merge.
+//   - Genullt: `Y.applyUpdate` wirft NIE. Yjs liest `[0x00, 0x00]` als „0
+//     Struct-Clients, 0 Delete-Set-Clients" und ignoriert den Rest. Es gibt
+//     keinen Teilstand, nur eine Datei, die vorgibt eine Inkarnation zu sein.
+//     Genau die darf im Tie-Break nicht antreten.
+// Das Kriterium ist deshalb „parst FEHLERFREI und trägt trotzdem keine Op" —
+// länger als der leere State, den `isEmptyYjsState` als gesund ausweist.
+export function isNulledYjsState(update: Uint8Array): boolean {
+  if (isEmptyYjsState(update)) return false;
+  const probe = new Y.Doc();
+  try {
+    Y.applyUpdate(probe, update);
+    return (probe.store as any).clients.size === 0;
+  } catch {
+    return false; // geworfen = trunkiert, nicht genullt
+  } finally {
+    probe.destroy();
+  }
+}
+
 export class CrdtManager {
   private dmp = new diff_match_patch();
   private docs = new Map<string, Y.Doc>();
