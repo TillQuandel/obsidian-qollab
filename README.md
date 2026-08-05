@@ -6,7 +6,7 @@ You share an Obsidian vault with someone over OneDrive. You both edit the same n
 Meeting notes (DESKTOP-A1B2C3's conflicted copy 2026-05-18).md
 ```
 
-Now you diff two files by hand. **Qollab merges them automatically** using CRDTs, so both texts survive without manual work.
+Now you diff two files by hand. **Qollab tries to merge them for you** using CRDTs: both texts *should* survive without that work. How far it actually gets is measured in the next section — it is not a guarantee.
 
 > [!WARNING]
 > **Experimental. Do not trust it with data you cannot lose.**
@@ -14,7 +14,7 @@ Now you diff two files by hand. **Qollab merges them automatically** using CRDTs
 
 ## What is clean and what is not
 
-All figures come from a deterministic simulation of two or more devices exchanging files in every possible delivery order. „Runs" are complete scenarios, not test cases.
+All figures come from a deterministic simulation of two or more devices exchanging files in every possible delivery order. "Runs" are complete scenarios, not test cases.
 
 ### Clean — measured
 
@@ -66,9 +66,13 @@ The cost: a reset profile (reinstall, new machine, cleared `localStorage`) loses
 
 ## What happens under the hood
 
-For every note, Qollab keeps a small helper file under `.qollab/<vault-path>/<note>.md.<deviceId>.yjs`. It holds the edit history as a Yjs CRDT. When a note changes, Qollab records the change there; when a foreign helper file arrives, it merges both histories and writes the result back into the note.
+Qollab keeps a small helper file under `.qollab/<vault-path>/<note>.md.<deviceId>.yjs`. It holds the edit history as a Yjs CRDT. When a note changes, Qollab records the change there; when a foreign helper file arrives, it merges both histories and writes the result back into the note.
+
+**A note gets its helper file only once it is edited** — or once another device's helper file for it arrives. An untouched note deliberately gets none: creating one blindly on every device would give the same note a separate history per device, and one of them would have to be abandoned on first contact. What that means for you: **until a note has been edited in Obsidian once, Qollab does not protect it.** Edit it on two devices inside that window and you get your sync provider's conflict copy, exactly as before.
 
 Files arrive in **any order** over a file sync — the note may show up long before its history, or the other way round. Qollab handles that by *parking* a foreign file it cannot yet attribute, and merging it once the matching history arrives.
+
+**Qollab scans every 30 seconds, not the moment a file lands.** A foreign helper file is picked up on the next scan — up to half a minute later. Opening a note triggers a scan for that note right away; nothing else does. So don't sit in front of an open note waiting for something to happen, and above all don't retype the missing text yourself: an edit made inside that 30-second window falls under the merge limits below.
 
 ## Limits in detail
 
@@ -82,19 +86,23 @@ The reverse case is reported too: on one of the two devices Qollab keeps its own
 
 **No integrity check on helper files.** The Yjs update format carries neither checksum nor length field. A truncated file is caught reliably, but a file that was zero-filled at unchanged size passes every check and destroys the base text without any error. This is not yet fixed.
 
+**A deleted note coming back — fixed, with two exceptions.** Delete a note and create a new one under the same name, and a late-arriving old helper file no longer resurrects the old text: deleting marks that incarnation locally, and stale helper files carrying that marker are ignored and cleaned up. The first exception: if Qollab was **switched off** on this device at the moment of the deletion, no marker is set — off means *change nothing*, otherwise a disabled plugin would bury a note that your sync provider had merely renamed. The second: if the **device profile is lost** (reinstall, new machine), every existing marker goes with it, and putting them anywhere else would mean writing them into the synced `data.json` — the mistake described above. In both cases a helper file arriving later can bring the old text back into a same-named new note.
+
 **Deletion markers are device-local.** A device that was offline during delete-and-recreate keeps its old history and no longer participates in the new incarnation's merge. Two guards prevent an empty returning state from wiping a note. Full deletion as a CRDT operation is planned for v0.5.
 
 **Concurrent edits to the same line.** Both texts survive, but the resulting order can be surprising.
 
 **Editing during an ongoing merge.** A three-way text merge protects local edits, but it is not conflict-proof: directly overlapping changes resolve in favour of the local version, and a very small window exists around the write-back in which an edit can be overwritten.
 
-**Moving helper files by hand.** The filename is the only link between a helper file and its note. Move or rename one, and its text ends up in a different note. Don't reorganise `.qollab/` manually.
+**Moving helper files by hand.** The filename is the only link between a helper file and its note — `Shopping list.md` is tracked by `.qollab/Shopping list.md.5e307e01.yjs`, where `5e307e01` is the device ID; the note's name appears nowhere inside the file. Move or rename one, and its text ends up in a different note. Don't reorganise `.qollab/` manually.
+
+**Someone else wrote this device's helper file.** If this device's own helper file is overwritten by anything other than Qollab, Qollab gives the device a new device ID and says so once. The old file stays where it is and is merged from then on like any other foreign file of the same note. There are two possible causes, and **the notice cannot say which one it is**: either two devices carry the same device ID (only possible if both inherited the same old `data.json` and migrated it at the same time), or a backup of the `.qollab` folder was restored while the app was running. Telling them apart would mean holding the file's contents against this device's working state, and for a note not touched in this session there is none. Stepping aside is right either way, and both cases cost the same: one extra helper file that is never cleaned up. Detection usually happens within one scan (30 s), but the foreign state has to *survive* that scan — if this device writes first, it overwrites the trace and the case only surfaces next time.
 
 ## Known architectural limit
 
-Qollab writes one helper file per note **and per device**. The count is the product of both, and every edit rewrites the affected file completely. Measured for 10,000 notes and 5 devices: 50,000 helper files, 206 MB in the sync tree, growing without bound. For small vaults (<100 notes) this is negligible; for large vaults the honest advice is: don't enable it.
+Qollab writes one helper file per note **and per device**. The count is the product of both, and every edit rewrites the affected file completely. Measured for 10,000 notes and 5 devices: 50,000 helper files, 206 MB in the sync tree, growing without bound. For small vaults (<100 notes) this is negligible; for large vaults the honest advice is: don't enable it, and that advice has no expiry date.
 
-Work is ongoing on a different file format — append-only segments per device, stored flat ([Issue #12](https://github.com/TillQuandel/obsidian-qollab/issues/12)). Measured at 42 MB and ~8,400 files instead of 206 MB and 50,000 — **none of it is built**, and the same measurement lists five conditions without which the format does not hold. It is a scaling decision, not a correctness one: it does not solve the first-contact problem above.
+Work is ongoing on a different file format — **no date and no promise**: append-only segments per device, stored flat ([Issue #12](https://github.com/TillQuandel/obsidian-qollab/issues/12)). Measured at 42 MB and ~8,400 files instead of 206 MB and 50,000 — **none of it is built**, and the same measurement lists five conditions without which the format does not hold. It is a scaling decision, not a correctness one: it does not solve the first-contact problem above. Expect this limit to stay.
 
 A previous plan (Yjs subdocuments + a shared single store, Issue #9) is withdrawn and closed as *not planned*: subdocuments do not reduce the file count, and a shared store forks the entire vault on a single conflict.
 
@@ -106,7 +114,7 @@ node esbuild.config.mjs production   # → main.js
 npx jest                             # tests
 ```
 
-The measurement harness lives in `obsidian-crdt-sync/spike/` and runs against a deterministic multi-device simulator. Every figure in this README comes from it.
+Every figure in this README comes from a deterministic multi-device simulator. That measurement harness is **not part of this branch**: it lives under `obsidian-crdt-sync/spike/` on the `mess/*` branches, together with the runs the numbers were read off. Checking a figure means checking out one of those.
 
 ## License
 

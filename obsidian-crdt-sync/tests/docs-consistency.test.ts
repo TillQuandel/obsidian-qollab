@@ -13,7 +13,13 @@ import { filterYjsFiles, SyncHandler, QOLLAB_DIR } from '../src/sync-handler';
 import { CrdtManager } from '../src/crdt-manager';
 import { DEFAULT_SETTINGS } from '../src/settings';
 import { encodeStateFile, decodeStateFile } from '../src/state-file';
-import { FOREIGN_OWN_SIDECAR_NOTICE } from '../src/main';
+import CrdtSyncPlugin, { FOREIGN_OWN_SIDECAR_NOTICE } from '../src/main';
+import {
+  makeVaultMock,
+  makeLocalStorage,
+  toArrayBuffer,
+  type VaultMock,
+} from './helpers/vault-mock';
 
 const README = readFileSync(join(__dirname, '..', '..', 'README.md'), 'utf8');
 
@@ -30,8 +36,8 @@ describe('F-7: README hält, was der Code tut', () => {
     // Öffnen einer Note. Wer „sofort" liest, hält das Plugin für defekt und
     // editiert von Hand — und landet damit im Merge-Fenster.
     expect(SCAN_INTERVAL_MS).toBe(30_000);
-    expect(CLAIMS).not.toMatch(/erkennt Qollab das sofort/);
-    expect(CLAIMS).toMatch(/halbe[nr]? Minute|30 Sekunden/);
+    expect(CLAIMS).not.toMatch(/Qollab (detects|picks) (this|that|it up) (instantly|immediately)/i);
+    expect(CLAIMS).toMatch(/half a minute|30 seconds/);
   });
 
   it('nennt als Beispiel-Hilfsdatei eine Form, die der Sidecar-Filter akzeptiert', () => {
@@ -73,9 +79,9 @@ describe('Funde 38/39: README hält, was das Geräteprofil hergibt', () => {
     // README das Abschalten für große Vaults ausdrücklich empfiehlt, ist das
     // Verschweigen dieses Rücksetzers eine falsche Zusage.
     expect(DEFAULT_SETTINGS.enabled).toBe(true);
-    expect(CLAIMS).toContain('besser deaktivieren');
-    expect(CLAIMS).toContain('Der Schalter gilt pro Gerät');
-    expect(CLAIMS).toContain('startet dort wieder mit „Sync aktiviert"');
+    expect(CLAIMS).toContain("the honest advice is: don't enable it");
+    expect(CLAIMS).toContain('sync toggle and deletion markers live outside the vault');
+    expect(CLAIMS).toContain('starts with sync **enabled** again');
   });
 
   it('sagt den Zombie-Schutz nicht mehr vorbehaltlos zu', () => {
@@ -84,11 +90,11 @@ describe('Funde 38/39: README hält, was das Geräteprofil hergibt', () => {
     // Damit hängt der Zombie-Schutz an zwei Bedingungen: Qollab war beim Löschen
     // an, und das Profil lebt noch. Ein „behoben." ohne Vorbehalt ist falsch.
     expect(DEFAULT_SETTINGS).toHaveProperty('tombstones', {});
-    expect(CLAIMS).not.toMatch(/\*\*Zombie-Resurrection — behoben\.\*\*/);
-    expect(CLAIMS).toContain('Zombie-Resurrection — behoben, mit zwei Ausnahmen.');
+    expect(CLAIMS).not.toMatch(/\*\*A deleted note coming back — fixed\.\*\*/);
+    expect(CLAIMS).toContain('A deleted note coming back — fixed, with two exceptions.');
     // Und beide Ausnahmen müssen im Fließtext benannt sein.
-    expect(CLAIMS).toContain('im Moment des Löschens **ausgeschaltet**');
-    expect(CLAIMS).toContain('Geht das **Geräteprofil verloren**');
+    expect(CLAIMS).toContain('was **switched off** on this device at the moment of the deletion');
+    expect(CLAIMS).toContain('the **device profile is lost**');
   });
 });
 
@@ -108,8 +114,8 @@ describe('Fund 40: README nennt die Grenze, solange das Format keinen Pfad träg
     expect(filterYjsFiles(['.qollab/b.md.5e307e01.yjs'], 'b.md')).toHaveLength(1);
     expect(filterYjsFiles(['.qollab/b.md.5e307e01.yjs'], 'a.md')).toHaveLength(0);
 
-    expect(CLAIMS).toContain('Dateiname ist der einzige Hinweis darauf, zu welcher Notiz sie gehört');
-    expect(CLAIMS).toContain('den Ordner `.qollab` nicht von Hand umsortieren');
+    expect(CLAIMS).toContain('The filename is the only link between a helper file and its note');
+    expect(CLAIMS).toContain("Don't reorganise `.qollab/` manually");
   });
 });
 
@@ -137,9 +143,9 @@ describe('Datei-Explosion: README verspricht keine Lösung, die es nicht gibt', 
     // Und eine zweite Note bringt ihre eigenen mit — das Produkt, nicht die Summe.
     expect(filterYjsFiles([a, b], 'projekte/2026/andere.md')).toEqual([]);
 
-    expect(CLAIMS).toContain('Das Wachstum dieser Hilfsdateien ist eine offene Grenze');
+    expect(CLAIMS).toContain('growing without bound');
     // Der Rat zum Deaktivieren steht ohne Bedingung, an die er geknüpft wäre.
-    expect(CLAIMS).toContain('besser deaktivieren, ohne Ablaufdatum');
+    expect(CLAIMS).toContain("don't enable it, and that advice has no expiry date");
   });
 
   it('verweist nicht mehr auf das geschlossene Issue und seine widerlegte Lösung', () => {
@@ -147,14 +153,22 @@ describe('Datei-Explosion: README verspricht keine Lösung, die es nicht gibt', 
     // dort wird die Nummer nur noch genannt, nicht mehr verlinkt.
     expect(README).not.toMatch(/issues\/9(?!\d)/);
     // Und keine der beiden widerlegten Hälften wird im Fließtext noch zugesagt.
-    expect(CLAIMS).not.toMatch(/Subdocument/i);
     expect(CLAIMS).not.toMatch(/SQLite/i);
+    // „Subdocuments" darf im Fließtext stehen — aber nur im Widerruf. Der Absatz,
+    // der das Wort führt, muss die Rücknahme UND ihre Begründung tragen; ein
+    // zweiter Absatz mit dem Wort wäre wieder eine Zusage und fällt hier durch.
+    // Absatzweise statt zeilenweise: die README hält einen Absatz pro Zeile, ein
+    // Reflow soll den Wächter nicht kippen.
+    const subdoc = CLAIMS.split(/\n\s*\n/).filter((p) => /subdocument/i.test(p));
+    expect(subdoc).toHaveLength(1);
+    expect(subdoc[0]).toMatch(/withdrawn and closed as \*not planned\*/);
+    expect(subdoc[0]).toMatch(/subdocuments do not reduce the file count/i);
   });
 
   it('nennt die verfolgte Richtung als Arbeit, nicht als Zusage', () => {
     expect(CLAIMS).toContain('issues/12');
-    expect(CLAIMS).toContain('ohne Termin und ohne Zusage');
-    expect(CLAIMS).toContain('gebaut ist davon nichts');
+    expect(CLAIMS).toContain('no date and no promise');
+    expect(CLAIMS).toContain('none of it is built');
   });
 });
 
@@ -178,11 +192,71 @@ describe('Fund 37: README hält, was die Meldung wirklich sagt', () => {
     // Die widerrufene Zusage. Sie stand im Fließtext und wird dort nicht mehr
     // geduldet; im Blockzitat der Richtigstellung darf sie zitiert werden (die
     // CLAIMS-Filterung oben blendet Blockzitate aus).
-    expect(CLAIMS).not.toMatch(/meldet diese Kollision einmal/);
+    expect(CLAIMS).not.toMatch(/reports this collision once/i);
     // Und der Absatz benennt, was die Meldung nicht leisten kann, plus beide
     // Ursachen — dieselben zwei, die auch im Meldungstext stehen.
-    expect(CLAIMS).toContain('die Meldung kann nicht sagen, welche vorliegt');
-    expect(CLAIMS).toContain('dieselbe Geräte-ID');
-    expect(CLAIMS).toContain('Sicherung des `.qollab`-Ordners zurückgespielt');
+    expect(CLAIMS).toContain('the notice cannot say which one it is');
+    expect(CLAIMS).toContain('the same device ID');
+    expect(CLAIMS).toContain('a backup of the `.qollab` folder was restored');
+  });
+});
+
+// Der README sagte bis zur englischen Fassung das GEGENTEIL des Codes: „For every
+// note, Qollab keeps a small helper file". Der Sweep legt für eine unberührte
+// Notiz gerade KEINE an (main.ts, Task 13/B: ohne eigene Sidecar nur dann
+// snapshotten, wenn eine adoptierbare fremde vorliegt) — die Historie entsteht
+// beim ersten echten Edit, genau einmal, auf dem Gerät das editiert hat. Die
+// Folge für die Leserin ist der eigentliche Punkt: bis dahin schützt Qollab die
+// Notiz nicht. Die Aussage stand unter keinem Wächter; genau deshalb konnte sie
+// sich beim Übersetzen umdrehen.
+describe('Lazy-Anlage: README hält, wann eine Hilfsdatei überhaupt entsteht', () => {
+  function makePlugin(vault: VaultMock): CrdtSyncPlugin {
+    const vaultWithEvents = Object.assign(vault, { on: () => ({}), offref: () => {} });
+    const storage = makeLocalStorage();
+    storage.saveLocalStorage('qollab-client-id', 'deadbeef');
+    const app = {
+      vault: vaultWithEvents,
+      workspace: { on: () => ({}), offref: () => {}, onLayoutReady: () => {} },
+      loadLocalStorage: storage.loadLocalStorage,
+      saveLocalStorage: storage.saveLocalStorage,
+    };
+    return new CrdtSyncPlugin(app as any, {} as any);
+  }
+
+  it('unberührte Notiz bekommt keine, adoptierbare bekommt eine — und der README sagt beides', async () => {
+    const vault = makeVaultMock();
+    // A: nur die `.md`, nichts sonst. Niemand hat sie je editiert.
+    vault._textFiles.set('unberuehrt.md', 'Inhalt\n');
+    vault._mdMtimes.set('unberuehrt.md', 10);
+    // B: dieselbe Lage, aber die Hilfsdatei eines anderen Geräts ist angekommen.
+    vault._textFiles.set('fremd-gesehen.md', 'Inhalt\n');
+    vault._mdMtimes.set('fremd-gesehen.md', 10);
+    const mgr = new CrdtManager();
+    mgr.setContent('fremd-gesehen.md', 'Inhalt\n');
+    vault._files.set(
+      '.qollab/fremd-gesehen.md.00000001.yjs',
+      toArrayBuffer(encodeStateFile('a'.repeat(32), mgr.encodeState('fremd-gesehen.md')))
+    );
+    vault._mtimes.set('.qollab/fremd-gesehen.md.00000001.yjs', 5);
+
+    const plugin = makePlugin(vault);
+    await plugin.onload();
+    await plugin.runStartupSweep();
+    plugin.onunload();
+
+    // Code-Anker: der Sweep hat für A nichts angelegt — kein eigener, kein
+    // fremder Pfad. Wird die Anlage je eifrig, fällt genau diese Zeile.
+    expect(filterYjsFiles([...vault._files.keys()], 'unberuehrt.md')).toEqual([]);
+    // Und für B sehr wohl: die fremde Historie wird adoptiert statt ignoriert.
+    expect(filterYjsFiles([...vault._files.keys()], 'fremd-gesehen.md')).toContain(
+      '.qollab/fremd-gesehen.md.deadbeef.yjs'
+    );
+
+    // Beide Hälften der Zusage, und die Folge, die der Leserin gehört.
+    expect(CLAIMS).toContain('A note gets its helper file only once it is edited');
+    expect(CLAIMS).toContain("or once another device's helper file for it arrives");
+    expect(CLAIMS).toContain(
+      '**until a note has been edited in Obsidian once, Qollab does not protect it.**'
+    );
   });
 });
