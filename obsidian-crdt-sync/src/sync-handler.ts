@@ -5,7 +5,13 @@ import {
   isNulledYjsState,
   textFromUpdate,
 } from './crdt-manager';
-import { encodeStateFile, decodeStateFile, generateGuid } from './state-file';
+import {
+  encodeStateFile,
+  decodeStateFile,
+  generateGuid,
+  hashBytes,
+  StateFileIntegrityError,
+} from './state-file';
 import type { SidecarAdapter, DirListingCache } from './sidecar-io';
 import {
   ensureSidecarFolder,
@@ -112,17 +118,10 @@ interface OwnSidecarSignature {
   hash: number;
 }
 
-// FNV-1a (32 bit). Kein Krypto-Anspruch: der Hash vergleicht unsere eigenen Bytes
-// mit dem Disk-Stand, ein Angreifer-Modell gibt es hier nicht. Zusammen mit der
-// Länge reicht das, um einen fremden Yjs-State von unserem zu unterscheiden.
-function hashBytes(bytes: Uint8Array): number {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < bytes.length; i++) {
-    h ^= bytes[i];
-    h = Math.imul(h, 0x01000193);
-  }
-  return h >>> 0;
-}
+// Der Hash der Signatur ist derselbe FNV-1a, den das Dateiformat für seinen
+// Integritätsnachweis benutzt (`state-file.ts`) — eine Definition, nicht zwei.
+// Kein Krypto-Anspruch: hier vergleicht er unsere eigenen Bytes mit dem
+// Disk-Stand, ein Angreifer-Modell gibt es nicht.
 
 export class SyncHandler {
   // Note-Pfad → GUID der aktuell geladenen Inkarnation.
@@ -797,7 +796,11 @@ export class SyncHandler {
     }
   }
 
-  private async readStateFile(path: string): Promise<DecodedSibling | null> {
+  // Der Lesevorgang selbst, ohne Politik: IO-Fehler → `SidecarReadError`,
+  // verfehlter QLB2-Integritätsnachweis → `StateFileIntegrityError`. Wie mit dem
+  // zweiten umzugehen ist, hängt daran, WESSEN Datei es ist — deshalb entscheiden
+  // das die beiden Wrapper darunter, nicht diese Methode.
+  private async readStateFileRaw(path: string): Promise<DecodedSibling | null> {
     // Task 12/F-1: readSidecar liest cache-frei (Desktop: direkt am Dateisystem)
     // und trennt „existiert nachweislich nicht" (null) von „unlesbar" (wirft).
     // Der frühere adapter.exists-Vorabcheck ist damit weg — er lief über dieselbe
@@ -812,13 +815,49 @@ export class SyncHandler {
       throw new SidecarReadError(path);
     }
     if (buffer === null) return null;
-    // R2: Decode-Fehler (leere/trunkierte Datei) = korrupt → überspringen.
+    const { guid, update } = decodeStateFile(new Uint8Array(buffer));
+    return { path, guid, update };
+  }
+
+  // FREMDE Sidecars: R2 — korrupt heißt überspringen. Eine QLB2-Datei, die ihren
+  // Integritätsnachweis verfehlt, wird gemeldet und aus dem Merge genommen; die
+  // übrigen Siblings laufen weiter. Ein Abbruch wäre hier falsch, weil eine
+  // dauerhaft beschädigte Fremd-Datei die Notiz sonst für immer blockierte.
+  // Gelöscht wird sie nie — der Datei-Sync trüge die Löschung sonst zum anderen
+  // Gerät, wo die Datei intakt sein kann.
+  private async readStateFile(path: string): Promise<DecodedSibling | null> {
     try {
-      const { guid, update } = decodeStateFile(new Uint8Array(buffer));
-      return { path, guid, update };
-    } catch {
-      this.onCorruptFile?.(path);
-      return null;
+      return await this.readStateFileRaw(path);
+    } catch (err) {
+      if (err instanceof StateFileIntegrityError) {
+        this.onCorruptFile?.(path);
+        return null;
+      }
+      throw err;
+    }
+  }
+
+  // Die EIGENE Sidecar. Hier wäre „überspringen" der Schadensweg, den der
+  // Nullfüllungs-Fix gerade geschlossen hat: `null` heißt für `ensureDoc` „es gibt
+  // keinen eigenen Stand", also Adopt-Zweig — und der prägt mangels Fremd-Datei
+  // eine FRISCHE GUID über eine lebende Historie, schreibt sie zurück und spaltet
+  // die Inkarnation. Gemessen an `truncated-own-state` und `nullgefuellte-sidecar`:
+  // ohne diese Unterscheidung schreibt der Lauf die halbe Datei über, statt sie
+  // liegen zu lassen.
+  //
+  // Deshalb dieselbe Behandlung wie beim `applyUpdate`-Wurf und bei der
+  // Nullfüllung: melden und abbrechen. Der Aufrufer schreibt nichts, der nächste
+  // Trigger wiederholt, und der Sync kann die Datei noch vervollständigen.
+  private async readOwnStateFile(notePath: string): Promise<DecodedSibling | null> {
+    const path = this.stateFilePath(notePath);
+    try {
+      return await this.readStateFileRaw(path);
+    } catch (err) {
+      if (err instanceof StateFileIntegrityError) {
+        this.onCorruptFile?.(path);
+        throw new SidecarReadError(path);
+      }
+      throw err;
     }
   }
 
@@ -831,15 +870,16 @@ export class SyncHandler {
   //        ignoriert und gelöscht.
   //
   // Task 17/F-1: „Legacy" verlangt einen POSITIVEN Nachweis, nicht mehr den
-  // Negativbefund „trägt keine GUID". `hasMagic` (state-file.ts) liefert für jede
-  // Datei unter 20 Byte `false` — auch für 0 Byte —, und `decodeStateFile` meldet
+  // Negativbefund „trägt keine GUID". Die Magic-Prüfung in `state-file.ts` schlägt
+  // für jede Datei unterhalb der Headerlänge fehl — auch für 0 Byte —, und
+  // `decodeStateFile` meldet
   // dann `guid: null`. Damit galt jede unvollständig materialisierte Fremd-Datei
   // als v0.1-Leiche und wurde von der Platte gelöscht; der bidirektionale Sync
   // trug die Löschung zurück und vernichtete dort den echten State. Auslöser sind
   // real (fehlgeschlagene OneDrive-Hydrierung, abgebrochener Transfer,
   // Sicherheitssoftware), und die Asymmetrie war das eigentliche Ärgernis: eine
-  // Datei AB 20 Byte mit kaputtem Inhalt wurde schonend behandelt (übersprungen,
-  // `onCorruptFile`), die harmlosere darunter gelöscht.
+  // Datei AB der Headerlänge mit kaputtem Inhalt wurde schonend behandelt
+  // (übersprungen, `onCorruptFile`), die harmlosere darunter gelöscht.
   //
   // Der Nachweis läuft über die PFADFORM, nicht über den Inhalt: v0.1 schrieb
   // `.qollab/<note>.yjs` ohne clientId-Segment (`legacyFilePath`). Das clientId-
@@ -988,13 +1028,13 @@ export class SyncHandler {
   private async ensureDoc(notePath: string): Promise<boolean> {
     if (this.crdtManager.hasDoc(notePath)) {
       if (!this.guids.has(notePath)) {
-        const own = await this.readStateFile(this.stateFilePath(notePath));
+        const own = await this.readOwnStateFile(notePath);
         this.guids.set(notePath, own?.guid ?? generateGuid());
       }
       return false;
     }
 
-    const own = await this.readStateFile(this.stateFilePath(notePath));
+    const own = await this.readOwnStateFile(notePath);
     // Nullfüllungs-Fix: Kopf intakt, Nutzlast auf NULL gesetzt. Das ist der Fall,
     // den die Bedingung unten NICHT abfängt — sie fragt die GUID zuerst und lässt
     // `carriesYjsOps` dann per Kurzschluss aus. Bei der Trunkierung fällt das nicht
@@ -1030,11 +1070,16 @@ export class SyncHandler {
     // Sidecar nahm sonst diesen Zweig, `applyUpdate` gelang als No-op und
     // `own.guid ?? generateGuid()` prägte die Spaltung, die der Fix verhindern soll.
     if (own && (own.guid !== null || carriesYjsOps(own.update))) {
-      // Halb angekommene eigene Sidecar: Kopf (`QLB1` + GUID) vollständig,
+      // Halb angekommene eigene Sidecar: Kopf (Magic + GUID) vollständig,
       // Nutzlast abgeschnitten — Stromausfall im Write, halb materialisierter
       // Sync-Download, abgebrochener NTFS-Extend. Weil die GUID in der Bedingung
       // oben VORNE im ODER steht, wird dieser Zweig allein wegen des intakten
       // Kopfes genommen; die Nutzlast wird nie beurteilt.
+      //
+      // Seit QLB2 erreicht ihn eine SOLCHE Datei nur noch, wenn sie im Altformat
+      // vorliegt: Eine trunkierte QLB2-Datei verfehlt ihren Integritätsnachweis
+      // und wird bereits in `readOwnStateFile` abgefangen. Für QLB1 und die
+      // headerlose v0.1-Form ist dieser Fang weiterhin der einzige.
       //
       // Früher wurde der Wurf hier nur gemeldet und dann weitergemacht. Das war
       // der Schadensweg, gemessen: Der Doc ist nach dem gescheiterten
@@ -1295,7 +1340,18 @@ export class SyncHandler {
       return; // unlesbar → Stand unbekannt, liegen lassen
     }
     if (buffer === null) return;
-    const { guid, update } = decodeStateFile(new Uint8Array(buffer));
+    // QLB2: `decodeStateFile` WIRFT bei verfehltem Integritätsnachweis. Beide
+    // Aufrufer rufen `cleanupLegacyFile` AUSSERHALB ihres try/catch — ein Wurf
+    // verließe hier also `applyLocalContent` bzw. `loadAndMerge` ungefiltert,
+    // nachdem der eigene State längst geschrieben ist. Behandelt wird er wie der
+    // Lesefehler eine Zeile höher: Stand unbekannt, liegen lassen, nicht löschen.
+    let decoded: { guid: string | null; update: Uint8Array };
+    try {
+      decoded = decodeStateFile(new Uint8Array(buffer));
+    } catch {
+      return;
+    }
+    const { guid, update } = decoded;
     // Task 19/A: Dieselbe Ausnahme wie in `decodeSiblings` — der Pfad IST hier
     // per Konstruktion die v0.1-Form. Eine nie befüllte v0.1-Note hinterlässt den
     // leeren State; er trägt nichts, was noch zu importieren wäre, und ist ab dem

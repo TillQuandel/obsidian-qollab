@@ -54,11 +54,20 @@
 // Lesens zu integrieren (halbe Einfuegung!), oder sollte ein Aufrufer hinter den
 // Fang von `mergeCompatible` ein `setContent` setzen, faellt die Invariante — und
 // dann ist der Teilstand sehr wohl unheilbar.
+//
+// NACHTRAG QLB2. Alles oben gilt weiter auf der Yjs-Ebene (erstes `describe`).
+// Durch `loadAndMerge` erreicht eine abgeschnittene QLB2-Datei den Doc aber gar
+// nicht mehr: Der Integritaetsnachweis sitzt VOR dem Inhalt und verwirft sie. Das
+// Teilstand-Fenster gibt es dort also nicht mehr — nicht weil `mergeCompatible`
+// sich geaendert haette, sondern weil der Fall vorher endet. Fuer die
+// nachweislosen Altformate (QLB1, headerlose v0.1) bleibt der Weg unveraendert;
+// das zweite `describe` misst beide Seiten gegeneinander.
 
 import * as Y from 'yjs';
 import { SyncHandler } from '../src/sync-handler';
 import { CrdtManager } from '../src/crdt-manager';
-import { encodeStateFile } from '../src/state-file';
+import { encodeStateFile, decodeStateFile } from '../src/state-file';
+import { encodeStateFile as encodeStateFileV040 } from './_v040/state-file';
 import { makeVaultMock, toArrayBuffer as toAB } from './helpers/vault-mock';
 
 const NOTE = 'note.md';
@@ -198,7 +207,7 @@ describe('abgeschnittene Sibling-Datei: durch loadAndMerge', () => {
     // Was sieht der Peer, wenn er UNSERE Sidecar zurueckbekommt?
     const peer = new CrdtManager();
     peer.applyUpdate(NOTE, voll);
-    peer.applyUpdate(NOTE, new Uint8Array(vault._files.get(OWN_PATH)!).subarray(20));
+    peer.applyUpdate(NOTE, decodeStateFile(new Uint8Array(vault._files.get(OWN_PATH)!)).update);
 
     return { vault, h, korrupt, teilstand, endstand, beimPeer: peer.getContent(NOTE) };
   }
@@ -211,33 +220,86 @@ describe('abgeschnittene Sibling-Datei: durch loadAndMerge', () => {
     }
   });
 
-  it('der Teilstand ist sichtbar und gemeldet — aber vergaenglich, auch unter einem lokalen Edit', async () => {
-    // 5 fehlende Byte liegen im Delete-Set-Schwanz: die Einfuegung des Peers ist
-    // vollstaendig da, ein Teil seiner Loeschungen fehlt noch.
+  // GEAENDERT MIT QLB2. Vorher hiess dieser Test „der Teilstand ist sichtbar und
+  // gemeldet — aber vergaenglich"; er hielt fest, dass der halbe Fremd-Stand samt
+  // Ruecklaeufern in die `.md` des Nutzers geschrieben wurde und spaeter heilte.
+  //
+  // Mit dem Integritaetsnachweis passiert das nicht mehr: Der Nachweis sitzt VOR
+  // dem Inhalt, also wird die abgeschnittene Datei verworfen, bevor `applyUpdate`
+  // sie ueberhaupt sieht. Das ist kein Kollateralschaden, sondern der Kern des
+  // Formats — die 367 gemessenen Faelle der Nullfuellung sind auf Inhaltsebene von
+  // einer Trunkierung NICHT unterscheidbar (beide: parst, traegt Ops, liefert
+  // einen anderen Text). Wer den Teilstand einer trunkierten Datei annehmen will,
+  // muss auch den verfaelschten Stand einer genullten annehmen.
+  //
+  // PREIS, benannt: Kommt die vollstaendige Datei nie, bekommen wir aus einer
+  // trunkierten QLB2-Datei jetzt gar nichts statt eines Teilstands. Verloren geht
+  // dabei nichts — die Datei bleibt liegen, wird gemeldet, und ihr Original liegt
+  // beim Peer. Fuer die nachweislosen Altformate (QLB1, headerlose v0.1) gilt
+  // unveraendert der alte Weg ueber den `applyUpdate`-Fang in `mergeCompatible`.
+  it('der abgeschnittene Fremd-Stand kommt gar nicht mehr an — gemeldet, nicht halb gemergt', async () => {
+    // 5 fehlende Byte lagen im Delete-Set-Schwanz: genau das Fenster, in dem
+    // frueher ein Teilstand entstand.
     const { vault, h, korrupt, teilstand } = await durchlauf(5);
 
     // Der beschaedigte Pfad ist gemeldet — der Nutzer erfaehrt davon.
     expect(korrupt).toContain(PEER_PATH);
-    // Der Teilstand traegt ZUVIEL, nicht zu wenig: alles vom Peer ist da …
-    expect(istTeilfolge(ZIEL, teilstand!)).toBe(true);
-    // … plus Zeichen, deren Loeschung noch aussteht (hier sichtbar als Ruecklaeufer
-    // im Text). Genau dieser Stand steht nach dem Write-Back in der `.md`.
-    expect(teilstand).not.toBe(ZIEL);
-    expect(vault._textFiles.get(NOTE)).toBe(teilstand);
+    // Und NIE geloescht: der Sync kann sie noch vervollstaendigen.
+    expect(vault._files.has(PEER_PATH)).toBe(true);
+    // Der eigene Stand ist unberuehrt — kein Ruecklaeufer in der `.md`.
+    expect(teilstand).toBe(BASIS);
+    expect(vault._textFiles.get(NOTE)).toBe(BASIS);
 
-    // Der Nutzer tippt auf diesem verstuemmelten Stand weiter …
-    const getippt = teilstand + 'Lokal getippt\n';
+    // Der Nutzer tippt weiter …
+    const getippt = BASIS + 'Lokal getippt\n';
     vault._textFiles.set(NOTE, getippt);
     await h.applyLocalContent(NOTE, getippt);
 
     // … und ERST DANACH kommt die vollstaendige Datei. Beides ueberlebt, nichts
-    // steht doppelt, die Ruecklaeufer sind weg.
-    const endstand = await h.loadAndMerge(NOTE);
-    expect(endstand).toBe(ZIEL + 'Lokal getippt\n');
+    // steht doppelt, die Loeschung des Peers ist angekommen. Das ist die Zusage,
+    // auf die es ankommt, und sie haelt.
+    const endstand = await h.loadAndMerge(NOTE)!;
     expect(zaehle(endstand!, 'Fremder Absatz')).toBe(1);
     expect(zaehle(endstand!, 'Lokal getippt')).toBe(1);
+    expect(zaehle(endstand!, 'Bestand A')).toBe(0);
+    expect(endstand!.startsWith('Kopf\nBestand B\n')).toBe(true);
+
+    // Die REIHENFOLGE der beiden Zeilen ist nicht mehr dieselbe wie frueher, und
+    // das ist kein Zufall: Der lokale Edit sitzt jetzt auf dem BASIS-Stand statt
+    // auf dem Teilstand, der den fremden Absatz schon enthielt. Beide Zeilen sind
+    // damit echt nebenlaeufig — und dass die Reihenfolge dabei ueberraschen kann,
+    // ist eine benannte Grenze, kein Verlust. Nicht gepinnt, weil sie an der
+    // Merge-Reihenfolge haengt und nicht an einer Zusage.
+    expect(new Set(endstand!.trim().split('\n')).size).toBe(4);
   });
 
+  // Gegenprobe zur Aussage oben: an einer QLB1-Datei entsteht der Teilstand
+  // weiterhin. Damit ist belegt, dass ihn der NACHWEIS schliesst und nicht etwa
+  // eine Aenderung an `mergeCompatible` — und dass der Altbestand unveraendert
+  // durch dieselbe Kette laeuft.
+  it('an einer QLB1-Altdatei entsteht der Teilstand unveraendert', async () => {
+    const vault = makeVaultMock() as any;
+    vault._textFiles.set(NOTE, BASIS);
+    vault._files.set(OWN_PATH, toAB(encodeStateFile(GUID, basis)));
+    vault._files.set(PEER_PATH, toAB(schnitt(encodeStateFileV040(GUID, voll), 5)));
+
+    const korrupt: string[] = [];
+    const h = new SyncHandler(vault, new CrdtManager(), OWN_ID, undefined, (p: string) =>
+      korrupt.push(p)
+    );
+
+    const teilstand = await h.loadAndMerge(NOTE);
+
+    expect(korrupt).toContain(PEER_PATH);
+    // Alles vom Peer ist da, plus Zeichen, deren Loeschung noch aussteht.
+    expect(istTeilfolge(ZIEL, teilstand!)).toBe(true);
+    expect(teilstand).not.toBe(ZIEL);
+  });
+
+  // Seit QLB2 misst dieser Fall den Teilstand nicht mehr (der Nachweis verwirft
+  // die Datei vorher, siehe oben) — er haelt jetzt fest, dass unsere eigene
+  // Sidecar in diesem Fall SAUBER bleibt: Was ein drittes Geraet von uns bekommt,
+  // ist der unveraenderte Basis-Stand, keine halbe Fremd-Kette.
   it('kommt die vollstaendige Datei nie, bleibt der Teilstand heilbar statt verfestigt', async () => {
     const basis = basisState();
     const voll = peerState(basis, ZIEL);
@@ -256,7 +318,7 @@ describe('abgeschnittene Sibling-Datei: durch loadAndMerge', () => {
     // uebernimmt den Teilstand mitsamt der ausstehenden Loeschungen …
     const drittes = new CrdtManager();
     drittes.applyUpdate(NOTE, basis);
-    drittes.applyUpdate(NOTE, new Uint8Array(vault._files.get(OWN_PATH)!).subarray(20));
+    drittes.applyUpdate(NOTE, decodeStateFile(new Uint8Array(vault._files.get(OWN_PATH)!)).update);
     expect(drittes.getContent(NOTE)).toBe(teilstand);
 
     // … und wird geheilt, sobald es die Datei des Peers aus irgendeiner Quelle

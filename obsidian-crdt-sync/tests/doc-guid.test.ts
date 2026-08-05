@@ -189,12 +189,12 @@ describe('Doc-GUID + Tombstone', () => {
     const merged = await handler.loadAndMerge('note.md');
     expect(merged).toBe('Legacy-Inhalt\n');
 
-    // Eigene Datei existiert jetzt im neuen Format (QLB1-Magic).
+    // Eigene Datei existiert jetzt im aktuellen Format (QLB2-Magic).
     const ownBytes = new Uint8Array(
       vault._files.get('.qollab/note.md.10ca1000.yjs')!
     );
     expect(String.fromCharCode(...Array.from(ownBytes.subarray(0, 4)))).toBe(
-      'QLB1'
+      'QLB2'
     );
   });
 

@@ -49,8 +49,17 @@ function vollstaendig(guid = GUID, text = TEXT): Uint8Array {
 }
 
 // Größe bleibt, ab `keep` steht NUL — das Muster des halb materialisierten
-// Downloads. `keep = 20` heißt: Kopf (`QLB1` + GUID) vollständig, Nutzlast weg.
-function nullgefuellt(datei: Uint8Array, keep = 20): Uint8Array {
+// Downloads. `keep = 24` heißt: Kopf (`QLB2` + Hash + GUID) vollständig,
+// Nutzlast weg. Der Wert MUSS der Headerlänge folgen: bei 20 schnitte die
+// Füllung mitten in die GUID, die Datei wäre kopf-kaputt statt nutzlast-leer,
+// und dieses Testfile mäße stillschweigend einen anderen Fall als seinen.
+//
+// Seit dem Formatwechsel fängt den Fall bereits der Integritätsnachweis (der
+// Hash deckt GUID + Nutzlast) — eine Etage vor `isNulledYjsState`. Die Prüfungen
+// hier gelten dem VERHALTEN (abbrechen, melden, nichts überschreiben), nicht dem
+// Mechanismus; es bleibt also dieselbe Zusage. `isNulledYjsState` trägt sie
+// weiterhin für die nachweislosen Formen: QLB1-Altdateien und headerlose v0.1.
+function nullgefuellt(datei: Uint8Array, keep = 24): Uint8Array {
   const b = new Uint8Array(datei.length);
   b.set(datei.subarray(0, keep), 0);
   return b;

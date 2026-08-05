@@ -21,7 +21,7 @@
 import { TFile } from 'obsidian';
 import CrdtSyncPlugin from '../src/main';
 import { CrdtManager } from '../src/crdt-manager';
-import { encodeStateFile } from '../src/state-file';
+import { encodeStateFile, decodeStateFile } from '../src/state-file';
 import { makeVaultMock, makeLocalStorage, toArrayBuffer as toAB, VaultMock } from './helpers/vault-mock';
 
 const OWN_ID = 'deadbeef';
@@ -115,7 +115,7 @@ describe('B/1: der Sweep merkt sich, was er beim letzten Mal gesehen hat', () =>
 
     const own = vault._files.get(`.qollab/${p}.${OWN_ID}.yjs`)!;
     const mgr = new CrdtManager();
-    mgr.applyUpdate(p, new Uint8Array(own).subarray(20));
+    mgr.applyUpdate(p, decodeStateFile(new Uint8Array(own)).update);
     expect(mgr.getContent(p)).toContain('Von aussen geaendert');
   });
 

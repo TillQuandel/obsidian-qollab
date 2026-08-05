@@ -174,11 +174,11 @@ describe('Fund 40: verirrte Hilfsdatei — gepinnte Grenze', () => {
     const update = m.encodeState('gehalt.md');
     const datei = encodeStateFile(G_KLEIN, update);
 
-    // Jedes Byte ist erklärt: 4 Magic ('QLB1') + 16 GUID + Update. Bliebe irgendwo
-    // Platz für einen Note-Pfad, fiele diese Gleichung.
-    expect(datei.length).toBe(4 + 16 + update.length);
-    expect([...datei.subarray(0, 4)]).toEqual([0x51, 0x4c, 0x42, 0x31]);
-    expect([...datei.subarray(20)]).toEqual([...update]);
+    // Jedes Byte ist erklärt: 4 Magic ('QLB2') + 4 Integritäts-Hash + 16 GUID +
+    // Update. Bliebe irgendwo Platz für einen Note-Pfad, fiele diese Gleichung.
+    expect(datei.length).toBe(4 + 4 + 16 + update.length);
+    expect([...datei.subarray(0, 4)]).toEqual([0x51, 0x4c, 0x42, 0x32]);
+    expect([...datei.subarray(24)]).toEqual([...update]);
     // Der Note-Pfad kommt in den Bytes nicht vor.
     expect(Buffer.from(datei).includes('gehalt.md')).toBe(false);
     // Und das Lesen kennt nur diese zwei Felder. Kommt hier je ein Pfad dazu, ist

@@ -94,7 +94,7 @@ export function alignSurrogateBoundaries(roh: Diff[]): Diff[] {
 // Task 17/R-1: „parst" genügt als Nachweis NICHT. Yjs liest `[0x00, 0x00]` als
 // „0 Struct-Clients, 0 Delete-Set-Clients" und ignoriert den Rest — jeder
 // nullgefüllte Puffer ab 2 Byte parst damit fehlerfrei zu einem leeren Doc, und
-// `zeros(20) + <echtes Update>` (genullter Kopf, intakte Nutzlast) ebenfalls.
+// ein genullter Kopf vor einer intakten Nutzlast ebenfalls.
 // Nullfüllung ist aber genau die zweite Erscheinungsform halb materialisierter
 // Dateien (fehlgeschlagene OneDrive-Hydrierung, abgebrochener NTFS-Extend,
 // Sparse-/Platzhalter-Zustände). Deshalb ist das Kriterium `clients.size > 0` —

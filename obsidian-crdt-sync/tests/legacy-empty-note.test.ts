@@ -144,7 +144,9 @@ describe('M-1: der Zuschnitt der Ausnahme', () => {
 describe('M-1: Kontrollmessung — mit Header ist die leere Note im Bestand gesund', () => {
   it('behält ihre Kennung und meldet nichts', async () => {
     const vault = makeVaultMock();
-    // Genau der 22-Byte-Fall aus dem Review: QLB1 + GUID + [0x00,0x00].
+    // Der Fall aus dem Review, im aktuellen Format: QLB2 + Hash + GUID +
+    // [0x00,0x00] = 26 Byte. Der leere State muss den Integritätsnachweis
+    // passieren — er ist gesund, er trägt nur nichts.
     vault._files.set(OWN_PATH, toAB(encodeStateFile(OWN_GUID, new Uint8Array([0, 0]))));
     vault._textFiles.set(NOTE, '');
 
@@ -153,7 +155,7 @@ describe('M-1: Kontrollmessung — mit Header ist die leere Note im Bestand gesu
       corrupt.push(p)
     );
 
-    expect(new Uint8Array(vault._files.get(OWN_PATH)!).byteLength).toBe(22);
+    expect(new Uint8Array(vault._files.get(OWN_PATH)!).byteLength).toBe(26);
     await handler.loadAndMerge(NOTE);
 
     expect(corrupt).toEqual([]);

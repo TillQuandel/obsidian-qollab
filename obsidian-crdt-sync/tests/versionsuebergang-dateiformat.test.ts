@@ -118,9 +118,9 @@ describe('(2) Zwischenformat: per-Client-Name ohne QLB1-Header', () => {
     const merged = await handler.applyLocalContent(NOTE, 'Alte Historie\nNeue Zeile\n');
 
     expect(merged).toBe('Alte Historie\nNeue Zeile\n');
-    // Datei ist ins neue Format überführt (Header vorhanden).
+    // Datei ist ins aktuelle Format überführt (Header vorhanden).
     const bytes = new Uint8Array(vault._files.get(OWN_PATH)!);
-    expect(Array.from(bytes.subarray(0, 4))).toEqual([0x51, 0x4c, 0x42, 0x31]);
+    expect(Array.from(bytes.subarray(0, 4))).toEqual([0x51, 0x4c, 0x42, 0x32]);
   });
 
   it('SCHADEN A: der FREMDE Zwischenformat-Stand wird still verschluckt', async () => {

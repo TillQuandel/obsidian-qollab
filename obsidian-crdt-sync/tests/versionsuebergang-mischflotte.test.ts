@@ -12,6 +12,7 @@ import * as Y from 'yjs';
 import { SyncHandler } from '../src/sync-handler';
 import { CrdtManager } from '../src/crdt-manager';
 import { encodeStateFile } from '../src/state-file';
+import { encodeStateFile as encodeStateFileV040 } from './_v040/state-file';
 import { SyncHandler as SyncHandlerV040 } from './_v040/sync-handler';
 import { CrdtManager as CrdtManagerV040 } from './_v040/crdt-manager';
 import PluginV040 from './_v040/main';
@@ -27,10 +28,24 @@ const A_PATH = `.qollab/${NOTE}.${A_ID}.yjs`;
 const C_PATH = `.qollab/${NOTE}.${C_ID}.yjs`;
 const GUID = 'a'.repeat(32);
 
-function mitHeader(guid: string, text: string): ArrayBuffer {
+function update(text: string): Uint8Array {
   const mgr = new CrdtManager();
   mgr.setContent(NOTE, text);
-  return toAB(encodeStateFile(guid, mgr.encodeState(NOTE)));
+  return mgr.encodeState(NOTE);
+}
+
+// Eine Hilfsdatei, wie sie im BESTAND einer Flotte mit v0.4.0 liegt: QLB1.
+// Bewusst über den eingefrorenen v0.4.0-Encoder gebaut, nicht über den aktuellen
+// — sonst hinge die Aussage dieser Tests daran, dass beide Formate zufällig
+// dasselbe sind. Genau das gilt seit dem QLB2-Wechsel nicht mehr, und die
+// Verwechslung ließ R1/R2b hier still das Falsche messen.
+function mitHeader(guid: string, text: string): ArrayBuffer {
+  return toAB(encodeStateFileV040(guid, update(text)));
+}
+
+// Und eine, wie der aktuelle Build sie schreibt: QLB2.
+function heutigeSidecar(guid: string, text: string): ArrayBuffer {
+  return toAB(encodeStateFile(guid, update(text)));
 }
 
 // Der von Task 17/F-1 belegte Realauslöser: OneDrive legt einen größen-
@@ -337,9 +352,62 @@ describe('R4: halb gelaufene Migration', () => {
 });
 
 describe('R5: Formatgrenze — was der Alt-Build mit den neuen Bytes macht', () => {
-  it('ein Build ohne QLB1-Kenntnis kann eine heutige Sidecar nicht anwenden', () => {
-    const bytes = new Uint8Array(mitHeader(GUID, 'Text\n'));
+  it('ein Build ohne Header-Kenntnis kann eine heutige Sidecar nicht anwenden', () => {
+    const bytes = new Uint8Array(heutigeSidecar(GUID, 'Text\n'));
     // So sah `loadAndMerge` vor `e2dd21c` aus: ganzer Dateiinhalt = Yjs-Update.
     expect(() => Y.applyUpdate(new Y.Doc(), bytes)).toThrow();
+  });
+});
+
+// Der Preis des QLB2-Wechsels, gemessen statt behauptet. Der Besitzer hat ihn in
+// Kauf genommen; dieser Test hält fest, WAS genau in Kauf genommen wurde, damit
+// es nicht später als Überraschung wiederkommt.
+//
+// Die Richtung ist nicht reparabel: sie liegt im ausgelieferten v0.4.0-Code
+// (`_v040/sync-handler.ts`, R1-Regel), nicht im aktuellen Build. v0.4.0 kennt nur
+// `QLB1`; alles andere liest es als headerlose v0.1-Leiche und löscht es ohne
+// Meldung, sobald irgendein Sibling eine GUID trägt — auch die eigene Datei zählt
+// dabei mit. Die Gegenrichtung ist dagegen abgesichert: der aktuelle Build liest
+// QLB1 weiter (siehe R1/R2b oben, die genau darauf laufen).
+describe('R6: der bewusste Formatbruch — v0.4.0 räumt die QLB2-Datei ab', () => {
+  const B_PATH = `.qollab/${NOTE}.${B_ID}.yjs`;
+
+  it('erster Lauf: v0.4.0 meldet die Datei als korrupt und prägt eine eigene Inkarnation', async () => {
+    const vault = makeVaultMock();
+    vault._files.set(A_PATH, heutigeSidecar(GUID, 'Nur auf A getippt\n'));
+    vault._textFiles.set(NOTE, 'Nur auf A getippt\n');
+
+    const gemeldet: string[] = [];
+    const b = new SyncHandlerV040(vault as any, new CrdtManagerV040(), B_ID, undefined, (p) =>
+      gemeldet.push(p)
+    );
+    await b.loadAndMerge(NOTE);
+
+    // Noch da: ohne GUID-tragenden Sibling greift die R1-Regel nicht.
+    expect(vault._files.has(A_PATH)).toBe(true);
+    // Und v0.4.0 meldet sie immerhin — es liest sie als headerlose v0.1-Datei,
+    // reicht den GANZEN Dateiinhalt an `Y.applyUpdate`, und das wirft.
+    expect(gemeldet).toContain(A_PATH);
+    // Der Stand von A ist für v0.4.0 trotzdem unsichtbar: es hat eine EIGENE
+    // Inkarnation geprägt, statt die von A zu adoptieren. Split-Brain ab hier.
+    expect(vault._files.has(B_PATH)).toBe(true);
+  });
+
+  it('zweiter Lauf: die eigene GUID reicht, und die QLB2-Datei wird still gelöscht', async () => {
+    const vault = makeVaultMock();
+    vault._files.set(A_PATH, heutigeSidecar(GUID, 'Nur auf A getippt\n'));
+    vault._textFiles.set(NOTE, 'Nur auf A getippt\n');
+
+    await new SyncHandlerV040(vault as any, new CrdtManagerV040(), B_ID).loadAndMerge(NOTE);
+
+    const gemeldet: string[] = [];
+    const b2 = new SyncHandlerV040(vault as any, new CrdtManagerV040(), B_ID, undefined, (p) =>
+      gemeldet.push(p)
+    );
+    await b2.loadAndMerge(NOTE);
+
+    // Weg — und zwar ohne ein Wort. Der Datei-Sync trägt die Löschung zu A zurück.
+    expect(vault._files.has(A_PATH)).toBe(false);
+    expect(gemeldet).toEqual([]);
   });
 });
