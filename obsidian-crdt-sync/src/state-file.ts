@@ -90,6 +90,33 @@ export function hashBytes(bytes: Uint8Array): number {
   return h >>> 0;
 }
 
+// Der Befund „diese Datei wurde auf NULL gesetzt" — auf den BYTES, nicht auf dem
+// Yjs-Inhalt. Gebraucht, seit gemessen ist, dass die Nullfüllung auch die vier
+// Magic-Bytes treffen kann (Realtest r31/P4b, `Q2-Nullfuellen` schreibt über die
+// GANZE Datei): Dann schlägt jede Formatprüfung unten fehl, `decodeStateFile`
+// liefert `guid: null`, und der Nachweis, der die Datei schützen soll, steht in
+// genau den Bytes, die weg sind. Ohne ein Prädikat auf den rohen Bytes ist dieser
+// Zustand von „headerlose v0.1-Datei" nicht mehr zu unterscheiden.
+//
+// Zwei Bedingungen, beide tragend:
+//   - `length > 0`: Eine 0-Byte-Datei bezeugt nichts. Ein abgebrochenes Anlegen
+//     sieht genauso aus wie eine zerstörte Datei; sie gilt seit Task 17/F-1
+//     bewusst als „Stand unbekannt" und nicht als Schaden.
+//   - alle Bytes 0: Die dokumentierte Nullfüllung (OneDrive-Platzhalter,
+//     abgebrochene Hydrierung, NTFS-Extend) ERHÄLT die Größe. Geschrieben wird
+//     unter dem eigenen Pfad ausschließlich QLB2, also nie unter 26 Byte
+//     (HEADER2_LEN + der zwei Byte kurze leere State) — eine Datei dieser Größe
+//     voller Nullen kann deshalb nur aus einer entstanden sein, die dort einmal
+//     gültig lag. Die Größe ist der Zeuge, den der Inhalt nicht mehr hergibt.
+//
+// Bewusst KEIN Yjs-Prädikat: `isNulledYjsState` fragt „parst fehlerfrei und trägt
+// keine Op" und ist damit auch für Dateien wahr, die bloß mit zwei Nullbytes
+// BEGINNEN und danach beliebige Bytes tragen. Für die gilt die Beweisführung über
+// die Größe nicht.
+export function istGanzGenullt(bytes: Uint8Array): boolean {
+  return bytes.length > 0 && bytes.every((b) => b === 0);
+}
+
 function bytesToHex(bytes: Uint8Array): string {
   let hex = '';
   for (const b of bytes) hex += b.toString(16).padStart(2, '0');

@@ -24,7 +24,7 @@
 //     an, obwohl er nichts trägt.
 import { SyncHandler } from '../src/sync-handler';
 import { CrdtManager } from '../src/crdt-manager';
-import { encodeStateFile } from '../src/state-file';
+import { encodeStateFile, decodeStateFile } from '../src/state-file';
 import { makeVaultMock, toArrayBuffer as toAB } from './helpers/vault-mock';
 
 const NOTE = 'note.md';
@@ -34,6 +34,7 @@ const OWN_PATH = `.qollab/${NOTE}.${OWN_ID}.yjs`;
 const FREMD_PATH = `.qollab/${NOTE}.${FREMD_ID}.yjs`;
 const LEGACY_PATH = `.qollab/${NOTE}.yjs`;
 const GUID = 'aabbccddeeff00112233445566778899';
+const FREMD_GUID = '00112233445566778899aabbccddeeff';
 
 const TEXT = 'Kopf\nBestand A\nBestand B\n';
 const EXTRA = 'Neuer Absatz\n';
@@ -147,6 +148,139 @@ describe('nullgefuellte eigene Sidecar', () => {
     expect(korrupt).toEqual([]);
     // Die Inkarnation aus dem Kopf wird übernommen, keine frische geprägt.
     expect(await handler.currentGuid(NOTE)).toBe(GUID);
+  });
+});
+
+// P4b (Realtest r31, `runners/r31-qlb2-format.ps1` ab Zeile 485): die VOLLSTÄNDIG
+// genullte eigene Sidecar — das Magic mit.
+//
+// Oben bleibt der Kopf stehen (`keep = 24`), und deshalb greift eine Etage höher
+// bereits der Integritätsnachweis. Der reale OneDrive-Befund am GESCHLOSSENEN
+// Obsidian sieht anders aus: `Q2-Nullfuellen` im Realtest schreibt
+// `[byte[]]::new($n)` über die ganze Datei, Größe erhalten, ab Byte 0 NUL. Damit
+// schlägt `startsWith(bytes, MAGIC2)` fehl (`state-file.ts`), `decodeStateFile`
+// nimmt den headerlosen Ausgang und liefert `{ guid: null, update: <lauter
+// Nullbytes> }`. Der Nachweis, der die Datei schützen soll, steht in genau den
+// Bytes, die weg sind — `StateFileIntegrityError` wird nie geworfen.
+//
+// Danach ist jeder Fang darüber blind, und zwar der Reihe nach:
+//   - `own.guid !== null && isNulledYjsState(...)` — die GUID ist null.
+//   - `own.guid !== null || carriesYjsOps(...)` — beides falsch; Nullbytes parsen
+//     fehlerfrei als „0 Struct-Clients, 0 Delete-Set-Clients".
+//   - `if (own) { onCorruptFile }` meldete nur und fiel weiter in den Adopt-Zweig.
+// Der prägte mangels Fremd-Datei eine FRISCHE GUID über die lebende Historie und
+// schrieb sie zurück: kein Textverlust, aber ein Inkarnations-Split.
+describe('vollstaendig genullte eigene Sidecar (P4b)', () => {
+  it('bricht ab, statt eine frische Inkarnation ueber die lebende zu praegen', async () => {
+    const vault = makeVaultMock() as any;
+    vault._textFiles.set(NOTE, TEXT);
+    // `keep = 0`: die Nullfüllung trifft auch die vier Magic-Bytes.
+    vault._files.set(OWN_PATH, toAB(nullgefuellt(vollstaendig(), 0)));
+    const laengeVorher = vault._files.get(OWN_PATH)!.byteLength;
+
+    const korrupt: string[] = [];
+    const handler = new SyncHandler(vault, new CrdtManager(), OWN_ID, undefined, (p: string) =>
+      korrupt.push(p)
+    );
+
+    const ergebnis = await handler.applyLocalContent(NOTE, TEXT + EXTRA);
+
+    // r31/p4b-meldung-erscheint — „synct nicht" muss vom Normalfall unterscheidbar
+    // bleiben.
+    expect(korrupt).toContain(OWN_PATH);
+    // r31/p4b-genullte-datei-unveraendert — Abbruch statt Überschreiben. Der
+    // Datei-Sync kann die Datei noch vervollständigen; ein Write hier nähme ihm
+    // diese Möglichkeit endgültig.
+    expect(ergebnis).toBeUndefined();
+    expect(vault._writeCount.get(OWN_PATH)).toBeUndefined();
+    expect(vault._files.get(OWN_PATH)!.byteLength).toBe(laengeVorher);
+    expect(new Uint8Array(vault._files.get(OWN_PATH)!).every((b) => b === 0)).toBe(true);
+    // r31/p4b-keine-frische-inkarnation — es gibt danach keine gültige Kennung
+    // unter diesem Pfad, weder auf der Platte noch im Speicher.
+    expect(await handler.currentGuid(NOTE)).toBeNull();
+    // r31/p4b-alttext-erhalten — die `.md` bleibt unangetastet.
+    expect(vault._textFiles.get(NOTE)).toBe(TEXT);
+  });
+
+  it('nimmt die Notiz wieder auf, sobald der Sync die Datei vervollstaendigt', async () => {
+    // Der Abbruch ist kein Endzustand: er hält nur, bis die echte Datei da ist.
+    // Ohne diese Zusage wäre „abbrechen" eine dauerhaft tote Notiz.
+    const vault = makeVaultMock() as any;
+    vault._textFiles.set(NOTE, TEXT + EXTRA);
+    vault._files.set(OWN_PATH, toAB(nullgefuellt(vollstaendig(), 0)));
+
+    const handler = new SyncHandler(vault, new CrdtManager(), OWN_ID);
+
+    await handler.applyLocalContent(NOTE, TEXT + EXTRA);
+    vault._files.set(OWN_PATH, toAB(vollstaendig()));
+    await handler.applyLocalContent(NOTE, TEXT + EXTRA);
+    const merged = (await handler.loadAndMerge(NOTE))!;
+
+    // Die lebende Inkarnation überlebt, und kein Text steht zweimal da.
+    expect(await handler.currentGuid(NOTE)).toBe(GUID);
+    for (const marke of ['Kopf', 'Bestand A', 'Bestand B', 'Neuer Absatz']) {
+      expect(zaehle(merged, marke)).toBe(1);
+    }
+    expect(merged).toBe(TEXT + EXTRA);
+  });
+
+  // Die Gegenrichtung. Das Prädikat lautet „nicht leer UND lauter Nullen", und
+  // beide Hälften tragen: fiele die erste weg, bräche der Lauf für eine 0-Byte-
+  // Datei ab; fiele die zweite (Abbruch nur, wenn nichts zu adoptieren ist), bräche
+  // er für eine Lage ab, die sich von selbst heilt.
+  it('eine 0-Byte-Datei ist kein Nullfuellungs-Befund — der Lauf laeuft weiter', async () => {
+    // 0 Byte bezeugt nichts: ein abgebrochenes Anlegen sieht genauso aus wie eine
+    // zerstörte Datei. Die Nullfüllung dagegen ERHÄLT die Größe, und unter diesem
+    // Pfad schreiben wir nur QLB2 ab 26 Byte — die Größe ist der Zeuge.
+    const vault = makeVaultMock() as any;
+    vault._textFiles.set(NOTE, TEXT);
+    vault._files.set(OWN_PATH, toAB(new Uint8Array(0)));
+
+    const korrupt: string[] = [];
+    const handler = new SyncHandler(vault, new CrdtManager(), OWN_ID, undefined, (p: string) =>
+      korrupt.push(p)
+    );
+
+    expect(await handler.applyLocalContent(NOTE, TEXT)).toBe(TEXT);
+    // Gemeldet wird sie weiterhin — „Stand unbekannt" ist ein Befund, nur kein
+    // Abbruchgrund.
+    expect(korrupt).toContain(OWN_PATH);
+    expect(decodeStateFile(new Uint8Array(vault._files.get(OWN_PATH)!)).guid).not.toBeNull();
+  });
+
+  it('mit lebender fremder Inkarnation wird adoptiert statt abgebrochen', async () => {
+    // Hier wird nichts erfunden: die fremde Kennung IST in aller Regel die eigene
+    // (beide Geräte teilen sie), der eigene Text liegt in der `.md` und wird
+    // vereinigt. Ein Abbruch legte eine Notiz still, die sich gerade selbst heilt.
+    // Dieselbe Zusage aus dem Blickwinkel der Fehlklassifikation:
+    // `legacy-misclassification.test.ts` — „nullgefüllte eigene Sidecar übernimmt
+    // die GUID des Peers".
+    const vault = makeVaultMock() as any;
+    vault._textFiles.set(NOTE, TEXT);
+    vault._files.set(OWN_PATH, toAB(nullgefuellt(vollstaendig(), 0)));
+    vault._files.set(FREMD_PATH, toAB(vollstaendig(FREMD_GUID)));
+
+    const handler = new SyncHandler(vault, new CrdtManager(), OWN_ID);
+
+    expect(await handler.applyLocalContent(NOTE, TEXT)).toBe(TEXT);
+    expect(await handler.currentGuid(NOTE)).toBe(FREMD_GUID);
+    expect(decodeStateFile(new Uint8Array(vault._files.get(OWN_PATH)!)).guid).toBe(FREMD_GUID);
+  });
+
+  it('der allererste Lauf praegt weiterhin eine frische Inkarnation', async () => {
+    // Ohne eigene Datei gibt es keine Historie, von der sich etwas abspalten
+    // könnte — `generateGuid()` ist hier richtig und muss es bleiben.
+    const vault = makeVaultMock() as any;
+    vault._textFiles.set(NOTE, TEXT);
+
+    const korrupt: string[] = [];
+    const handler = new SyncHandler(vault, new CrdtManager(), OWN_ID, undefined, (p: string) =>
+      korrupt.push(p)
+    );
+
+    expect(await handler.applyLocalContent(NOTE, TEXT)).toBe(TEXT);
+    expect(korrupt).toEqual([]);
+    expect(decodeStateFile(new Uint8Array(vault._files.get(OWN_PATH)!)).guid).not.toBeNull();
   });
 });
 
