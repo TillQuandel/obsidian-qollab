@@ -19,7 +19,7 @@
 
 import { SyncHandler, type SweepSchranke } from '../src/sync-handler';
 import { WriteProvenance } from '../src/write-provenance';
-import { CrdtManager } from '../src/crdt-manager';
+import { CrdtManager, type DiffModus } from '../src/crdt-manager';
 import { threeWayMerge, unionMerge } from '../src/text-merge';
 import { sidecarExists, listAllSidecars, statSidecar } from '../src/sidecar-io';
 import { makeVaultMock } from '../tests/helpers/vault-mock';
@@ -71,7 +71,11 @@ export class Geraet {
   // Anfassen JEDE Datei als fremd). Der Sweep-Merker bleibt — er liegt im
   // Geraeteprofil.
   async neustart(): Promise<void> {
+    // Der Zaehler des alten Managers muss VOR dem Wegwerfen eingesammelt werden —
+    // sonst zaehlt die Aktivitaetsprobe nur, was nach dem Neustart passierte.
+    this.diffZaehler += this.crdt.diffGeaendert;
     this.crdt = new CrdtManager();
+    this.crdt.diffModus = this.diffModus;
     this.sync = this.baueSync();
     this.provenance = new WriteProvenance(this.vault.adapter);
     this.provenance.install();
@@ -88,6 +92,23 @@ export class Geraet {
   setzeSchranke(v: SweepSchranke): void {
     this.schranke = v;
     this.sync.sweepSchranke = v;
+  }
+
+  // DER ZWEITE MESSSCHALTER: der Diff-Modus von `CrdtManager.setContent`. Wie die
+  // Schranke liegt er am Geraet und nicht am Manager — der Manager ist nach einem
+  // Neustart weg, der Schalter muss ihn ueberleben.
+  private diffModus: DiffModus = 'roh';
+  // AKTIVITAETSPROBE ueber Neustarts hinweg, aufsummiert aus weggeworfenen
+  // Managern; der lebende Manager kommt im Getter dazu.
+  private diffZaehler = 0;
+
+  setzeDiffModus(v: DiffModus): void {
+    this.diffModus = v;
+    this.crdt.diffModus = v;
+  }
+
+  get diffGeaendert(): number {
+    return this.diffZaehler + this.crdt.diffGeaendert;
   }
 
   private baueSync(): SyncHandler {

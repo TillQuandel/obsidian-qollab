@@ -18,12 +18,16 @@
 
 import { laufRueckfall, permutationen, type Lage } from './lauf-rueckfall';
 import type { SweepSchranke } from '../src/sync-handler';
+import type { DiffModus } from '../src/crdt-manager';
 
 jest.setTimeout(3600000);
 
 // DER MESSSCHALTER, aus der Umgebung. Ohne ihn laeuft der Bestand — genau die
 // Kalibrierung. `SPIKE_SCHRANKE=exakt|deckung|signatur` schaltet je eine Variante.
 const SCHRANKE = (process.env.SPIKE_SCHRANKE as SweepSchranke | undefined) ?? 'aus';
+// DER ZWEITE SCHALTER: die Op-Folge von `CrdtManager.setContent`.
+// `SPIKE_DIFF=semantisch` schaltet den Fix-Kandidaten, `ganz` die Mutationsprobe.
+const DIFF = (process.env.SPIKE_DIFF as DiffModus | undefined) ?? 'roh';
 
 interface Zelle {
   n: number;
@@ -40,7 +44,15 @@ interface Zelle {
   beweisDaUeber: number; // dito, aber nur in den ueberschriebenen Laeufen
   eingriffDurch: number; // FALSCH-POSITIV-PROBE: der eigene Eingriff kam durch
   eingriffStillWeg: number; // der eigene Offline-Baustein ist NIRGENDS mehr
-  grundtextWeg: number; // K.O.: eine Zeile des Grundtexts fehlt am Ende
+  grundtextWeg: number; // K.O.: eine Zeile des Grundtexts fehlt am Ende (`occ`)
+  // DAS STRENGE MASS. `occ` findet `zeile-2` auch noch in `zeile-2BBB` und meldet
+  // die zerstoerte Zeile als heil; alle frueher berichteten Nullen sind mit ihm
+  // untere Schranken. Hier laeuft es ueber ALLE Lagen und beide Modi mit.
+  ganzWeg: number;
+  // Das strenge Gegenstueck zu `doppel`: eine GRUNDZEILE steht mehrfach da.
+  // `doppel` zaehlt nur die drei Marker AAA/BBB/OFFLINE.
+  ganzDoppel: number;
+  diffGeaendert: number; // AKTIVITAETSPROBE des Diff-Schalters
 }
 
 async function messeZelle(
@@ -63,6 +75,9 @@ async function messeZelle(
     eingriffDurch: 0,
     eingriffStillWeg: 0,
     grundtextWeg: 0,
+    ganzWeg: 0,
+    ganzDoppel: 0,
+    diffGeaendert: 0,
   };
   for (const reihenfolge of permutationen(6)) {
     const e = await laufRueckfall({
@@ -71,6 +86,7 @@ async function messeZelle(
       aWinnt: true,
       konfliktModus,
       schranke: SCHRANKE,
+      diffModus: DIFF,
     });
     z.n++;
     const still = e.stillVerloren.length > 0;
@@ -88,6 +104,9 @@ async function messeZelle(
     if (e.eingriffDurch) z.eingriffDurch++;
     if (e.eingriffStillWeg) z.eingriffStillWeg++;
     if (!e.grundtextDa) z.grundtextWeg++;
+    if (!e.grundtextGanzDa) z.ganzWeg++;
+    if (e.ganzDoppelt.length > 0) z.ganzDoppel++;
+    z.diffGeaendert += e.diffGeaendert;
   }
   return z;
 }
@@ -108,22 +127,26 @@ describe('Rueckfall der .md hinter den Merge-Zustand', () => {
           `${proz(z.stillVerlorenBedingt, z.ueberschrieben)} der ueberschriebenen) | ` +
           `in Kopie ${String(z.inKopie).padStart(3)} | ` +
           `divergent ${String(z.divergenz).padStart(3)} | ` +
-          `doppelt ${String(z.doppel).padStart(3)} | ` +
+          `doppelt ${String(z.doppel).padStart(3)} ` +
+          `(ganz ${String(z.ganzDoppel).padStart(3)}) | ` +
           `sauber ${String(z.sauber).padStart(3)} | ` +
           // DAS K.O.-KRITERIUM, hier bislang nur erhoben und nicht ausgegeben.
           // Die Falsch-Positiv-Tabelle unten fuehrt es seit jeher; ohne dieselbe
           // Spalte hier ist der Vergleich ueber alle Lagen nicht zu fuehren.
-          `GRUNDTEXT WEG ${String(z.grundtextWeg).padStart(3)} | ` +
+          `GRUNDTEXT WEG ${String(z.grundtextWeg).padStart(3)} ` +
+          `(ganz ${String(z.ganzWeg).padStart(3)}) | ` +
           `Sweep sah ${z.sweepAngesehen} | ` +
           `Beweis da ${z.beweisDa} (davon ueberschrieben ${z.beweisDaUeber}) | ` +
-          `greift ${z.schranke}`;
+          `greift ${z.schranke} | diff-geaendert ${z.diffGeaendert}`;
         zeilen.push(zeile);
         // eslint-disable-next-line no-console
         console.log(zeile);
       }
     }
     // eslint-disable-next-line no-console
-    console.log(`\n===== ERGEBNIS (Schranke: ${SCHRANKE}) =====\n` + zeilen.join('\n'));
+    console.log(
+      `\n===== ERGEBNIS (Schranke: ${SCHRANKE}, Diff: ${DIFF}) =====\n` + zeilen.join('\n')
+    );
     expect(zeilen).toHaveLength(6);
   });
 
@@ -178,12 +201,15 @@ describe('Rueckfall der .md hinter den Merge-Zustand', () => {
           `GREIFT ${String(z.schranke).padStart(3)} | ` +
           `EINGRIFF DURCH ${String(z.eingriffDurch).padStart(3)} (${proz(z.eingriffDurch, z.n)}) | ` +
           `Eingriff still weg ${String(z.eingriffStillWeg).padStart(3)} | ` +
-          `GRUNDTEXT WEG ${String(z.grundtextWeg).padStart(3)} | ` +
+          `GRUNDTEXT WEG ${String(z.grundtextWeg).padStart(3)} ` +
+          `(ganz ${String(z.ganzWeg).padStart(3)}) | ` +
           `still verloren ${String(z.stillVerloren).padStart(3)} | ` +
           `in Kopie ${String(z.inKopie).padStart(3)} | ` +
           `divergent ${String(z.divergenz).padStart(3)} | ` +
-          `doppelt ${String(z.doppel).padStart(3)} | ` +
-          `sauber ${String(z.sauber).padStart(3)}`;
+          `doppelt ${String(z.doppel).padStart(3)} ` +
+          `(ganz ${String(z.ganzDoppel).padStart(3)}) | ` +
+          `sauber ${String(z.sauber).padStart(3)} | ` +
+          `diff-geaendert ${z.diffGeaendert}`;
         zeilen.push(zeile);
         // eslint-disable-next-line no-console
         console.log(zeile);
@@ -191,7 +217,8 @@ describe('Rueckfall der .md hinter den Merge-Zustand', () => {
     }
     // eslint-disable-next-line no-console
     console.log(
-      `\n===== FALSCH-POSITIVE (Schranke: ${SCHRANKE}) =====\n` + zeilen.join('\n')
+      `\n===== FALSCH-POSITIVE (Schranke: ${SCHRANKE}, Diff: ${DIFF}) =====\n` +
+        zeilen.join('\n')
     );
     expect(zeilen).toHaveLength(6);
   });

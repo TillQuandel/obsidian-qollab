@@ -25,10 +25,12 @@ import {
   type Notiz,
 } from './lauf-rueckfall';
 import type { SweepSchranke } from '../src/sync-handler';
+import type { DiffModus } from '../src/crdt-manager';
 
 jest.setTimeout(7200000);
 
 const SCHRANKE = (process.env.SPIKE_SCHRANKE as SweepSchranke | undefined) ?? 'aus';
+const DIFF = (process.env.SPIKE_DIFF as DiffModus | undefined) ?? 'roh';
 const SCHRITT = Math.max(1, Number(process.env.SPIKE_SCHRITT ?? 1));
 // Nur diese Lagen messen (Komma-Liste), damit sich lange Laeufe aufteilen lassen.
 const LAGEN = (process.env.SPIKE_LAGEN ?? 'neustart,neustart-offline-loeschung')
@@ -50,6 +52,8 @@ interface Zelle {
   eingriffDurch: number;
   grundtextWeg: number; // altes Mass (`occ`)
   ganzWeg: number; // strenges Mass: Grundzeile nicht mehr als GANZE Zeile da
+  ganzDoppel: number; // strenges Mass: Grundzeile steht MEHRFACH da
+  diffGeaendert: number; // AKTIVITAETSPROBE des Diff-Schalters
 }
 
 async function messeZelle(lage: Lage, notiz: Notiz | undefined): Promise<Zelle> {
@@ -67,6 +71,8 @@ async function messeZelle(lage: Lage, notiz: Notiz | undefined): Promise<Zelle> 
     eingriffDurch: 0,
     grundtextWeg: 0,
     ganzWeg: 0,
+    ganzDoppel: 0,
+    diffGeaendert: 0,
   };
   const alle = permutationen(6);
   for (let i = 0; i < alle.length; i += SCHRITT) {
@@ -76,6 +82,7 @@ async function messeZelle(lage: Lage, notiz: Notiz | undefined): Promise<Zelle> 
       aWinnt: true,
       konfliktModus: 'ueberschreiben',
       schranke: SCHRANKE,
+      diffModus: DIFF,
       notiz,
     });
     z.n++;
@@ -91,6 +98,8 @@ async function messeZelle(lage: Lage, notiz: Notiz | undefined): Promise<Zelle> 
     if (e.eingriffDurch) z.eingriffDurch++;
     if (!e.grundtextDa) z.grundtextWeg++;
     if (!e.grundtextGanzDa) z.ganzWeg++;
+    if (e.ganzDoppelt.length > 0) z.ganzDoppel++;
+    z.diffGeaendert += e.diffGeaendert;
   }
   return z;
 }
@@ -123,7 +132,8 @@ describe('Rueckfall bei realistischer Notizgroesse', () => {
           `ueberschrieben ${String(z.ueberschrieben).padStart(3)} | ` +
           `STILL VERLOREN ${String(z.stillVerloren).padStart(3)} | ` +
           `in Kopie ${String(z.inKopie).padStart(3)} | ` +
-          `DOPPELT ${String(z.doppel).padStart(3)} | ` +
+          `DOPPELT ${String(z.doppel).padStart(3)} ` +
+          `(ganz ${String(z.ganzDoppel).padStart(3)}) | ` +
           `divergent ${String(z.divergenz).padStart(3)} | ` +
           `sauber ${String(z.sauber).padStart(3)} | ` +
           `EINGRIFF DURCH ${String(z.eingriffDurch).padStart(3)} | ` +
@@ -132,6 +142,7 @@ describe('Rueckfall bei realistischer Notizgroesse', () => {
           `Sweep sah ${String(z.sweepAngesehen).padStart(3)} | ` +
           `Beweis da ${String(z.beweisDa).padStart(3)} | ` +
           `greift ${String(z.schranke).padStart(3)} | ` +
+          `diff-geaendert ${String(z.diffGeaendert).padStart(5)} | ` +
           `${((Date.now() - t0) / 1000).toFixed(0)} s`;
         zeilen.push(zeile);
         // eslint-disable-next-line no-console
@@ -140,7 +151,7 @@ describe('Rueckfall bei realistischer Notizgroesse', () => {
     }
     // eslint-disable-next-line no-console
     console.log(
-      `\n===== GROSSE NOTIZ (Schranke: ${SCHRANKE}, Schritt: ${SCHRITT}) =====\n` +
+      `\n===== GROSSE NOTIZ (Schranke: ${SCHRANKE}, Diff: ${DIFF}, Schritt: ${SCHRITT}) =====\n` +
         zeilen.join('\n')
     );
     expect(zeilen.length).toBe(NOTIZEN.length * LAGEN.length);

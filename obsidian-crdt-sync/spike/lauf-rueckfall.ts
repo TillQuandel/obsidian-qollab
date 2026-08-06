@@ -32,7 +32,7 @@ import type { SweepSchranke } from '../src/sync-handler';
 import { Wolke } from './wolke';
 import { bewerte, occ, type Befund } from './invarianten';
 import { decodeStateFile } from '../src/state-file';
-import { textFromUpdate } from '../src/crdt-manager';
+import { textFromUpdate, type DiffModus } from '../src/crdt-manager';
 import { setzeGuidFolge, guidQuelleAn } from './guid-quelle';
 import { setzeZufallSeed, zufallQuelleAn, seedAusKonfig } from './zufall-quelle';
 
@@ -215,6 +215,10 @@ export interface Konfig {
   // DER MESSSCHALTER. 'aus' = Bestand; der Seed haengt bewusst NICHT daran, damit
   // Bestand und Variante ueber DIESELBE Kennungs- und clientID-Folge laufen.
   schranke?: SweepSchranke;
+  // DER ZWEITE MESSSCHALTER: die Op-Folge von `CrdtManager.setContent`. 'roh' =
+  // Bestand. Der Seed haengt bewusst NICHT daran — Bestand und Kandidat laufen
+  // ueber DIESELBE Kennungs- und clientID-Folge.
+  diffModus?: DiffModus;
   // Ohne Angabe die sechs Zeilen des Bestands (`NOTIZ_KLEIN`). Der Seed haengt
   // bewusst NICHT daran — kleine und grosse Notiz laufen ueber dieselbe Kennungs-
   // und clientID-Folge.
@@ -268,6 +272,9 @@ export interface Ergebnis {
   parkungen: number;
   // AKTIVITAETSPROBE: Wie oft hat die Sweep-Schranke in diesem Lauf gegriffen?
   schranke: number;
+  // AKTIVITAETSPROBE des Diff-Schalters: Wie oft hat er die Op-Folge von
+  // `setContent` TATSAECHLICH veraendert? Bei 'roh' ist das per Bau 0.
+  diffGeaendert: number;
   // GEGENPROBE ZUR PRAEMISSE, unabhaengig vom Eingriff gemessen: Lag B's
   // Hilfsdatei zum Sweep-Zeitpunkt auf A's Platte UND trug sie B's Edit? Nur dann
   // KANN die Schranke ueberhaupt etwas nachweisen. Wird auch mit ausgeschaltetem
@@ -304,6 +311,9 @@ export interface Ergebnis {
   ganzFehltA: string[];
   ganzFehltB: string[];
   grundtextGanzDa: boolean;
+  // Grundzeilen, die am Ende auf mindestens einem Geraet MEHRFACH als ganze Zeile
+  // dastehen — das strenge Gegenstueck zu `Befund.doppel`.
+  ganzDoppelt: string[];
   // Die Zwischenstaende — nur befuellt, wenn `Konfig.spur` gesetzt ist.
   spur: Schritt[];
 }
@@ -339,6 +349,8 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
   b.parkFrist = 4;
   a.setzeSchranke(k.schranke ?? 'aus');
   b.setzeSchranke(k.schranke ?? 'aus');
+  a.setzeDiffModus(k.diffModus ?? 'roh');
+  b.setzeDiffModus(k.diffModus ?? 'roh');
   const w = new Wolke([a, b]);
   w.konfliktModus = k.konfliktModus;
 
@@ -357,6 +369,17 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
   const fehltGanz = (text: string): string[] => {
     const da = new Set(text.split('\n'));
     return grundzeilen.filter((z) => !da.has(z));
+  };
+  // DIE STRENGE VERDOPPLUNG. `Befund.doppel` sieht ausschliesslich die drei
+  // Marker AAA/BBB/OFFLINE — eine verdoppelte GRUNDTEXTZEILE faellt dort komplett
+  // durch. Genau die waere aber der Preis, den die Gegenhypothese vorhersagt
+  // (groebere Diffs -> mehr Zeichen mit neuen Item-IDs -> der Merge konkateniert
+  // statt zu deduplizieren). Ohne dieses Mass ist „die Verdopplung steigt nicht"
+  // eine Aussage ueber drei Marker und nicht ueber den Text.
+  const doppeltGanz = (text: string): string[] => {
+    const zahl = new Map<string, number>();
+    for (const z of text.split('\n')) zahl.set(z, (zahl.get(z) ?? 0) + 1);
+    return grundzeilen.filter((z) => (zahl.get(z) ?? 0) > 1);
   };
   const halte = (schritt: string): void => {
     if (k.spur !== true) return;
@@ -581,6 +604,9 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
   const ganzFehltA = fehltGanz(a.md(NOTE));
   const ganzFehltB = fehltGanz(b.md(NOTE));
   const grundtextGanzDa = ganzFehltA.length === 0 && ganzFehltB.length === 0;
+  const ganzDoppelt = [
+    ...new Set([...doppeltGanz(a.md(NOTE)), ...doppeltGanz(b.md(NOTE))]),
+  ];
   halte('ende');
 
   // Der Eingriff, aus beiden `.md` am Ende abgelesen.
@@ -615,6 +641,7 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
     aUeberschrieben,
     parkungen: a.parkZaehler + b.parkZaehler,
     schranke: a.schrankeZaehler + b.schrankeZaehler,
+    diffGeaendert: a.diffGeaendert + b.diffGeaendert,
     beweisDa,
     eingriffDurch,
     eingriffStillWeg,
@@ -624,6 +651,7 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
     ganzFehltA,
     ganzFehltB,
     grundtextGanzDa,
+    ganzDoppelt,
     spur,
   };
 }

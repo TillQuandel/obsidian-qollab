@@ -190,10 +190,56 @@ export function isNulledYjsState(update: Uint8Array): boolean {
   }
 }
 
+// DER MESSSCHALTER fuer die Op-Folge von `setContent`. Er ist KEIN Produktivfix:
+// `roh` ist der Bestand und bleibt der Standard, damit sich am ausgelieferten
+// Verhalten nichts aendert, solange niemand ihn umlegt.
+//
+//   'roh'        — Bestand. `diff_main` pur, siehe Begruendung an `setContent`.
+//   'semantisch' — der Fix-Kandidat: zusaetzlich `diff_cleanupSemantic`. Er soll
+//                  den Schaden beheben, dass eine geloeschte Zeile als Stueck
+//                  UEBER die Zeilengrenze geloescht wird (`"2\nzeile-"` statt
+//                  `"zeile-2\n"`, gemessen), wenn zwei benachbarte Zeilen ein
+//                  Praefix teilen — eine fremde Einfuegung, die in diesem Stueck
+//                  verankert ist, landet beim Merge mitten in der Nachbarzeile.
+//   'ganz'       — MUTATIONSPROBE, kein Kandidat: der maximal grobe Diff (alles
+//                  raus, alles rein). Jedes Zeichen bekommt neue Item-IDs. Damit
+//                  ist pruefbar, ob die Verdopplungs-Spalten ueberhaupt steigen
+//                  KOENNEN; bleiben sie auch hier stehen, ist das Mass blind und
+//                  keine Aussage ueber die Verdopplung traegt.
+//
+// GEMESSEN (Harness `spike/zzRF-*`, 720 Zustellordnungen je Zelle, Schalter
+// `SPIKE_DIFF`):
+//   - `semantisch` nimmt den Grundtext-Verlust der offline geloeschten Zeile von
+//     296/720 auf 0/720 — in beiden Konfliktmodi, mit und ohne Sweep-Schranke.
+//     Verdopplung, stiller Verlust, Divergenz und „Loeschung kam durch" bleiben
+//     in ALLEN 24 gemessenen Zellen ziffergleich zum Bestand.
+//   - Die Gegenhypothese („groebere Diffs treiben die Verdopplung hoch") ist am
+//     `ganz`-Arm belegt: dort steht in JEDER Zelle 720/720 verdoppelte
+//     Grundtextzeilen, und die Suite wird rot. Das Mass ist also nicht blind —
+//     `semantisch` laesst es trotzdem bei 0.
+export type DiffModus = 'roh' | 'semantisch' | 'ganz';
+
+// Der Standardwert jedes neuen CrdtManager — dieselbe Bauform wie
+// `sweepSchrankeStandard` in `sync-handler.ts`. `process` ist im Browser-Bundle
+// nicht definiert, deshalb der typeof-Riegel; ohne gesetzte Variable bleibt es
+// 'roh', also der Bestand. Damit laesst sich die ganze Suite in BEIDEN
+// Schalterstaenden fahren, ohne dass ein Test angefasst wird.
+const diffModusStandard: DiffModus =
+  (typeof process !== 'undefined'
+    ? (process.env?.QOLLAB_DIFF_MODUS as DiffModus | undefined)
+    : undefined) ?? 'roh';
+
 export class CrdtManager {
   private dmp = new diff_match_patch();
   private docs = new Map<string, Y.Doc>();
   private disposed = false;
+
+  // Standard = Bestand. Wird nur von den Messlaeufen umgelegt.
+  diffModus: DiffModus = diffModusStandard;
+  // AKTIVITAETSPROBE: wie oft hat der Schalter die Op-Folge TATSAECHLICH
+  // veraendert? Ohne diesen Zaehler waere „keine Wirkung gemessen" nicht von
+  // „Schalter tot" zu unterscheiden.
+  diffGeaendert = 0;
 
   private getOrCreate(filePath: string): Y.Doc {
     if (this.disposed) throw new Error('CrdtManager already disposed');
@@ -208,13 +254,15 @@ export class CrdtManager {
   // Unveränderte Zeichen behalten ihre Yjs-Item-IDs — dadurch dedupliziert der
   // Merge zweier Replikate statt zu konkatenieren. Rohe Diffs (kein
   // diff_cleanupSemantic): Positionsgenauigkeit vor Lesbarkeit.
+  // Der Preis dieser Wahl und ein gemessener Gegenkandidat stehen an `DiffModus`
+  // oben; ohne umgelegten Schalter laeuft hier unveraendert `roh`.
   setContent(filePath: string, content: string): void {
     const doc = this.getOrCreate(filePath);
     const text = doc.getText('content');
     const current = text.toString();
     if (current === content) return;
 
-    const diffs = alignSurrogateBoundaries(this.dmp.diff_main(current, content));
+    const diffs = alignSurrogateBoundaries(this.diffOps(current, content));
     doc.transact(() => {
       let pos = 0;
       for (const [op, data] of diffs) {
@@ -228,6 +276,35 @@ export class CrdtManager {
         }
       }
     });
+  }
+
+  // Die Op-Folge VOR der Surrogat-Ausrichtung. Ausgelagert, damit der
+  // Messschalter an genau EINER Stelle sitzt und `setContent` unveraendert
+  // bleibt. Die Ausrichtung laeuft bewusst DANACH: `diff_cleanupSemantic`
+  // verschiebt Grenzen und kann dabei ein Surrogatpaar zerlegen, das die
+  // Ausrichtung anschliessend wieder zusammenzieht.
+  private diffOps(current: string, content: string): Diff[] {
+    if (this.diffModus === 'ganz') {
+      this.diffGeaendert++;
+      const grob: Diff[] = [
+        [DIFF_DELETE, current],
+        [DIFF_INSERT, content],
+      ];
+      return grob.filter((d) => d[1].length > 0);
+    }
+    const roh = this.dmp.diff_main(current, content) as Diff[];
+    if (this.diffModus !== 'semantisch') return roh;
+    // ECHTE Kopie, nicht `roh.slice()`: `diff_cleanupSemantic` schreibt IN die
+    // Tupel (`diffs[i][1] = …`). Eine flache Kopie zeigt danach auf dieselben
+    // Objekte und der Vergleich meldet immer „unveraendert" — der Zaehler waere
+    // blind, und blind hiesse ununterscheidbar von „Schalter tot".
+    const vorher = roh.map((d) => `${d[0]} ${d[1]}`);
+    this.dmp.diff_cleanupSemantic(roh);
+    const gleich =
+      vorher.length === roh.length &&
+      roh.every((d, i) => `${d[0]} ${d[1]}` === vorher[i]);
+    if (!gleich) this.diffGeaendert++;
+    return roh;
   }
 
   hasDoc(filePath: string): boolean {
