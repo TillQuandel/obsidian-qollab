@@ -11,6 +11,15 @@ npx jest --config ../jest.spike.config.js --rootDir .. -t "misst drei Lagen" `
   --no-cache --cacheDirectory "<ein-eigenes-Verzeichnis>"
 ```
 
+Die Falsch-Positiv-Messung (die beiden Lagen, in denen A bei geschlossener App
+**selbst** etwas an der `.md` tut) läuft unter eigenem Namen:
+
+```powershell
+$env:SPIKE_SCHRANKE = "exakt"   # aus | exakt | deckung | signatur | immer
+npx jest --config ../jest.spike.config.js --rootDir .. -t "misst die Falsch-Positiv-Lagen" `
+  --no-cache --cacheDirectory "<ein-eigenes-Verzeichnis>"
+```
+
 Das eigene Cache-Verzeichnis ist unter Windows Pflicht — sonst kollidiert der Lauf
 mit dem der normalen Suite (EPERM).
 
@@ -21,7 +30,7 @@ mit dem der normalen Suite (EPERM).
 | `geraet.ts` | Zwei-Geräte-Treiber gegen den **echten** `SyncHandler` samt echter Schreibspur. Nachgebaut ist nur die Klammer aus `main.ts`: modify-Handler, Write-Back, Poll und der **Start-Sweep**. |
 | `wolke.ts` | Der Datei-Sync als eigene Schicht, mit getrenntem Hoch- und Herunterladen und drei Konfliktmodi. |
 | `lauf-rueckfall.ts` | Das Szenario „die `.md` fällt fremdbestimmt hinter den Merge-Zustand zurück". |
-| `zzRF-rueckfall.spec.ts` | Die Messung dazu: drei Lagen × zwei Konfliktmodi, je die **vollständigen** 720 Zustellreihenfolgen. |
+| `zzRF-rueckfall.spec.ts` | Die Messung dazu. Erster Block: drei Lagen × zwei Konfliktmodi. Zweiter Block: die zwei **Falsch-Positiv-Lagen** (`neustart-offline-edit`, `neustart-rueckspielung`) × zwei Konfliktmodi. Je die **vollständigen** 720 Zustellreihenfolgen. |
 | `zzRF0-rauch.spec.ts` | Rauchtest — läuft das Szenario überhaupt den Weg, den es messen soll. |
 | `invarianten.ts` | Verlust und Verdopplung, getrennt gezählt, beide Seiten geprüft. |
 | `guid-quelle.ts`, `zufall-quelle.ts` | Determinismus: Kennungen und Yjs-clientIDs sind gestellt, nicht gewürfelt. |

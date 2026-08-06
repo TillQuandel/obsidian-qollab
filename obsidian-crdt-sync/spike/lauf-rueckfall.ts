@@ -38,9 +38,19 @@ import { setzeZufallSeed, zufallQuelleAn, seedAusKonfig } from './zufall-quelle'
 
 export const NOTE = 'note.md';
 const BASIS = 'kopf\nzeile-1\nzeile-2\nzeile-3\nfuss\n';
+// Der letzte GEMEINSAME Stand: was beide Geraete tragen, bevor die Divergenzphase
+// beginnt. Zugleich der Stand, auf den die Lage 'neustart-rueckspielung'
+// zurueckfaellt — die Sicherung von gestern, das `git checkout`.
+const GEMEINSAM = BASIS.replace('fuss\n', 'gemeinsam\nfuss\n');
 const KLEIN = '00000000000000000000000000000000';
 const GROSS = 'ffffffffffffffffffffffffffffffff';
 const MITTE = '8888888888888888888888888888888888'.slice(0, 32);
+
+// DER EIGENE OFFLINE-BAUSTEIN. Er kommt in KEINER Hilfsdatei vor — weder in A's
+// noch in B's —, denn er entsteht erst NACH der Zustellphase und ausserhalb von
+// Obsidian. Genau daran haengt die Falsch-Positiv-Frage: eine Schranke, die ihn
+// als „fremd erklaert" abstempelt, irrt sich nachweisbar.
+export const OFFLINE = 'OOO';
 
 // 'laufend'      — Obsidian laeuft auf A, waehrend der Sync die `.md`
 //                  ueberschreibt. Das modify-Ereignis feuert, DAS TOR greift.
@@ -51,7 +61,27 @@ const MITTE = '8888888888888888888888888888888888'.slice(0, 32);
 //                  Neustart, aber der Sweep wird ausgelassen. Bleibt der Verlust
 //                  hier aus, ist der Sweep die Ursache und nicht der Neustart an
 //                  sich. Ohne diese Zelle waere die Zuschreibung geraten.
-export type Lage = 'laufend' | 'neustart' | 'neustart-ohne-sweep';
+//
+// DIE BEIDEN FALSCH-POSITIV-LAGEN. In den drei Lagen oben ist A durchgehend
+// geschlossen und tut NICHTS Eigenes — dort kann die Schranke gar nichts Eigenes
+// wegparken, und ueber Falsch-Positive sagen sie folglich nichts. Beide Lagen
+// unten setzen genau da an: A aendert seine `.md` bei geschlossener App selbst.
+//
+// 'neustart-offline-edit' — der Nutzer tippt bei geschlossenem Obsidian in einem
+//                  anderen Editor eine NEUE Zeile (`OFFLINE`). Sie steht in
+//                  keiner Hilfsdatei. ERWARTUNG: die Schranke darf nicht greifen,
+//                  der Baustein muss ueberleben.
+// 'neustart-rueckspielung' — A's `.md` faellt vor dem Start auf den letzten
+//                  gemeinsamen Stand zurueck (zurueckgespielte Sicherung,
+//                  `git checkout`). Der eigene Edit AAA ist damit ZURUECKGENOMMEN.
+//                  ERWARTUNG: die Schranke darf nicht greifen, der Sweep muss die
+//                  Ruecknahme wie bisher erfassen.
+export type Lage =
+  | 'laufend'
+  | 'neustart'
+  | 'neustart-ohne-sweep'
+  | 'neustart-offline-edit'
+  | 'neustart-rueckspielung';
 
 export interface Konfig {
   lage: Lage;
@@ -89,6 +119,23 @@ export interface Ergebnis {
   // Schalter erhoben — sie ist eine Eigenschaft der Zustellordnung, nicht des
   // Eingriffs.
   beweisDa: boolean;
+  // DIE FALSCH-POSITIV-PROBE. Hat sich der Eingriff durchgesetzt, den der Nutzer
+  // bei geschlossener App an A's `.md` vorgenommen hat?
+  //   'neustart-offline-edit'  — `OFFLINE` steht am Ende in BEIDEN `.md`.
+  //   'neustart-rueckspielung' — die Ruecknahme kam durch: AAA steht am Ende in
+  //                              KEINER `.md`.
+  // In den drei alten Lagen gibt es keinen Eingriff; dort ist das Feld `false`
+  // und ohne Aussage.
+  eingriffDurch: boolean;
+  // Nur 'neustart-offline-edit': `OFFLINE` steht in keiner `.md` UND in keiner
+  // Konfliktkopie und in keiner Sicherung — der eigene Offline-Edit ist STILL WEG.
+  eingriffStillWeg: boolean;
+  // DAS K.O.-KRITERIUM, in ALLEN Lagen erhoben: Stehen die Zeilen des Grundtexts
+  // am Ende noch in BEIDEN `.md`? Die Token-Bilanz oben sieht das nicht — sie
+  // zaehlt nur AAA/BBB/OFFLINE. Ein Kandidat der Vorarbeiten bestand 5/5
+  // Einzelfaelle und loeschte ueber 1152 Harness-Laeufe 100 % des Grundtexts;
+  // ohne diese Zeile faellt so etwas hier nicht auf.
+  grundtextDa: boolean;
 }
 
 // Der Seed haengt nur an Feldern, die es in beiden Lagen gibt — `lage` geht
@@ -144,7 +191,7 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
   await a.poll(KTX);
 
   // EINE Inkarnation der umkaempften Note: A praegt, B adoptiert, beide konvergent.
-  await a.tippe(NOTE, BASIS.replace('fuss\n', 'gemeinsam\nfuss\n'));
+  await a.tippe(NOTE, GEMEINSAM);
   await a.modify(NOTE);
   w.ladeMdHoch(a, NOTE);
   w.ladeSidecarsHoch(a);
@@ -219,6 +266,28 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
     await tick();
   }
 
+  // --- Der Eingriff bei geschlossener App ----------------------------------
+  // NACH der Zustellphase, VOR dem Start. Genau das Zeitfenster, in dem Obsidian
+  // zu ist und trotzdem etwas an der `.md` passiert — und der einzige Ort, an dem
+  // dieser Treiber einen ECHTEN eigenen Vorgang erzeugen kann, den keine
+  // Hilfsdatei kennt.
+  //
+  // Bewusst ueber `setMd` statt `tippe`: Der Schreibvorgang laeuft NICHT ueber den
+  // Adapter dieses Prozesses — ein anderer Editor, `git checkout`, ein
+  // Wiederherstellungs-Dialog. Der Zeitstempel springt dabei ueber alles, was auf
+  // der Platte liegt (wie bei jedem echten Schreibvorgang); damit sieht der
+  // Start-Sweep die Datei garantiert an, statt sie am mtime-Gate zu ueberspringen.
+  if (k.lage === 'neustart-offline-edit') {
+    tokens.push(OFFLINE);
+    const zeilen = a.md(NOTE).split('\n');
+    zeilen.splice(Math.min(1, zeilen.length - 1), 0, OFFLINE);
+    a.setMd(NOTE, zeilen.join('\n'));
+  } else if (k.lage === 'neustart-rueckspielung') {
+    // Die Sicherung von gestern: der letzte gemeinsame Stand. A's eigener Edit
+    // AAA ist damit zurueckgenommen — das ist der Nutzerwille, nicht ein Verlust.
+    a.setMd(NOTE, GEMEINSAM);
+  }
+
   // --- Der Start ----------------------------------------------------------
   // Obsidian wird geoeffnet: neuer Prozess (leere Schreibspur, leerer Parkplatz,
   // keine Docs), danach der Start-Sweep und der erste Poll. Genau die Reihenfolge
@@ -243,7 +312,9 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
   let sweepAngesehen = false;
   if (k.lage !== 'laufend') {
     await a.neustart();
-    if (k.lage === 'neustart') {
+    // Nur die MUTATIONSPROBE laesst den Sweep aus; jede andere Neustart-Lage
+    // faehrt ihn — er ist der gemessene Pfad.
+    if (k.lage !== 'neustart-ohne-sweep') {
       const angesehen = await a.sweep();
       sweepAngesehen = angesehen.includes(NOTE);
     }
@@ -279,6 +350,28 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
   const inKopie = befund.verlust.filter((t) => alleKopien.some((kk) => occ(kk, t) > 0));
   const stillVerloren = befund.verlust.filter((t) => !inKopie.includes(t));
 
+  // Der Grundtext — jede nicht-leere Zeile aus BASIS, auf beiden Seiten.
+  const grundzeilen = BASIS.split('\n').filter((z) => z !== '');
+  const grundtextDa = grundzeilen.every(
+    (z) => occ(a.md(NOTE), z) > 0 && occ(b.md(NOTE), z) > 0
+  );
+
+  // Der Eingriff, aus beiden `.md` am Ende abgelesen.
+  const daA = occ(a.md(NOTE), OFFLINE) > 0;
+  const daB = occ(b.md(NOTE), OFFLINE) > 0;
+  const aaaWeg = occ(a.md(NOTE), 'AAA') === 0 && occ(b.md(NOTE), 'AAA') === 0;
+  const eingriffDurch =
+    k.lage === 'neustart-offline-edit'
+      ? daA && daB
+      : k.lage === 'neustart-rueckspielung'
+        ? aaaWeg
+        : false;
+  const eingriffStillWeg =
+    k.lage === 'neustart-offline-edit' &&
+    !daA &&
+    !daB &&
+    !alleKopien.some((kk) => occ(kk, OFFLINE) > 0);
+
   return {
     befund,
     tokens,
@@ -289,6 +382,9 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
     parkungen: a.parkZaehler + b.parkZaehler,
     schranke: a.schrankeZaehler + b.schrankeZaehler,
     beweisDa,
+    eingriffDurch,
+    eingriffStillWeg,
+    grundtextDa,
   };
 }
 

@@ -38,6 +38,9 @@ interface Zelle {
   schranke: number; // AKTIVITAETSPROBE
   beweisDa: number; // GEGENPROBE: fremder Nachweis lag zum Sweep-Zeitpunkt vor
   beweisDaUeber: number; // dito, aber nur in den ueberschriebenen Laeufen
+  eingriffDurch: number; // FALSCH-POSITIV-PROBE: der eigene Eingriff kam durch
+  eingriffStillWeg: number; // der eigene Offline-Baustein ist NIRGENDS mehr
+  grundtextWeg: number; // K.O.: eine Zeile des Grundtexts fehlt am Ende
 }
 
 async function messeZelle(
@@ -57,6 +60,9 @@ async function messeZelle(
     schranke: 0,
     beweisDa: 0,
     beweisDaUeber: 0,
+    eingriffDurch: 0,
+    eingriffStillWeg: 0,
+    grundtextWeg: 0,
   };
   for (const reihenfolge of permutationen(6)) {
     const e = await laufRueckfall({
@@ -79,6 +85,9 @@ async function messeZelle(
     z.schranke += e.schranke;
     if (e.beweisDa) z.beweisDa++;
     if (e.beweisDa && e.aUeberschrieben) z.beweisDaUeber++;
+    if (e.eingriffDurch) z.eingriffDurch++;
+    if (e.eingriffStillWeg) z.eingriffStillWeg++;
+    if (!e.grundtextDa) z.grundtextWeg++;
   }
   return z;
 }
@@ -112,5 +121,65 @@ describe('Rueckfall der .md hinter den Merge-Zustand', () => {
     // eslint-disable-next-line no-console
     console.log(`\n===== ERGEBNIS (Schranke: ${SCHRANKE}) =====\n` + zeilen.join('\n'));
     expect(zeilen).toHaveLength(6);
+  });
+
+  // DIE FALSCH-POSITIV-MESSUNG.
+  //
+  // Die drei Lagen oben lassen A durchgehend geschlossen: A macht KEINEN eigenen
+  // Offline-Edit, kein `git checkout`, keine Ruecksicherung. Ueber die Frage, ob
+  // die Schranke einen ECHTEN eigenen Edit wegparkt, sagen sie deshalb nichts —
+  // ihre Restfaelle sind Untaetigkeit, nicht Fehlentscheidung.
+  //
+  // Einzelfall-Tests taugen dafuer nicht: ein Kandidat der Vorarbeiten bestand
+  // 5/5 Einzelfaelle und fiel ueber 1152 Harness-Laeufe mit 100 % Grundtext-
+  // Verlust. Deshalb auch hier die VOLLSTAENDIGEN 720 Zustellreihenfolgen.
+  //
+  // Zu lesen ist die Tabelle so:
+  //   'Eingriff durch' MUSS n sein. Jeder Ausfall ist ein Fall, in dem der Wille
+  //   des Nutzers verworfen wurde. Und `SPIKE_SCHRANKE=aus` ist die Kalibrierung:
+  //   sind dort schon Ausfaelle, ist die Lage kaputt gebaut und nicht die
+  //   Schranke schuld. `SPIKE_SCHRANKE=immer` ist die GEGENPROBE: parkt pauschal,
+  //   ohne jeden Nachweis. Sieht man dort keinen Unterschied zu 'aus', ist das
+  //   Instrument blind und keine Zahl dieser Messung traegt.
+  //
+  // ACHTUNG beim Quervergleich mit der Tabelle oben: 'neustart-offline-edit'
+  // fuehrt DREI Tokens (AAA, BBB, OFFLINE), die drei Lagen oben nur zwei. Die
+  // Spalte 'still verloren' ist deshalb nicht Zeile fuer Zeile vergleichbar —
+  // 'Eingriff durch' und 'GREIFT' sind es.
+  //
+  // UND: In 'neustart-rueckspielung' ist 'still verloren' KEIN Schaden. Die
+  // Ruecknahme LOESCHT AAA — das ist der Nutzerwille, und die Token-Bilanz zaehlt
+  // ihn als Verlust. Dort ist ein HOHER Wert das gesunde Ergebnis und ein
+  // sinkender das verdaechtige. Gemessen wird die Ruecknahme ueber
+  // 'Eingriff durch', nicht ueber 'still verloren'.
+  it('misst die Falsch-Positiv-Lagen ueber die vollstaendige Zustellordnung', async () => {
+    const zeilen: string[] = [];
+    for (const konfliktModus of ['kopie', 'ueberschreiben'] as const) {
+      for (const lage of ['neustart-offline-edit', 'neustart-rueckspielung'] as const) {
+        const z = await messeZelle(lage, konfliktModus);
+        const zeile =
+          `${konfliktModus.padEnd(14)} | ${lage.padEnd(22)} | n=${z.n} | ` +
+          `ueberschrieben ${String(z.ueberschrieben).padStart(3)} | ` +
+          `Sweep sah ${String(z.sweepAngesehen).padStart(3)} | ` +
+          `Beweis da ${String(z.beweisDa).padStart(3)} | ` +
+          `GREIFT ${String(z.schranke).padStart(3)} | ` +
+          `EINGRIFF DURCH ${String(z.eingriffDurch).padStart(3)} (${proz(z.eingriffDurch, z.n)}) | ` +
+          `Eingriff still weg ${String(z.eingriffStillWeg).padStart(3)} | ` +
+          `GRUNDTEXT WEG ${String(z.grundtextWeg).padStart(3)} | ` +
+          `still verloren ${String(z.stillVerloren).padStart(3)} | ` +
+          `in Kopie ${String(z.inKopie).padStart(3)} | ` +
+          `divergent ${String(z.divergenz).padStart(3)} | ` +
+          `doppelt ${String(z.doppel).padStart(3)} | ` +
+          `sauber ${String(z.sauber).padStart(3)}`;
+        zeilen.push(zeile);
+        // eslint-disable-next-line no-console
+        console.log(zeile);
+      }
+    }
+    // eslint-disable-next-line no-console
+    console.log(
+      `\n===== FALSCH-POSITIVE (Schranke: ${SCHRANKE}) =====\n` + zeilen.join('\n')
+    );
+    expect(zeilen).toHaveLength(4);
   });
 });
