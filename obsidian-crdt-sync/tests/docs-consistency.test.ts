@@ -13,6 +13,7 @@ import { filterYjsFiles, SyncHandler, QOLLAB_DIR } from '../src/sync-handler';
 import { CrdtManager } from '../src/crdt-manager';
 import { DEFAULT_SETTINGS } from '../src/settings';
 import { encodeStateFile, decodeStateFile, StateFileIntegrityError } from '../src/state-file';
+import { readSidecar, type SidecarAdapter } from '../src/sidecar-io';
 import CrdtSyncPlugin, { FOREIGN_OWN_SIDECAR_NOTICE } from '../src/main';
 import {
   makeVaultMock,
@@ -22,6 +23,12 @@ import {
 } from './helpers/vault-mock';
 
 const README = readFileSync(join(__dirname, '..', '..', 'README.md'), 'utf8');
+
+// Das AUSGELIEFERTE Manifest, nicht eine Kopie davon. Was hier steht, entscheidet
+// darueber, ob Obsidian das Plugin auf einem Handy ueberhaupt laedt.
+const MANIFEST = JSON.parse(readFileSync(join(__dirname, '..', '..', 'manifest.json'), 'utf8')) as {
+  isDesktopOnly?: boolean;
+};
 
 // Blockzitate tragen die „Richtigstellung"-Absätze, die frühere Zusagen wörtlich
 // zitieren, um sie zu widerrufen. Ein Zitat in einem Widerruf ist keine Zusage —
@@ -444,6 +451,82 @@ describe('Rueckfall der .md: README haelt, welche Haelfte des Wegs offen ist', (
 
     // Der README schreibt dem Tor genau diese Reichweite zu: laufende App.
     expect(CLAIMS).toContain('While Obsidian is running, Qollab can tell');
+  });
+});
+
+// DESKTOP-ONLY — das Manifest sagte `isDesktopOnly: false` und versprach damit
+// ausdruecklich Mobile. Formal stimmte die Begruendung („es wird keine
+// Desktop-only-API genutzt"), inhaltlich war sie irrefuehrend: Nicht abstuerzen
+// ist keine Unterstuetzung. Gehalten wird die Zusage deshalb an zwei Stellen
+// gleichzeitig — am AUSGELIEFERTEN Manifest und am Schalter, der die Begruendung
+// traegt. Kippt jemand das Flag zurueck, ohne den README zu aendern, faellt der
+// erste Test; bekommt Mobile je den Direktzugriff (oder laeuft die Adapter-Sicht
+// nicht mehr nach), faellt der zweite — und dann ist der README neu zu fassen,
+// diesmal in die andere Richtung.
+describe('Desktop-only: Manifest und README sagen dasselbe', () => {
+  // Ein Sidecar-Adapter, der mitzaehlt, ob `readSidecar` ihn ueberhaupt fragt.
+  function adapterMitZaehler(basePath?: string): {
+    adapter: SidecarAdapter;
+    gefragt: () => number;
+  } {
+    let gefragt = 0;
+    const nein = async (): Promise<never> => {
+      throw new Error('in diesem Test nicht erwartet');
+    };
+    const adapter: SidecarAdapter = {
+      exists: async () => {
+        gefragt++;
+        return false;
+      },
+      readBinary: async () => {
+        gefragt++;
+        return new ArrayBuffer(0);
+      },
+      writeBinary: nein,
+      remove: nein,
+      mkdir: nein,
+      stat: nein,
+      list: nein,
+      rename: nein,
+    };
+    if (basePath !== undefined) adapter.getBasePath = () => basePath;
+    return { adapter, gefragt: () => gefragt };
+  }
+
+  it('das Manifest steht auf desktop-only — und der README sagt es', () => {
+    // Der Anker ist das echte Manifest, nicht eine zweite Textkopie: genau diese
+    // Datei wird ausgeliefert und von Obsidian gelesen.
+    expect(MANIFEST.isDesktopOnly).toBe(true);
+    expect(CLAIMS).toContain('**Desktop only.**');
+    expect(CLAIMS).toContain('does not load on Obsidian Mobile');
+    // Und die Folge fuer die Leserin, die es heute auf einem Handy hat — sie
+    // gehoert zur Aussage dazu, nicht in die Release-Notes allein.
+    expect(CLAIMS).toContain('this version stops running there');
+    // Die alte Zeile behauptete den falschen Grund: die Herkunftserkennung
+    // haengt an `write`/`process`/`append`/`writeBinary`, die es auf Mobile
+    // ebenso gibt. Sie darf nicht zurueckkehren.
+    expect(CLAIMS).not.toMatch(/provenance detection largely does not work/i);
+  });
+
+  it('nennt den Grund, den der Code traegt: ohne `getBasePath` keine Direktlesung', async () => {
+    const pfad = '.qollab/notiz.md.aaaa1111.yjs';
+
+    // CODE-ANKER (Mobile-Zweig): Ohne `getBasePath` — der Fall auf dem
+    // CapacitorAdapter — laeuft der Lesezugriff ueber den Adapter, also genau
+    // die nachlaufende Sicht, die der README benennt.
+    const mobil = adapterMitZaehler();
+    expect(await readSidecar(mobil.adapter, pfad)).toBeNull();
+    expect(mobil.gefragt()).toBeGreaterThan(0);
+
+    // CODE-ANKER (Gegenstueck, Desktop): Mit `getBasePath` wird der Adapter GAR
+    // NICHT gefragt — gelesen wird am Dateisystem. Der Basispfad zeigt bewusst
+    // ins Leere; geprueft wird, WER gefragt wurde, nicht was zurueckkam.
+    const desktop = adapterMitZaehler(join(__dirname, 'gibt-es-diesen-ordner-nicht'));
+    expect(await readSidecar(desktop.adapter, pfad)).toBeNull();
+    expect(desktop.gefragt()).toBe(0);
+
+    expect(CLAIMS).toContain('exists only on the desktop adapter');
+    expect(CLAIMS).toContain('falls back to precisely the lagging view');
   });
 });
 
