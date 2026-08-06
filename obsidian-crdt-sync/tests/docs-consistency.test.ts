@@ -324,3 +324,131 @@ describe('Lazy-Anlage: README hält, wann eine Hilfsdatei überhaupt entsteht', 
     );
   });
 });
+
+// DER RUECKFALL DER `.md` — der zweite stille Verlustweg.
+//
+// Die deutsche README-Fassung (Commit `6a95170^`, Zeile 144) beschrieb ihn so:
+// „Faellt die `.md` fremdbestimmt hinter den Merge-Zustand zurueck […] Der
+// eigene, noch nicht synchronisierte Edit wird dabei als Loeschung in die eigene
+// Hilfsdatei geschrieben, also gerade dort entfernt, wo er als letztes noch
+// existierte." Die englische Fassung sagte an zwei Stellen das Gegenteil („never
+// silently gone", „0 %") — ohne dass irgendein Test die Aussage hielt.
+//
+// Der Weg ist HALB zu. Im laufenden Betrieb greift DAS TOR (main.ts:326-334):
+// eine `.md`, die dieser Prozess nicht geschrieben hat, wird geparkt statt
+// gediffed. Der START-SWEEP hat dieses Tor nicht — main.ts sagt das selbst
+// („beim Start ist Herkunft ohnehin nicht ableitbar"). Genau diese Asymmetrie
+// pinnen die beiden Tests unten, JE MIT dem Gegenstueck: faellt eine der beiden
+// Haelften, ist der README-Absatz neu zu fassen.
+describe('Rueckfall der .md: README haelt, welche Haelfte des Wegs offen ist', () => {
+  const BASIS = 'kopf\nzeile-1\nfuss\n';
+  const MIT_EDIT = 'kopf\nzeile-1\nAAA\nfuss\n';
+  const GUID = 'a'.repeat(32);
+
+  // Vault-Lage: die eigene Hilfsdatei traegt den lokalen Edit, die `.md` auf der
+  // Platte NICHT — und sie ist juenger. Das ist die Lage nach einem
+  // Sync-Overwrite, einer Wiederherstellung aus dem Versionsverlauf oder einem
+  // verkuerzten Lesevorgang.
+  function baueLage(clientId: string): VaultMock {
+    const vault = makeVaultMock();
+    const mgr = new CrdtManager();
+    mgr.setContent('note.md', MIT_EDIT);
+    vault._files.set(
+      `.qollab/note.md.${clientId}.yjs`,
+      toArrayBuffer(encodeStateFile(GUID, mgr.encodeState('note.md')))
+    );
+    vault._mtimes.set(`.qollab/note.md.${clientId}.yjs`, 5);
+    // Die `.md` ist zurueckgefallen — und traegt den JUENGEREN Zeitstempel, weil
+    // der Sync-Dienst gerade eben geschrieben hat.
+    vault._textFiles.set('note.md', BASIS);
+    vault._mdMtimes.set('note.md', 99);
+    return vault;
+  }
+
+  // Was steht am Ende in der eigenen Hilfsdatei? Nicht „was denkt der Doc" —
+  // die DATEI ist das, was zum anderen Geraet faehrt.
+  function inHilfsdatei(vault: VaultMock, clientId: string): string {
+    const roh = vault._files.get(`.qollab/note.md.${clientId}.yjs`);
+    if (!roh) return '<keine Hilfsdatei>';
+    const mgr = new CrdtManager();
+    mgr.applyUpdate('note.md', decodeStateFile(new Uint8Array(roh)).update);
+    return mgr.getContent('note.md');
+  }
+
+  function makeApp(vault: VaultMock): {
+    app: unknown;
+    handlers: Map<string, (...args: any[]) => any>;
+  } {
+    const handlers = new Map<string, (...args: any[]) => any>();
+    const vaultWithEvents = Object.assign(vault, {
+      on: (event: string, cb: (...args: any[]) => any) => {
+        handlers.set(event, cb);
+        return { __event: event };
+      },
+      offref: () => {},
+    });
+    const storage = makeLocalStorage();
+    storage.saveLocalStorage('qollab-client-id', 'deadbeef');
+    return {
+      app: {
+        vault: vaultWithEvents,
+        workspace: { on: () => ({}), offref: () => {}, onLayoutReady: () => {} },
+        loadLocalStorage: storage.loadLocalStorage,
+        saveLocalStorage: storage.saveLocalStorage,
+      },
+      handlers,
+    };
+  }
+
+  it('START-SWEEP: der eigene Edit wird als Loeschung in die eigene Hilfsdatei geschrieben', async () => {
+    const vault = baueLage('deadbeef');
+    const { app } = makeApp(vault);
+    const plugin = new (CrdtSyncPlugin as any)(app, {});
+    await plugin.onload();
+    expect(plugin.clientId).toBe('deadbeef');
+    // Vorher steht der Edit in der Datei, die zum anderen Geraet faehrt.
+    expect(inHilfsdatei(vault, 'deadbeef')).toBe(MIT_EDIT);
+
+    await plugin.runStartupSweep();
+    plugin.onunload();
+
+    // CODE-ANKER: nachher nicht mehr. Der Sweep hat den `.md`-Rueckfall als
+    // lokale Loeschung verbucht und sie in die eigene Hilfsdatei geschrieben —
+    // genau dort, wo der Edit als letztes noch existierte. Faellt diese Zeile,
+    // ist der Weg zu und der README-Absatz zu streichen.
+    expect(inHilfsdatei(vault, 'deadbeef')).toBe(BASIS);
+
+    // Und der README sagt es, statt „never silently gone" zu behaupten.
+    expect(CLAIMS).toContain('**Obsidian was closed while your `.md` was overwritten**');
+    expect(CLAIMS).toContain('the startup scan has no such signal');
+  });
+
+  it('LAUFENDER BETRIEB: dasselbe ueber den modify-Handler laesst den Edit stehen', async () => {
+    const vault = baueLage('deadbeef');
+    const { app, handlers } = makeApp(vault);
+    const plugin = new (CrdtSyncPlugin as any)(app, {});
+    await plugin.onload();
+    expect(inHilfsdatei(vault, 'deadbeef')).toBe(MIT_EDIT);
+
+    // Dasselbe Ereignis, nur mit laufender App: das Tor sieht, dass dieser
+    // Prozess den Inhalt nicht geschrieben hat, und parkt statt zu erfassen.
+    const modify = handlers.get('modify');
+    expect(modify).toBeDefined();
+    await modify!(tfileFuerNote(vault, 'note.md'));
+    plugin.onunload();
+
+    // CODE-ANKER (Gegenstueck): hier ueberlebt der Edit. Faellt DIESE Zeile,
+    // ist der Weg breiter als der README sagt — dann ist er ebenfalls neu zu
+    // fassen, nur in die andere Richtung.
+    expect(inHilfsdatei(vault, 'deadbeef')).toBe(MIT_EDIT);
+
+    // Der README schreibt dem Tor genau diese Reichweite zu: laufende App.
+    expect(CLAIMS).toContain('While Obsidian is running, Qollab can tell');
+  });
+});
+
+// Ein TFile, wie ihn der Vault-Index liefert — der modify-Handler prueft
+// `instanceof TFile`, ein Objektliteral genuegt ihm nicht.
+function tfileFuerNote(vault: VaultMock, pfad: string): unknown {
+  return vault.getAbstractFileByPath(pfad);
+}

@@ -20,7 +20,7 @@ All figures come from a deterministic simulation of two or more devices exchangi
 
 | | Result |
 |---|---|
-| Two devices, one contested note, text only added | **98.6 % of runs fully clean** |
+| Two devices, one contested note, text only added, **Obsidian open the whole time** | **98.6 % of runs fully clean** |
 | Duplicated text | 1.4 % |
 | Lost text | **0 %** |
 | Silently lost text | **0 %** |
@@ -28,18 +28,25 @@ All figures come from a deterministic simulation of two or more devices exchangi
 
 *n = 720 runs per cell. Without the merge logic the same scenario yields 66.4 % duplication, 23.1 % loss and 61.9 % divergence — that is what the plugin removes.*
 
+*What these figures do **not** cover: **Obsidian stays open on both devices for the whole run.** Restarting was never part of this measurement, and it is not a detail — it is where the remaining loss lives. See the row about a closed Obsidian below, which is measured over the same 720 delivery orders.*
+
 ### Not clean — also measured
 
 | Problem | Rate | Visible to you? |
 |---|---|---|
 | **A line you deleted comes back** | **47.4 %** of runs containing a deletion (4–26 % if the note has shared history, 53–83 % if not) | Yes, but possibly hours later |
 | More devices or several contested notes at once | duplication rises to 9–16 % | Yes |
-| A program **outside Obsidian** edits the file (script, other editor, `git checkout`) | text loss up to 19.4 % | Yes — the text stays in a conflict copy, never silently gone |
+| A program **outside Obsidian** edits the file (script, other editor, `git checkout`) while Obsidian is open | text loss up to 19.4 % | Yes — the text stays in the note or in a copy Qollab writes before overwriting |
+| **Obsidian was closed while your `.md` was overwritten** — your sync provider delivered the other device's version, a version was restored from history, or a read came back short | **33.3 %** of delivery orders (**97.6 %** of those in which the overwrite actually happened). Your unsynced edit is written into your own helper file **as a deletion** and travels to the other device. | **Only if your sync provider left a conflict copy.** Otherwise the text is gone without a word. |
 | A `.yjs` helper file arrives **corrupted** (zero-filled at unchanged size — happens with cloud sync and interrupted writes) | caught by the checksum, file skipped and reported | Yes |
-| Obsidian is closed while a note is in an undecided state | the pending state is lost, duplication rises | No |
+| Obsidian is closed while a note is in an undecided state | the pending state is lost, duplication rises from 5.3 % to 35.6 % | No |
 | Obsidian Mobile | the provenance detection largely does not work there | No |
 
-**The honest summary:** Qollab reliably prevents *loss* in the two-device case, and it removes conflict copies. Its helper files now carry a checksum, so a corrupted one is caught and skipped instead of silently rewriting your text. It does **not** yet reliably preserve *deletions*. If your workflow involves deleting a lot — cleaning up notes, removing finished tasks — expect deleted lines to reappear.
+**Why closing Obsidian matters.** While Obsidian is running, Qollab can tell whether a `.md` was written by this process or dropped in by something else, and it sets a foreign one aside instead of booking it as your edit. That signal lives in memory, and the startup scan has no such signal — after a restart every file on disk looks the same to it. So if your `.md` fell behind your helper file while Obsidian was closed, the first scan reads the difference as a deletion *you* made, writes it into your own helper file, and your file sync carries that deletion to the other device. It is removed exactly where it last existed. Your provider's conflict copy still holds the text, under a different name; the note itself ends up the same on both devices — without it. **That is why the warning above asks you to keep conflict-copy protection on.**
+
+*Measured over the same 720 delivery orders, with one device restarted. Skipping only the startup scan removes the loss completely (0 of 720), so that is where it happens — not in the restart as such. The devices still agree with each other in every run; "we both have the same text" is not the same as "nothing is missing".*
+
+**The honest summary:** with Obsidian open on both devices, Qollab reliably prevents *loss* in the two-device case, and it removes conflict copies. Its helper files now carry a checksum, so a corrupted one is caught and skipped instead of silently rewriting your text. Two things it does **not** do: it does not reliably preserve *deletions*, and it does not protect an edit that was overwritten on disk while Obsidian was shut. If your workflow involves deleting a lot — cleaning up notes, removing finished tasks — expect deleted lines to reappear.
 
 ## Install
 
