@@ -42,7 +42,11 @@ it('Diagnose: der Rueckfall passiert und der Sweep sieht ihn', async () => {
 // einzelnen Lauf, und ein Gegenbeispiel muss auffallen duerfen. Ausgegeben wird
 // nur die Kreuztabelle.
 it('Diagnose: greift die Schranke im Gleichtakt mit dem fremden Nachweis?', async () => {
-  for (const lage of ['neustart-offline-edit', 'neustart-rueckspielung'] as const) {
+  for (const lage of [
+    'neustart-offline-edit',
+    'neustart-rueckspielung',
+    'neustart-offline-loeschung',
+  ] as const) {
     const tafel = { 'beweis+greift': 0, 'beweis+still': 0, 'ohne+greift': 0, 'ohne+still': 0 };
     for (const reihenfolge of permutationen(6)) {
       const e = await laufRueckfall({
@@ -56,7 +60,7 @@ it('Diagnose: greift die Schranke im Gleichtakt mit dem fremden Nachweis?', asyn
       tafel[schluessel as keyof typeof tafel]++;
     }
     // eslint-disable-next-line no-console
-    console.log(`${lage.padEnd(22)} (Schranke: ${SCHRANKE}) ${JSON.stringify(tafel)}`);
+    console.log(`${lage.padEnd(27)} (Schranke: ${SCHRANKE}) ${JSON.stringify(tafel)}`);
   }
   expect(true).toBe(true);
 });

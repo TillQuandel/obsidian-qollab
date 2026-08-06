@@ -152,13 +152,22 @@ describe('Rueckfall der .md hinter den Merge-Zustand', () => {
   // ihn als Verlust. Dort ist ein HOHER Wert das gesunde Ergebnis und ein
   // sinkender das verdaechtige. Gemessen wird die Ruecknahme ueber
   // 'Eingriff durch', nicht ueber 'still verloren'.
+  //
+  // In 'neustart-offline-loeschung' heisst 'Eingriff durch' = n: die geloeschte
+  // Zeile ist weg geblieben. Jeder Ausfall ist eine ZURUECKGEKEHRTE GELOESCHTE
+  // ZEILE — das Ausschlusskriterium des Produkts. Der Grundtext-Check nimmt die
+  // geloeschte Zeile dort aus, sonst zaehlte er den Nutzerwillen als K.o.
   it('misst die Falsch-Positiv-Lagen ueber die vollstaendige Zustellordnung', async () => {
     const zeilen: string[] = [];
     for (const konfliktModus of ['kopie', 'ueberschreiben'] as const) {
-      for (const lage of ['neustart-offline-edit', 'neustart-rueckspielung'] as const) {
+      for (const lage of [
+        'neustart-offline-edit',
+        'neustart-rueckspielung',
+        'neustart-offline-loeschung',
+      ] as const) {
         const z = await messeZelle(lage, konfliktModus);
         const zeile =
-          `${konfliktModus.padEnd(14)} | ${lage.padEnd(22)} | n=${z.n} | ` +
+          `${konfliktModus.padEnd(14)} | ${lage.padEnd(27)} | n=${z.n} | ` +
           `ueberschrieben ${String(z.ueberschrieben).padStart(3)} | ` +
           `Sweep sah ${String(z.sweepAngesehen).padStart(3)} | ` +
           `Beweis da ${String(z.beweisDa).padStart(3)} | ` +
@@ -180,6 +189,6 @@ describe('Rueckfall der .md hinter den Merge-Zustand', () => {
     console.log(
       `\n===== FALSCH-POSITIVE (Schranke: ${SCHRANKE}) =====\n` + zeilen.join('\n')
     );
-    expect(zeilen).toHaveLength(4);
+    expect(zeilen).toHaveLength(6);
   });
 });

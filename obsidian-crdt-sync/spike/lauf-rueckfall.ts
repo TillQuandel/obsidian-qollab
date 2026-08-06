@@ -52,6 +52,15 @@ const MITTE = '8888888888888888888888888888888888'.slice(0, 32);
 // als „fremd erklaert" abstempelt, irrt sich nachweisbar.
 export const OFFLINE = 'OOO';
 
+// DIE OFFLINE GELOESCHTE ZEILE. Sie stammt aus dem Grundtext, steht also in
+// BEIDEN Hilfsdateien und auf beiden Geraeten. Genau das macht sie zum haertesten
+// Fall: eine Loeschung bringt KEINEN neuen Text mit, an dem ein inhaltliches
+// Verfahren sie erkennen koennte — sie sieht aus wie „hier stand schon immer
+// weniger". „Zurueckkehrende geloeschte Zeilen" ist zugleich das Ausschluss-
+// kriterium des Produkts; parkt die Schranke eine bewusste Loeschung, macht sie
+// genau das Problem groesser, an dem das Produkt ohnehin haengt.
+export const GELOESCHT = 'zeile-2';
+
 // 'laufend'      — Obsidian laeuft auf A, waehrend der Sync die `.md`
 //                  ueberschreibt. Das modify-Ereignis feuert, DAS TOR greift.
 // 'neustart'     — Obsidian ist auf A geschlossen, waehrend die Dateien
@@ -62,9 +71,9 @@ export const OFFLINE = 'OOO';
 //                  hier aus, ist der Sweep die Ursache und nicht der Neustart an
 //                  sich. Ohne diese Zelle waere die Zuschreibung geraten.
 //
-// DIE BEIDEN FALSCH-POSITIV-LAGEN. In den drei Lagen oben ist A durchgehend
+// DIE DREI FALSCH-POSITIV-LAGEN. In den drei Lagen oben ist A durchgehend
 // geschlossen und tut NICHTS Eigenes — dort kann die Schranke gar nichts Eigenes
-// wegparken, und ueber Falsch-Positive sagen sie folglich nichts. Beide Lagen
+// wegparken, und ueber Falsch-Positive sagen sie folglich nichts. Die Lagen
 // unten setzen genau da an: A aendert seine `.md` bei geschlossener App selbst.
 //
 // 'neustart-offline-edit' — der Nutzer tippt bei geschlossenem Obsidian in einem
@@ -76,12 +85,19 @@ export const OFFLINE = 'OOO';
 //                  `git checkout`). Der eigene Edit AAA ist damit ZURUECKGENOMMEN.
 //                  ERWARTUNG: die Schranke darf nicht greifen, der Sweep muss die
 //                  Ruecknahme wie bisher erfassen.
+// 'neustart-offline-loeschung' — der Nutzer LOESCHT bei geschlossenem Obsidian
+//                  eine Zeile des Grundtexts (`GELOESCHT`). Der haerteste Fall:
+//                  eine Loeschung bringt keinen neuen Text mit, an dem ein
+//                  inhaltliches Verfahren die eigene Herkunft erkennen koennte.
+//                  ERWARTUNG: die Schranke darf nicht greifen, die Zeile darf
+//                  nicht zurueckkehren.
 export type Lage =
   | 'laufend'
   | 'neustart'
   | 'neustart-ohne-sweep'
   | 'neustart-offline-edit'
-  | 'neustart-rueckspielung';
+  | 'neustart-rueckspielung'
+  | 'neustart-offline-loeschung';
 
 export interface Konfig {
   lage: Lage;
@@ -124,6 +140,9 @@ export interface Ergebnis {
   //   'neustart-offline-edit'  — `OFFLINE` steht am Ende in BEIDEN `.md`.
   //   'neustart-rueckspielung' — die Ruecknahme kam durch: AAA steht am Ende in
   //                              KEINER `.md`.
+  //   'neustart-offline-loeschung' — die Loeschung kam durch: `GELOESCHT` steht
+  //                              am Ende in KEINER `.md`. `false` heisst hier:
+  //                              DIE GELOESCHTE ZEILE IST ZURUECK.
   // In den drei alten Lagen gibt es keinen Eingriff; dort ist das Feld `false`
   // und ohne Aussage.
   eingriffDurch: boolean;
@@ -286,6 +305,19 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
     // Die Sicherung von gestern: der letzte gemeinsame Stand. A's eigener Edit
     // AAA ist damit zurueckgenommen — das ist der Nutzerwille, nicht ein Verlust.
     a.setMd(NOTE, GEMEINSAM);
+  } else if (k.lage === 'neustart-offline-loeschung') {
+    // Eine Zeile RAUS, die beide Geraete kennen. Was danach in der Datei steht,
+    // ist eine echte Teilmenge dessen, was ohnehin ueberall bekannt ist — und
+    // damit von „der Sync hat eine aeltere Fassung abgelegt" inhaltlich nicht
+    // mehr zu unterscheiden.
+    a.setMd(
+      NOTE,
+      a
+        .md(NOTE)
+        .split('\n')
+        .filter((z) => z !== GELOESCHT)
+        .join('\n')
+    );
   }
 
   // --- Der Start ----------------------------------------------------------
@@ -350,8 +382,12 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
   const inKopie = befund.verlust.filter((t) => alleKopien.some((kk) => occ(kk, t) > 0));
   const stillVerloren = befund.verlust.filter((t) => !inKopie.includes(t));
 
-  // Der Grundtext — jede nicht-leere Zeile aus BASIS, auf beiden Seiten.
-  const grundzeilen = BASIS.split('\n').filter((z) => z !== '');
+  // Der Grundtext — jede nicht-leere Zeile aus BASIS, auf beiden Seiten. In der
+  // Loeschungs-Lage ist die geloeschte Zeile ausgenommen: dort ist ihr
+  // Verschwinden der Nutzerwille und kein Grundtext-Verlust.
+  const grundzeilen = BASIS.split('\n').filter(
+    (z) => z !== '' && !(k.lage === 'neustart-offline-loeschung' && z === GELOESCHT)
+  );
   const grundtextDa = grundzeilen.every(
     (z) => occ(a.md(NOTE), z) > 0 && occ(b.md(NOTE), z) > 0
   );
@@ -360,12 +396,17 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
   const daA = occ(a.md(NOTE), OFFLINE) > 0;
   const daB = occ(b.md(NOTE), OFFLINE) > 0;
   const aaaWeg = occ(a.md(NOTE), 'AAA') === 0 && occ(b.md(NOTE), 'AAA') === 0;
+  // Die geloeschte Zeile ist NIRGENDS mehr — die Loeschung wurde erfasst und
+  // propagiert. Der Gegenfall ist der Schaden: sie ist ZURUECKGEKEHRT.
+  const zeileWeg = occ(a.md(NOTE), GELOESCHT) === 0 && occ(b.md(NOTE), GELOESCHT) === 0;
   const eingriffDurch =
     k.lage === 'neustart-offline-edit'
       ? daA && daB
       : k.lage === 'neustart-rueckspielung'
         ? aaaWeg
-        : false;
+        : k.lage === 'neustart-offline-loeschung'
+          ? zeileWeg
+          : false;
   const eingriffStillWeg =
     k.lage === 'neustart-offline-edit' &&
     !daA &&
