@@ -17,8 +17,13 @@
 // aber sichtbar.
 
 import { laufRueckfall, permutationen, type Lage } from './lauf-rueckfall';
+import type { SweepSchranke } from '../src/sync-handler';
 
 jest.setTimeout(3600000);
+
+// DER MESSSCHALTER, aus der Umgebung. Ohne ihn laeuft der Bestand — genau die
+// Kalibrierung. `SPIKE_SCHRANKE=exakt|deckung|signatur` schaltet je eine Variante.
+const SCHRANKE = (process.env.SPIKE_SCHRANKE as SweepSchranke | undefined) ?? 'aus';
 
 interface Zelle {
   n: number;
@@ -30,6 +35,9 @@ interface Zelle {
   doppel: number;
   sauber: number;
   sweepAngesehen: number;
+  schranke: number; // AKTIVITAETSPROBE
+  beweisDa: number; // GEGENPROBE: fremder Nachweis lag zum Sweep-Zeitpunkt vor
+  beweisDaUeber: number; // dito, aber nur in den ueberschriebenen Laeufen
 }
 
 async function messeZelle(
@@ -46,9 +54,18 @@ async function messeZelle(
     doppel: 0,
     sauber: 0,
     sweepAngesehen: 0,
+    schranke: 0,
+    beweisDa: 0,
+    beweisDaUeber: 0,
   };
   for (const reihenfolge of permutationen(6)) {
-    const e = await laufRueckfall({ lage, reihenfolge, aWinnt: true, konfliktModus });
+    const e = await laufRueckfall({
+      lage,
+      reihenfolge,
+      aWinnt: true,
+      konfliktModus,
+      schranke: SCHRANKE,
+    });
     z.n++;
     const still = e.stillVerloren.length > 0;
     if (e.aUeberschrieben) z.ueberschrieben++;
@@ -59,6 +76,9 @@ async function messeZelle(
     if (e.befund.doppel.length > 0) z.doppel++;
     if (e.befund.sauber) z.sauber++;
     if (e.sweepAngesehen) z.sweepAngesehen++;
+    z.schranke += e.schranke;
+    if (e.beweisDa) z.beweisDa++;
+    if (e.beweisDa && e.aUeberschrieben) z.beweisDaUeber++;
   }
   return z;
 }
@@ -81,14 +101,16 @@ describe('Rueckfall der .md hinter den Merge-Zustand', () => {
           `divergent ${String(z.divergenz).padStart(3)} | ` +
           `doppelt ${String(z.doppel).padStart(3)} | ` +
           `sauber ${String(z.sauber).padStart(3)} | ` +
-          `Sweep sah ${z.sweepAngesehen}`;
+          `Sweep sah ${z.sweepAngesehen} | ` +
+          `Beweis da ${z.beweisDa} (davon ueberschrieben ${z.beweisDaUeber}) | ` +
+          `greift ${z.schranke}`;
         zeilen.push(zeile);
         // eslint-disable-next-line no-console
         console.log(zeile);
       }
     }
     // eslint-disable-next-line no-console
-    console.log('\n===== ERGEBNIS =====\n' + zeilen.join('\n'));
+    console.log(`\n===== ERGEBNIS (Schranke: ${SCHRANKE}) =====\n` + zeilen.join('\n'));
     expect(zeilen).toHaveLength(6);
   });
 });

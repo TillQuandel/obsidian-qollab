@@ -1371,7 +1371,9 @@ export default class CrdtSyncPlugin extends Plugin {
             this.syncHandler.noteUncapturedLocalContent(notePath, content);
             return;
           }
-          const merged = await this.syncHandler.applyLocalContent(notePath, content);
+          // `true` = Aufruf aus dem Start-Sweep. Nur hier greift die Sweep-Schranke
+          // (SPIKE-SCHALTER, Standard 'aus'); der modify-Handler hat sein eigenes Tor.
+          const merged = await this.syncHandler.applyLocalContent(notePath, content, true);
           if (this.unloaded || file.path !== notePath) return;
           await this.writeBackMerged(file, content, merged);
         });

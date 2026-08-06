@@ -24,6 +24,15 @@ const ohneBom = (text: string): string => (text.startsWith(BOM) ? text.slice(1) 
 // Auf wohlgeformter Eingabe ist `\r+\n` mit `\r\n` deckungsgleich.
 const aufLf = (text: string): string => text.replace(/\r+\n/g, '\n');
 
+// Die Vergleichsfassung, die beide Merge-Verfahren intern ohnehin bilden, nach
+// außen gegeben: LF-Zeilenenden, kein führendes BOM. Ausschließlich zum
+// VERGLEICHEN — nie zum Schreiben. Wer zwei Textstände auf inhaltliche Gleichheit
+// prüft, muss dieselbe Normalisierung verwenden wie die Merge-Verfahren, sonst
+// beantwortet er eine andere Frage als die, die danach entschieden wird.
+export function vergleichsfassung(text: string): string {
+  return aufLf(ohneBom(text));
+}
+
 // 3-Wege-Text-Merge: die lokale Änderung (Diff base → local) wird als Patch auf
 // den bereits gemergten other-Stand angewandt. diff-match-patch wendet Patches
 // fuzzy an: bei direkt überlappenden Edits setzt sich die lokale Änderung durch

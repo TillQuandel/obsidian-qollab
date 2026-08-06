@@ -20,9 +20,38 @@ import {
   sidecarExists,
   statSidecar,
 } from './sidecar-io';
-import { threeWayMerge, unionMerge, insertedTexts } from './text-merge';
+import { threeWayMerge, unionMerge, insertedTexts, vergleichsfassung } from './text-merge';
 
 export const QOLLAB_DIR = '.qollab';
+
+// SPIKE-SCHALTER, NICHT TEIL DES PRODUKTS. Die Schranke im Start-Sweep-Pfad:
+// Wird der vorgefundene `.md`-Text durch eine verfuegbare FREMDE Sidecar erklaert,
+// stammt er nicht von uns — dann parken statt diffen.
+//
+//   'aus'      — Bestand. Standard, damit die bestehende Testsuite unveraendert laeuft.
+//   'exakt'    — `content` ist textgleich (normalisiert) mit dem Text, der aus einer
+//                fremden Sidecar ALLEIN folgt.
+//   'deckung'  — die fremde Sidecar deckt `content` ab: der gelesene Text traegt
+//                nichts bei, was die fremde Kette nicht schon hat.
+//   'signatur' — `content` traegt Text, den nur die fremde Revision beisteuert, UND
+//                es fehlt ihm Text, den nur der eigene Doc-Stand hat. Die Signatur
+//                von „ueberschrieben".
+//   'immer'    — MUTATIONSPROBE, kein Kandidat: der Sweep parkt PAUSCHAL, ohne
+//                jeden Nachweis. Der bekannte naive Weg. Sie belegt, dass der
+//                Schalter die Testsuite ueberhaupt erreicht — faellt hier nichts,
+//                ist jede gruene Zahl der Kandidaten wertlos.
+export type SweepSchranke = 'aus' | 'exakt' | 'deckung' | 'signatur' | 'immer';
+
+// Der Standardwert jedes neuen SyncHandler. `process` ist im Browser-Bundle nicht
+// definiert, deshalb der typeof-Riegel; ohne gesetzte Variable bleibt es 'aus'.
+let sweepSchrankeStandard: SweepSchranke =
+  (typeof process !== 'undefined'
+    ? (process.env?.QOLLAB_SWEEP_SCHRANKE as SweepSchranke | undefined)
+    : undefined) ?? 'aus';
+
+export function setzeSweepSchrankeStandard(v: SweepSchranke): void {
+  sweepSchrankeStandard = v;
+}
 
 // Filtert alle Pfade auf die .yjs-Sibling-Dateien EXAKT dieser Note. Ein Pfad ist
 // ein Sibling, wenn er entweder die Legacy-Form `.qollab/<notePath>.yjs` hat ODER
@@ -1402,11 +1431,62 @@ export class SyncHandler {
   // Gewinner-GUID, switchToGuid) bleibt ausschließlich Sache von loadAndMerge; hier
   // werden Verlierer-/Fremd-GUIDs bewusst ignoriert. Idempotent: bereits gemergte
   // Siblings (z.B. im Adopt-Zweig von ensureDoc) werden nach Item-ID dedupliziert.
-  private async mergePendingForeign(notePath: string): Promise<void> {
+  //
+  // Rueckgabe (SPIKE): die dekodierten Geschwister. Die Sweep-Schranke unten
+  // braucht genau diese Liste — ein zweites `decodeSiblings` waere ein zweiter
+  // Lesevorgang ueber alle Sidecars.
+  private async mergePendingForeign(notePath: string): Promise<DecodedSibling[]> {
     const yjsFiles = await this.vault.listYjsFiles(notePath);
-    if (yjsFiles.length === 0) return;
+    if (yjsFiles.length === 0) return [];
     const siblings = await this.decodeSiblings(notePath, yjsFiles);
     this.mergeCompatible(notePath, siblings);
+    return siblings;
+  }
+
+  // SPIKE-SCHALTER (siehe SweepSchranke oben). 'aus' = Bestand.
+  sweepSchranke: SweepSchranke = sweepSchrankeStandard;
+  // AKTIVITAETSPROBE: Wie oft hat die Schranke gegriffen? Ist die Zahl 0, ist der
+  // Eingriff tot und keine Zahl des Laufs sagt etwas ueber ihn aus.
+  sweepSchrankeZaehler = 0;
+
+  // Wird `content` durch eine verfuegbare FREMDE Revision erklaert?
+  //
+  // Der Nachweis liegt auf der Platte und ueberlebt damit den Prozess: die fremde
+  // Sidecar-Datei. Die EIGENE ist ausgeschlossen — ihr Stand ist per Definition der
+  // eigene und wuerde jeden Offline-Edit als „geliefert" abstempeln.
+  private fremdErklaert(
+    notePath: string,
+    content: string,
+    siblings: DecodedSibling[],
+    docBeforeMerge: string
+  ): boolean {
+    // MUTATIONSPROBE: pauschal parken, ohne jeden Nachweis.
+    if (this.sweepSchranke === 'immer') return true;
+    const ownPath = this.stateFilePath(notePath);
+    const c = vergleichsfassung(content);
+    const eigen = vergleichsfassung(docBeforeMerge);
+    for (const s of siblings) {
+      if (s.path === ownPath) continue;
+      if (!carriesYjsOps(s.update)) continue;
+      const fremd = vergleichsfassung(textFromUpdate(s.update));
+      if (fremd === '') continue;
+      if (this.sweepSchranke === 'exakt') {
+        if (fremd === c) return true;
+      } else if (this.sweepSchranke === 'deckung') {
+        // `fremd` deckt `content` ab: der gelesene Text traegt nichts bei, was die
+        // fremde Kette nicht schon hat.
+        if (unionMerge(c, fremd) === fremd) return true;
+      } else if (this.sweepSchranke === 'signatur') {
+        // Zwei Haelften, beide noetig: `content` traegt eine Einfuegung, die nur die
+        // fremde Revision beisteuert — und ihm fehlt Text, den nur der eigene
+        // Doc-Stand hat. Erst zusammen ist das „ueberschrieben" statt „aufgeholt".
+        const fremdNeu = insertedTexts(eigen, fremd);
+        if (!fremdNeu.some((t) => c.includes(t))) continue;
+        const eigenNur = insertedTexts(fremd, eigen);
+        if (eigenNur.some((t) => !c.includes(t))) return true;
+      }
+    }
+    return false;
   }
 
   // Bringt eine lokale .md-Änderung in den CRDT.
@@ -1422,10 +1502,17 @@ export class SyncHandler {
   // `abortedReads` markiert; onRemoteYjsUpdate holt den Lauf vor einem Write-Back
   // nach und schreibt gar nicht, solange die Markierung steht. Das ist der
   // minimale Rückkanal, kein Re-Queue-Mechanismus.
-  async applyLocalContent(notePath: string, content: string): Promise<string | undefined> {
+  //
+  // `imSweep` (SPIKE): Der Aufruf kommt aus dem Start-Sweep, wo das Herkunftstor
+  // des modify-Handlers fehlt. Nur dort greift die Sweep-Schranke.
+  async applyLocalContent(
+    notePath: string,
+    content: string,
+    imSweep = false
+  ): Promise<string | undefined> {
     let finalText: string;
     try {
-      finalText = await this.mergeForLocalDiff(notePath, content);
+      finalText = await this.mergeForLocalDiff(notePath, content, imSweep);
     } catch (err) {
       if (err instanceof SidecarReadError) {
         this.abortedReads.set(notePath, content);
@@ -1478,7 +1565,11 @@ export class SyncHandler {
 
   // Doc-Aufbau + Fremd-Merge + 3-Wege-Merge des lokalen .md-Texts. Getrennt von
   // applyLocalContent, damit ein SidecarReadError vor setContent/saveState greift.
-  private async mergeForLocalDiff(notePath: string, content: string): Promise<string> {
+  private async mergeForLocalDiff(
+    notePath: string,
+    content: string,
+    imSweep = false
+  ): Promise<string> {
     const adopted = await this.ensureDoc(notePath);
 
     // Fremd-Sidecars, die ensureDoc nicht schon selbst eingezogen hat (Doc bereits
@@ -1507,9 +1598,36 @@ export class SyncHandler {
     // VOR dem Fremd-Merge ist der Fallback und wird dort gebraucht, deshalb hier
     // festgehalten.
     const docBeforeMerge = this.crdtManager.getContent(notePath);
-    await this.mergePendingForeign(notePath);
+    const siblings = await this.mergePendingForeign(notePath);
     const mergedText = this.crdtManager.getContent(notePath);
     if (content === mergedText) return mergedText;
+
+    // DIE SWEEP-SCHRANKE (SPIKE-SCHALTER, Standard 'aus').
+    //
+    // Der Start-Sweep ruft `applyLocalContent` ohne das Herkunftstor aus
+    // main.ts:326-334 — die Schreibspur ist nach einem Neustart leer. Der Beweis,
+    // der den Prozess UEBERLEBT, liegt auf der Platte: die fremde Sidecar. Erklaert
+    // sie den vorgefundenen Text, stammt er nicht von uns; dann wird geparkt statt
+    // gediffed, genau wie am Tor. Erklaert sie ihn nicht (echter Offline-Edit,
+    // `git checkout` bei geschlossener App, zurueckgespielte Sicherung), bleibt
+    // alles wie bisher.
+    //
+    // Nur im own-Branch: im Adopt-Zweig gibt es unten ohnehin keinen lokalen Diff
+    // (base === undefined), Parken wuerde dort nur das `unite` unterdruecken.
+    if (
+      imSweep &&
+      !adopted &&
+      this.sweepSchranke !== 'aus' &&
+      this.fremdErklaert(notePath, content, siblings, docBeforeMerge)
+    ) {
+      this.sweepSchrankeZaehler++;
+      this.parkForeign(notePath, content);
+      // Der Doc bleibt auf dem fremd-gemergten Stand — `setContent(mergedText)` im
+      // Aufrufer ist ein No-op. Kein lokaler Diff, keine eigene Op. Den Write-Back
+      // riegelt der Parkplatz-Zweig in `applyLocalContent` ab.
+      return mergedText;
+    }
+
     const base = adopted
       ? undefined
       : this.chooseLocalDiffBase(notePath, content, docBeforeMerge, mergedText);

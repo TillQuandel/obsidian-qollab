@@ -28,8 +28,11 @@
 // koennte. Was hier gemessen wird, ist allein der Rueckfall.
 
 import { Geraet } from './geraet';
+import type { SweepSchranke } from '../src/sync-handler';
 import { Wolke } from './wolke';
 import { bewerte, occ, type Befund } from './invarianten';
+import { decodeStateFile } from '../src/state-file';
+import { textFromUpdate } from '../src/crdt-manager';
 import { setzeGuidFolge, guidQuelleAn } from './guid-quelle';
 import { setzeZufallSeed, zufallQuelleAn, seedAusKonfig } from './zufall-quelle';
 
@@ -55,6 +58,9 @@ export interface Konfig {
   reihenfolge: number[]; // Permutation von [0..5]
   aWinnt: boolean;
   konfliktModus: 'kopie' | 'ohne' | 'ueberschreiben';
+  // DER MESSSCHALTER. 'aus' = Bestand; der Seed haengt bewusst NICHT daran, damit
+  // Bestand und Variante ueber DIESELBE Kennungs- und clientID-Folge laufen.
+  schranke?: SweepSchranke;
 }
 
 export interface Ergebnis {
@@ -75,6 +81,14 @@ export interface Ergebnis {
   // Die Zahl trennt die unbedingte Rate von der bedingten.
   aUeberschrieben: boolean;
   parkungen: number;
+  // AKTIVITAETSPROBE: Wie oft hat die Sweep-Schranke in diesem Lauf gegriffen?
+  schranke: number;
+  // GEGENPROBE ZUR PRAEMISSE, unabhaengig vom Eingriff gemessen: Lag B's
+  // Hilfsdatei zum Sweep-Zeitpunkt auf A's Platte UND trug sie B's Edit? Nur dann
+  // KANN die Schranke ueberhaupt etwas nachweisen. Wird auch mit ausgeschaltetem
+  // Schalter erhoben — sie ist eine Eigenschaft der Zustellordnung, nicht des
+  // Eingriffs.
+  beweisDa: boolean;
 }
 
 // Der Seed haengt nur an Feldern, die es in beiden Lagen gibt — `lage` geht
@@ -105,6 +119,8 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
   // Die Frist des Produkts (PARK_FRIST_TICKS = 4). Ohne sie waere das Tor aus.
   a.parkFrist = 4;
   b.parkFrist = 4;
+  a.setzeSchranke(k.schranke ?? 'aus');
+  b.setzeSchranke(k.schranke ?? 'aus');
   const w = new Wolke([a, b]);
   w.konfliktModus = k.konfliktModus;
 
@@ -207,6 +223,23 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
   // Obsidian wird geoeffnet: neuer Prozess (leere Schreibspur, leerer Parkplatz,
   // keine Docs), danach der Start-Sweep und der erste Poll. Genau die Reihenfolge
   // aus `onLayoutReady`.
+  // GEGENPROBE, hier erhoben — unmittelbar VOR dem Neustart und damit vor dem
+  // Sweep: was liegt an fremdem Nachweis auf A's Platte? Ereignis 3 (A zieht
+  // Hilfsdateien) kann VOR Ereignis 1 (B laedt hoch) liegen; dann hat A nur B's
+  // ALTE Datei, und kein Verfahren, das den Nachweis braucht, kann greifen.
+  const fremdBytes = a.vault._files.get(`.qollab/${NOTE}.bbbb2222.yjs`) as
+    | ArrayBuffer
+    | undefined;
+  let fremdText = '';
+  if (fremdBytes !== undefined) {
+    try {
+      fremdText = textFromUpdate(decodeStateFile(new Uint8Array(fremdBytes)).update);
+    } catch {
+      fremdText = '';
+    }
+  }
+  const beweisDa = occ(fremdText, 'BBB') > 0;
+
   let sweepAngesehen = false;
   if (k.lage !== 'laufend') {
     await a.neustart();
@@ -254,6 +287,8 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
     sweepAngesehen,
     aUeberschrieben,
     parkungen: a.parkZaehler + b.parkZaehler,
+    schranke: a.schrankeZaehler + b.schrankeZaehler,
+    beweisDa,
   };
 }
 

@@ -17,7 +17,7 @@
 // ausdruecklich („beim Start ist Herkunft ohnehin nicht ableitbar"). Ein Treiber
 // ohne Sweep kann den verbliebenen Schadensweg gar nicht sehen.
 
-import { SyncHandler } from '../src/sync-handler';
+import { SyncHandler, type SweepSchranke } from '../src/sync-handler';
 import { WriteProvenance } from '../src/write-provenance';
 import { CrdtManager } from '../src/crdt-manager';
 import { threeWayMerge, unionMerge } from '../src/text-merge';
@@ -78,7 +78,25 @@ export class Geraet {
     this.writingPaths.clear();
   }
 
+  // DER MESSSCHALTER. Er liegt am Geraet, nicht am Handler: der Handler ist nach
+  // einem Neustart weg, der Schalter muss ihn ueberleben.
+  private schranke: SweepSchranke = 'aus';
+  // AKTIVITAETSPROBE ueber Neustarts hinweg. Ohne sie ist nicht unterscheidbar, ob
+  // der Eingriff wirkt oder tot ist.
+  schrankeZaehler = 0;
+
+  setzeSchranke(v: SweepSchranke): void {
+    this.schranke = v;
+    this.sync.sweepSchranke = v;
+  }
+
   private baueSync(): SyncHandler {
+    const s = this.baueSyncRoh();
+    s.sweepSchranke = this.schranke;
+    return s;
+  }
+
+  private baueSyncRoh(): SyncHandler {
     return new SyncHandler(
       this.vault,
       this.crdt,
@@ -246,10 +264,15 @@ export class Geraet {
 
       const content = await this.vault.read(file);
       angesehen.push(notePath);
-      const merged = await this.sync.applyLocalContent(notePath, content);
+      // `true` = Sweep-Pfad. Nur hier greift die Sweep-Schranke — im modify-Pfad
+      // oben sitzt bereits DAS TOR.
+      const merged = await this.sync.applyLocalContent(notePath, content, true);
       await this.writeBackMerged(notePath, content, merged);
     }
     this.sweepMerker = naechster;
+    // Aktivitaetsprobe einsammeln, bevor der naechste Neustart den Handler wegwirft.
+    this.schrankeZaehler += this.sync.sweepSchrankeZaehler;
+    this.sync.sweepSchrankeZaehler = 0;
     return angesehen;
   }
 
