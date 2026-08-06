@@ -110,6 +110,10 @@ describe('Rueckfall der .md hinter den Merge-Zustand', () => {
           `divergent ${String(z.divergenz).padStart(3)} | ` +
           `doppelt ${String(z.doppel).padStart(3)} | ` +
           `sauber ${String(z.sauber).padStart(3)} | ` +
+          // DAS K.O.-KRITERIUM, hier bislang nur erhoben und nicht ausgegeben.
+          // Die Falsch-Positiv-Tabelle unten fuehrt es seit jeher; ohne dieselbe
+          // Spalte hier ist der Vergleich ueber alle Lagen nicht zu fuehren.
+          `GRUNDTEXT WEG ${String(z.grundtextWeg).padStart(3)} | ` +
           `Sweep sah ${z.sweepAngesehen} | ` +
           `Beweis da ${z.beweisDa} (davon ueberschrieben ${z.beweisDaUeber}) | ` +
           `greift ${z.schranke}`;

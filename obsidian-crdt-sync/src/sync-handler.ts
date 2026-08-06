@@ -41,7 +41,55 @@ export const QOLLAB_DIR = '.qollab';
 //                jeden Nachweis. Der bekannte naive Weg. Sie belegt, dass der
 //                Schalter die Testsuite ueberhaupt erreicht — faellt hier nichts,
 //                ist jede gruene Zahl der Kandidaten wertlos.
-export type SweepSchranke = 'aus' | 'exakt' | 'deckung' | 'signatur' | 'immer';
+//
+// DIE BASIS-VARIANTEN ('basis-*'). Gleiche Erkennung, ANDERE Wirkung: statt den
+// vorgefundenen Text wegzuparken (eine Alles-oder-nichts-Entscheidung, die mit dem
+// Fremdtext auch eine offline vorgenommene Loeschung mitnimmt), wird der Text der
+// erklaerenden fremden Revision zur DIFF-BASIS. Der lokale Diff laeuft dann normal
+// — nur gegen den Stand, den die Datei nachweislich mitgebracht hat, statt gegen
+// einen Vorfahren, den sie nie hatte.
+//
+//   'basis-exakt'    — Erkennung wie 'exakt'.
+//   'basis-signatur' — Erkennung wie 'signatur'.
+//   'basis-immer'    — MUTATIONSPROBE: jeder verfuegbare fremde Sibling liefert die
+//                      Basis. Anders als 'immer' braucht sie einen Sibling — eine
+//                      Basis ohne Text gibt es nicht.
+export type SweepSchranke =
+  | 'aus'
+  | 'exakt'
+  | 'deckung'
+  | 'signatur'
+  | 'immer'
+  | 'basis-exakt'
+  | 'basis-signatur'
+  | 'basis-immer';
+
+// Der Schalter traegt zwei Achsen: WORAN die Schranke den Fremdtext erkennt und WAS
+// sie mit dem Befund tut. Basis- und Park-Variante teilen sich die Erkennung —
+// gemessen wird allein die Wirkung.
+type SchrankenErkennung = 'exakt' | 'deckung' | 'signatur' | 'immer';
+
+function erkennungVon(v: SweepSchranke): SchrankenErkennung | null {
+  switch (v) {
+    case 'exakt':
+    case 'basis-exakt':
+      return 'exakt';
+    case 'deckung':
+      return 'deckung';
+    case 'signatur':
+    case 'basis-signatur':
+      return 'signatur';
+    case 'immer':
+    case 'basis-immer':
+      return 'immer';
+    default:
+      return null;
+  }
+}
+
+function istBasisVariante(v: SweepSchranke): boolean {
+  return v === 'basis-exakt' || v === 'basis-signatur' || v === 'basis-immer';
+}
 
 // Der Standardwert jedes neuen SyncHandler. `process` ist im Browser-Bundle nicht
 // definiert, deshalb der typeof-Riegel; ohne gesetzte Variable bleibt es 'aus'.
@@ -1482,7 +1530,10 @@ export class SyncHandler {
   // Eingriff tot und keine Zahl des Laufs sagt etwas ueber ihn aus.
   sweepSchrankeZaehler = 0;
 
-  // Wird `content` durch eine verfuegbare FREMDE Revision erklaert?
+  // Wird `content` durch eine verfuegbare FREMDE Revision erklaert? Rueckgabe ist
+  // deren TEXT — die Park-Varianten brauchen davon nur „ja/nein", die
+  // Basis-Varianten den Text selbst (er wird dort zur Diff-Basis). `null` heisst
+  // „kein Befund".
   //
   // Der Nachweis liegt auf der Platte und ueberlebt damit den Prozess: die fremde
   // Sidecar-Datei. Die EIGENE ist ausgeschlossen — ihr Stand ist per Definition der
@@ -1492,34 +1543,43 @@ export class SyncHandler {
     content: string,
     siblings: DecodedSibling[],
     docBeforeMerge: string
-  ): boolean {
-    // MUTATIONSPROBE: pauschal parken, ohne jeden Nachweis.
-    if (this.sweepSchranke === 'immer') return true;
+  ): string | null {
+    // MUTATIONSPROBE 'immer': pauschal parken, ohne jeden Nachweis — also auch ohne
+    // fremden Sibling. Der Rueckgabewert traegt hier bewusst keinen Text; die
+    // Park-Seite liest ihn nie. 'basis-immer' laeuft dagegen durch die Schleife,
+    // denn eine Basis ohne Text gibt es nicht.
+    if (this.sweepSchranke === 'immer') return '';
+    const erkennung = erkennungVon(this.sweepSchranke);
+    if (erkennung === null) return null;
     const ownPath = this.stateFilePath(notePath);
     const c = vergleichsfassung(content);
     const eigen = vergleichsfassung(docBeforeMerge);
     for (const s of siblings) {
       if (s.path === ownPath) continue;
       if (!carriesYjsOps(s.update)) continue;
-      const fremd = vergleichsfassung(textFromUpdate(s.update));
+      // Der ROHE Text ist die Basis: `vergleichsfassung` dient nur dem Vergleich.
+      const roh = textFromUpdate(s.update);
+      const fremd = vergleichsfassung(roh);
       if (fremd === '') continue;
-      if (this.sweepSchranke === 'exakt') {
-        if (fremd === c) return true;
-      } else if (this.sweepSchranke === 'deckung') {
+      if (erkennung === 'immer') {
+        return roh;
+      } else if (erkennung === 'exakt') {
+        if (fremd === c) return roh;
+      } else if (erkennung === 'deckung') {
         // `fremd` deckt `content` ab: der gelesene Text traegt nichts bei, was die
         // fremde Kette nicht schon hat.
-        if (unionMerge(c, fremd) === fremd) return true;
-      } else if (this.sweepSchranke === 'signatur') {
+        if (unionMerge(c, fremd) === fremd) return roh;
+      } else {
         // Zwei Haelften, beide noetig: `content` traegt eine Einfuegung, die nur die
         // fremde Revision beisteuert — und ihm fehlt Text, den nur der eigene
         // Doc-Stand hat. Erst zusammen ist das „ueberschrieben" statt „aufgeholt".
         const fremdNeu = insertedTexts(eigen, fremd);
         if (!fremdNeu.some((t) => c.includes(t))) continue;
         const eigenNur = insertedTexts(fremd, eigen);
-        if (eigenNur.some((t) => !c.includes(t))) return true;
+        if (eigenNur.some((t) => !c.includes(t))) return roh;
       }
     }
-    return false;
+    return null;
   }
 
   // Bringt eine lokale .md-Änderung in den CRDT.
@@ -1647,13 +1707,22 @@ export class SyncHandler {
     //
     // Nur im own-Branch: im Adopt-Zweig gibt es unten ohnehin keinen lokalen Diff
     // (base === undefined), Parken wuerde dort nur das `unite` unterdruecken.
-    if (
-      imSweep &&
-      !adopted &&
-      this.sweepSchranke !== 'aus' &&
-      this.fremdErklaert(notePath, content, siblings, docBeforeMerge)
-    ) {
-      this.sweepSchrankeZaehler++;
+    //
+    // ZWEITE WIRKUNG (Basis-Varianten, siehe SweepSchranke oben): Parken ist eine
+    // Alles-oder-nichts-Entscheidung — es rettet den eigenen Edit, nimmt aber eine
+    // offline vorgenommene LOESCHUNG mit, weil der Parkplatz per `unionMerge`
+    // aufloest und die geloeschte Zeile damit zurueckkehrt. Die Basis-Varianten
+    // parken deshalb nicht, sondern korrigieren nur den gemeinsamen Vorfahren: der
+    // Text der erklaerenden fremden Revision IST der Stand, den die Datei
+    // mitgebracht hat. Das Delta darauf ist genau das, was der Nutzer selbst getan
+    // hat — nichts (reine Ueberschreibung), eine Loeschung oder eine Einfuegung.
+    const fremdBasis =
+      imSweep && !adopted && this.sweepSchranke !== 'aus'
+        ? this.fremdErklaert(notePath, content, siblings, docBeforeMerge)
+        : null;
+    // AKTIVITAETSPROBE, fuer beide Wirkungen dieselbe Zaehlung.
+    if (fremdBasis !== null) this.sweepSchrankeZaehler++;
+    if (fremdBasis !== null && !istBasisVariante(this.sweepSchranke)) {
       this.parkForeign(notePath, content);
       // Der Doc bleibt auf dem fremd-gemergten Stand — `setContent(mergedText)` im
       // Aufrufer ist ein No-op. Kein lokaler Diff, keine eigene Op. Den Write-Back
@@ -1663,7 +1732,9 @@ export class SyncHandler {
 
     const base = adopted
       ? undefined
-      : this.chooseLocalDiffBase(notePath, content, docBeforeMerge, mergedText);
+      : fremdBasis !== null
+        ? fremdBasis
+        : this.chooseLocalDiffBase(notePath, content, docBeforeMerge, mergedText);
 
     // Task 13/A: Im Adopt-Zweig hat ensureDoc den .md-Text bereits mit dem
     // adoptierten Fremd-Stand VEREINIGT. Ein zusätzlicher 3-Wege-Merge würde ihn
