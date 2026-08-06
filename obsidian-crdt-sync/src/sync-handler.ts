@@ -10,6 +10,7 @@ import {
   decodeStateFile,
   generateGuid,
   hashBytes,
+  istGanzGenullt,
   StateFileIntegrityError,
 } from './state-file';
 import type { SidecarAdapter, DirListingCache } from './sidecar-io';
@@ -1122,6 +1123,9 @@ export class SyncHandler {
       // nicht in Gefahr — er liegt in der `.md` und wird dort vereinigt. Erst wenn
       // es gar nichts zu adoptieren gibt, entsteht eine neue GUID; dann gibt es
       // aber auch keine Inkarnation, von der sie sich abspalten könnte.
+      //
+      // Der letzte Satz stimmt nicht mehr, seit die Nullfüllung nachweislich auch
+      // das Magic trifft — siehe den Riegel unter `pickWinnerGuid`.
       this.onCorruptFile?.(own.path);
     }
 
@@ -1131,6 +1135,35 @@ export class SyncHandler {
       (await this.vault.listYjsFiles(notePath)).filter((p) => p !== ownPath)
     );
     const winner = this.pickWinnerGuid(foreign, undefined);
+    // P4b (Realtest r31): die eigene Datei liegt da, ist aber VOLLSTÄNDIG genullt —
+    // die vier Magic-Bytes mit. Damit ist sie für `decodeStateFile` headerlos
+    // (`guid: null`) und für `carriesYjsOps` leer; beide Fänge oben laufen ins
+    // Leere, und der Integritätsnachweis wird nie geprüft, weil er in genau den
+    // Bytes steht, die weg sind. Bis hierher war das der Adopt-Weg — und der prägt
+    // ohne fremde Inkarnation gleich unten `generateGuid()`: eine ERFUNDENE
+    // Inkarnation über eine Historie, die wir nur gerade nicht lesen können.
+    // Danach schriebe `saveState` sie über die beschädigte Datei und nähme dem
+    // Datei-Sync die Möglichkeit, sie noch zu vervollständigen.
+    //
+    // Deshalb hier dieselbe Behandlung wie beim verfehlten Integritätsnachweis und
+    // bei der Nullfüllung mit intaktem Kopf: gemeldet ist sie oben schon, hier wird
+    // abgebrochen. Der Aufrufer schreibt nichts, der nächste Trigger wiederholt.
+    // `own.update` IST hier die ganze Datei: dieser Punkt wird nur mit
+    // `own.guid === null` erreicht, und dann liefert `decodeStateFile` den
+    // vollständigen Inhalt als Update.
+    //
+    // Zwei Engführungen, beide an bestehenden Zusagen gemessen, die sonst fielen:
+    //   - `istGanzGenullt` statt „trägt keine Ops": Eine 0-Byte-Datei und fremde
+    //     Bytes bezeugen keine früher gültige Datei und bleiben der Adopt-Weg
+    //     (`legacy-misclassification.test.ts`, `corrupt-sidecar.test.ts`).
+    //   - `winner === undefined`: Liegt eine lebende fremde Inkarnation vor, wird
+    //     nichts erfunden — sie wird adoptiert, der lokale Text unten vereinigt,
+    //     und die Lage heilt von selbst (in aller Regel ist die fremde Kennung
+    //     ohnehin die eigene, beide Geräte teilen sie). Ein Abbruch legte dann eine
+    //     Notiz still, der nichts fehlt.
+    if (own && winner === undefined && istGanzGenullt(own.update)) {
+      throw new SidecarReadError(own.path);
+    }
     this.guids.set(notePath, winner ?? generateGuid());
     this.mergeCompatible(notePath, foreign);
     // Task 20: Beim Adoptieren gewinnt genau eine fremde Kette; liegen mehrere
