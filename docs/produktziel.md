@@ -135,16 +135,40 @@ sie nicht wiederkehren.
 **Diese Punkte sind nicht entschieden. Wer hier weiterarbeitet, muss sie auflösen statt eine Seite
 zu übernehmen.**
 
-1. **Kausale Schranke bei Löschungen.** `[[CRDT-Delete-vs-Edit-Semantik]]` (Vault) führt
-   `Y.encodeStateVectorFromUpdate` als **offenen, noch nicht umgesetzten** Hebel für Variante B
-   (Tombstone mit kausaler Schranke). Der Folgeprompt vom 2026-08-07 führt dasselbe unter
-   „gemessen widerlegt, nicht neu aufrollen". **Beides kann nicht stimmen** — und daran hängen die
-   47,4 % wiederbelebter Zeilen.
-2. **Wie viel der 47,4 % ist überhaupt ein Fehler?** Nach Shapiro et al. ist Add-wins der
-   Standard: ein nebenläufiger Edit gewinnt legitim gegen ein Delete. Qollab fährt Add-wins
-   **ohne** kausale Schranke und kann deshalb nicht unterscheiden, ob die Löschung den fremden
-   Stand kannte. Ein Teil der Rate ist also korrektes Verhalten. **Wie groß der Teil ist, ist nicht
-   gemessen.**
+1. ~~**Kausale Schranke bei Löschungen.**~~ **Aufgelöst am 2026-08-07.** Die Vault-Note war um
+   zwölf Stunden veraltet (geschrieben 11:23, Messung 23:56), der Folgeprompt hatte recht.
+   `Y.encodeStateVectorFromUpdate` trägt die Schranke **nicht** — und zwar strukturell, nicht
+   ratenbedingt: Eine Löschung erzeugt in Yjs keinen Struct und hebt keine clock, sie steht
+   ausschließlich im DeleteSet. Selbst nachgemessen: Update wächst (38 → 54 Byte), State-Vector
+   bleibt byteidentisch. Die Vault-Note ist korrigiert.
+
+   **Was daraus folgt, ist wichtiger als der aufgelöste Widerspruch:** Ohne gemeinsame Historie
+   ist eine kausale Schranke **jeder** Bauart uninformativ (Spike `zzPRF-sv-blind`, PRF5) — im
+   SV-Teil wie im DeleteSet-Teil. Da genau die Zellen ohne gemeinsame Historie 53–83 %
+   Wiederbelebung tragen, heißt das: **Der Erstkontakt muss vor der Löschsemantik gelöst sein**,
+   nicht danach.
+2. ~~**Wie viel der 47,4 % ist überhaupt ein Fehler?**~~ **Beantwortet am 2026-08-07: über 99 %
+   sind kein Fehler.** Gemessen über 65 Zellen à 720 Zustellordnungen (46.800 Läufe), Kausalität
+   über den Yjs-Zustandsvektor statt über den Text: Von rund 19.874 Wiederbelebungen sind **24
+   fehlerhaft (0,12 %)**; von 6.960 kausal nachgelagerten Löschungen werden **24 wiederbelebt
+   (0,34 %)**. Ab dem dritten Zustellereignis gilt exakt `Wiederbelebungen = 720 − kausal
+   nachgelagerte` — **jede kausal nachgelagerte Löschung hält, jede nebenläufige wird
+   wiederbelebt.** Genau das schreibt Add-wins vor.
+
+   **Der Grund ist strukturell:** Eine Wiederbelebung setzt voraus, dass die gelöschte Zeile beim
+   Peer als *anderes Item* existiert — das gibt es nur ohne gemeinsame Inkarnation. Ohne
+   gemeinsame Inkarnation gibt es aber auch keine Kausalität, gegen die man prüfen könnte. Zwei
+   unabhängige Wege sagen damit dasselbe wie Punkt 1: **Der Hebel ist der Erstkontakt, nicht die
+   Delete-Semantik.**
+
+   **Die 24 echten Fälle bleiben ein Bug** mit klarer Adresse: `unionMerge` in `tickParked`
+   (`src/sync-handler.ts:514`). Vereinigen kann nichts löschen.
+
+   **Zwei Einschränkungen, ausdrücklich:** Die 47,4 % selbst wurden dabei **nicht** reproduziert —
+   sie stammen aus einem Apparat auf `mess/verdopplung` mit anderer Zellbasis. Und die 0,12 % sind
+   eine Zusammenfassung der Messmatrix, keine Feldrate: Beschränkt man sich auf Zellen mit
+   geteilter Historie, liegt die Fehlerquote unter den Wiederbelebungen bei **37,5 %**. „Das
+   Problem ist klein" gilt für die Rate, nicht für die Schwere im Einzelfall.
 3. **`isFileProcessing` bei obsidian-livesync.** Als Vorbild zitiert, laut
    `.superpowers/sdd/recherche-herkunft-2026-08-04-b.md` existiert die Funktion dort nicht.
    Ungeklärt.
