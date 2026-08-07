@@ -36,6 +36,7 @@ import { decodeStateFile } from '../src/state-file';
 import { textFromUpdate, type DiffModus } from '../src/crdt-manager';
 import { setzeGuidFolge, guidQuelleAn } from './guid-quelle';
 import { setzeZufallSeed, zufallQuelleAn, seedAusKonfig } from './zufall-quelle';
+import type { Kennung } from './saat-kennung';
 
 export const NOTE = 'note.md';
 const BASIS = 'kopf\nzeile-1\nzeile-2\nzeile-3\nfuss\n';
@@ -309,6 +310,35 @@ export type EditArt = 'getrennt' | 'gleiche-zeile';
 //            der anderen beiden Arme ist die Zelle aber NICHT gepaart.
 export type Transport = 'datei' | 'atomar' | 'atomar-einmal';
 
+// WANN und WOMIT die Notiz gepraegt wird — die Achse, ohne die der Kandidat
+// „Saat-Kennung" gar nicht messbar ist.
+//
+// 'bestand'    — Bestand des Harness UND des Produkts: die Inkarnation entsteht
+//                beim ERSTEN Nutzer-Edit. Der Start-Sweep ueberspringt eine
+//                Notiz, die weder eine eigene noch eine adoptierbare fremde
+//                Hilfsdatei hat (`main.ts:1346`, Kommentar dort: „Sonst entsteht
+//                die GUID beim ersten echten Edit (modify-Handler)"). Der
+//                Saattext traegt damit bereits den eigenen Marker — A praegt auf
+//                `basis+AAA`, B auf `basis+BBB`.
+// 'gleich'     — VORAB-ERFASSUNG, ausdruecklich KEIN Betriebszustand: beide
+//                Geraete erfassen den unberuehrten Grundtext, BEVOR sie
+//                editieren. Nur so koennen beide Saattexte ueberhaupt gleich
+//                sein. Das ist der BESTE FALL fuer den Kandidaten, konstruiert,
+//                damit er nicht an einer Nebenbedingung scheitert.
+// 'abweichend' — DER HARTE FALL. Wie 'gleich', aber B legt die Notiz mit einer
+//                Zeile MEHR an (`SAAT_ZUSATZ`). Genau die Lage, an der der
+//                Vorgaenger „Content-Hash als Identitaetsbasis" gestorben ist:
+//                unter realistischer Verzoegerung sind die Bootstrap-Texte
+//                verschieden.
+export type SaatLage = 'bestand' | 'gleich' | 'abweichend';
+
+// B's zusaetzliche Zeile in der Lage 'abweichend'. Sie steht BEWUSST NICHT in
+// `tokens`: sonst waere die Spalte „still verloren" zwischen den drei Saatlagen
+// nicht mehr vergleichbar (drei Marker statt zwei). Ihr Schicksal wird
+// stattdessen in eigenen Spalten (`zusatzWeg`/`zusatzDoppelt`) ausgewiesen —
+// verschwiegen wird es nicht.
+export const SAAT_ZUSATZ = 'ZUS';
+
 export interface Konfig {
   lage: Lage;
   // Permutation von [0..5] bei zwei Geraeten, von [0..8] bei dreien.
@@ -344,6 +374,14 @@ export interface Konfig {
   // Ohne Angabe 'datei' — dann laeuft exakt der Bestandsaufbau, Ereignis fuer
   // Ereignis unveraendert.
   transport?: Transport;
+  // Ohne Angabe 'zufall' — der Bestand. Der Seed haengt bewusst NICHT daran,
+  // damit Bestand und Kandidat ueber DIESELBE Kennungs- und clientID-Folge
+  // laufen und ein Unterschied dem Kandidaten zuzuschreiben ist.
+  kennung?: Kennung;
+  // Ohne Angabe 'bestand' — dann laeuft exakt der Bestandsaufbau. Der Seed
+  // haengt ebenfalls nicht daran; 'bestand' und 'gleich' sind damit ueber
+  // dieselbe Zufallsfolge gepaart.
+  saatLage?: SaatLage;
   // Nach WIE VIELEN Zustellereignissen greift der Nutzer ein? `0` = vor allen,
   // `3` = nach dem dritten. Ohne Angabe nach allen — der Bestand jeder
   // bisherigen Lage, Zahl fuer Zahl unveraendert.
@@ -485,6 +523,17 @@ export interface Ergebnis {
   // Grundzeilen, die am Ende auf mindestens einem Geraet MEHRFACH als ganze Zeile
   // dastehen — das strenge Gegenstueck zu `Befund.doppel`.
   ganzDoppelt: string[];
+  // DIE GEGENPROBE ZUR SAAT-KENNUNG: Haben A und B mindestens EINE Kennung
+  // GEMEINSAM gepraegt? Nur dann ist ein hergestellter Vorfahre entstanden.
+  // Bleibt die Zahl 0, misst der Lauf den Kandidaten NICHT — er misst dann nur,
+  // dass zwei verschiedene Zahlen weiterhin verschieden sind.
+  saatGleich: boolean;
+  // Wie viele Praegungen es ueberhaupt gab (ueber alle Geraete). Ohne diese Zahl
+  // waere `saatGleich === false` nicht von „es wurde nie gepraegt" zu trennen.
+  saatPraegungen: number;
+  // Nur `saatLage === 'abweichend'`: das Schicksal von B's zusaetzlicher Zeile.
+  zusatzWeg: boolean;
+  zusatzDoppelt: boolean;
   // Die Zwischenstaende — nur befuellt, wenn `Konfig.spur` gesetzt ist.
   spur: Schritt[];
 }
@@ -547,7 +596,9 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
     g.parkFrist = 4;
     g.setzeSchranke(k.schranke ?? 'aus');
     g.setzeDiffModus(k.diffModus ?? 'roh');
+    g.setzeKennung(k.kennung ?? 'zufall');
   }
+  const saatLage = k.saatLage ?? 'bestand';
   const w = new Wolke(geraete);
   w.konfliktModus = k.konfliktModus;
 
@@ -671,6 +722,31 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
       await a.poll(NOTE);
       w.ladeSidecarsHerunter(b);
       await b.poll(NOTE);
+    }
+  }
+
+  // --- Die VORAB-ERFASSUNG (nur fuer die Saat-Kennung) ---------------------
+  // Sie ist AUSDRUECKLICH KEIN Betriebszustand (siehe `SaatLage`): im Produkt
+  // entsteht die Inkarnation erst beim ersten Nutzer-Edit, der Saattext traegt
+  // dann schon den eigenen Marker. Ohne diesen Block kann die Saat-Kennung im
+  // Erstkontakt gar nicht erst gleich ausfallen — und ein Kandidat, der nur an
+  // einer Nebenbedingung scheitert, ist nicht widerlegt, sondern ungemessen.
+  //
+  // Gefahren wird sie ueber `tippe` + `modify`, also ueber den Adapter: das ist
+  // der Weg, den die Schreibspur als EIGEN erkennt und den `applyLocalContent`
+  // im Produkt nimmt. Ein `setMd` wuerde am Tor geparkt statt erfasst.
+  if (saatLage !== 'bestand') {
+    for (const g of geraete) {
+      // 'abweichend': B legt die Notiz mit einer Zeile MEHR an — der
+      // Tippfehler-Fall, an dem der Content-Hash-Vorgaenger gestorben ist.
+      let text = g.md(NOTE);
+      if (g === b && saatLage === 'abweichend') {
+        const z = text.split('\n');
+        z.splice(1, 0, SAAT_ZUSATZ);
+        text = z.join('\n');
+      }
+      await g.tippe(NOTE, text);
+      await g.modify(NOTE);
     }
   }
 
@@ -1015,6 +1091,16 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
     !daB &&
     !alleKopien.some((kk) => occ(kk, OFFLINE) > 0);
 
+  // DIE GEGENPROBE. `gepraegteKennungen` ist ueber Neustarts hinweg gesammelt
+  // und bei `kennung: 'zufall'` per Bau leer — dort ist `saatGleich` also immer
+  // `false`, und das ist kein Messwert, sondern die Bauart.
+  const kennA = a.gepraegteKennungen;
+  const kennB = b.gepraegteKennungen;
+  const saatGleich = kennA.some((x) => kennB.includes(x));
+  const saatPraegungen = geraete.reduce((s, g) => s + g.gepraegteKennungen.length, 0);
+  const zusatzWeg = saatLage === 'abweichend' && alleMd.some((t) => occ(t, SAAT_ZUSATZ) === 0);
+  const zusatzDoppelt = saatLage === 'abweichend' && alleMd.some((t) => occ(t, SAAT_ZUSATZ) > 1);
+
   return {
     befund,
     tokens,
@@ -1047,6 +1133,10 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
     ganzFehltB,
     grundtextGanzDa,
     ganzDoppelt,
+    saatGleich,
+    saatPraegungen,
+    zusatzWeg,
+    zusatzDoppelt,
     spur,
   };
 }

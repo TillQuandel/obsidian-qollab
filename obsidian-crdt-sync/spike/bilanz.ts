@@ -45,6 +45,14 @@ export interface Zellwerte {
   grundtextWeg: number; // K.O., lockeres Mass (`occ`, Teilstring)
   ganzWeg: number; // K.O., STRENGES Mass (ganze Zeile)
   ganzDoppel: number; // strenge Verdopplung einer GRUNDZEILE
+  // GEGENPROBE ZUR SAAT-KENNUNG: in wie vielen Laeufen haben A und B DIESELBE
+  // Kennung gepraegt? Bleibt die Zahl 0, misst die Zelle den Kandidaten nicht.
+  saatGleich: number;
+  saatPraegungen: number;
+  // Nur `saatLage === 'abweichend'`: B's zusaetzliche Zeile fehlt am Ende auf
+  // mindestens einem Geraet bzw. steht dort mehrfach.
+  zusatzWeg: number;
+  zusatzDoppelt: number;
   diffGeaendert: number;
   parkungen: number;
   // AUFWAND: dekodierte Geschwister-Texte gegen die Zahl beim fruehen Ausstieg,
@@ -84,6 +92,10 @@ const leer = (): Zellwerte => ({
   grundtextWeg: 0,
   ganzWeg: 0,
   ganzDoppel: 0,
+  saatGleich: 0,
+  saatPraegungen: 0,
+  zusatzWeg: 0,
+  zusatzDoppelt: 0,
   diffGeaendert: 0,
   parkungen: 0,
   text: 0,
@@ -135,6 +147,10 @@ export async function messe(
     if (!e.grundtextDa) z.grundtextWeg++;
     if (!e.grundtextGanzDa) z.ganzWeg++;
     if (e.ganzDoppelt.length > 0) z.ganzDoppel++;
+    if (e.saatGleich) z.saatGleich++;
+    z.saatPraegungen += e.saatPraegungen;
+    if (e.zusatzWeg) z.zusatzWeg++;
+    if (e.zusatzDoppelt) z.zusatzDoppelt++;
     z.diffGeaendert += e.diffGeaendert;
     z.parkungen += e.parkungen;
     z.text += e.schrankeText;
@@ -163,6 +179,8 @@ export function zeile(name: string, z: Zellwerte): string {
     `andere Wahl ${z3(z.andereWahl)}) | ` +
     `Eingriff durch ${z3(z.eingriffDurch)} | park ${z3(z.parkungen)} | ` +
     `diff-geaendert ${z.diffGeaendert} | ` +
+    `SAAT GLEICH ${z3(z.saatGleich)} (Praegungen ${z.saatPraegungen}) | ` +
+    `Zusatz weg ${z3(z.zusatzWeg)} doppelt ${z3(z.zusatzDoppelt)} | ` +
     `Aufwand: Text ${z.text} (frueher ${z.textFrueher}), Abstand ${z.abstand}, ` +
     `${(z.ms / Math.max(1, z.n)).toFixed(1)} ms/Lauf` +
     (z.loeschLauf > 0 ? ' | ' + kausalzeile(z) : '')

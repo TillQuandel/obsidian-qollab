@@ -19,7 +19,8 @@
 
 import { SyncHandler, type SweepSchranke } from '../src/sync-handler';
 import { WriteProvenance } from '../src/write-provenance';
-import { CrdtManager, type DiffModus } from '../src/crdt-manager';
+import { type DiffModus } from '../src/crdt-manager';
+import { SaatCrdtManager, type Kennung } from './saat-kennung';
 import { threeWayMerge, unionMerge } from '../src/text-merge';
 import { sidecarExists, listAllSidecars, statSidecar } from '../src/sidecar-io';
 import { makeVaultMock } from '../tests/helpers/vault-mock';
@@ -46,7 +47,10 @@ export class Geraet {
   readonly vault = makeVaultMock() as any;
   // DER PROZESS. Alles hier ist nach einem Neustart weg und wird aus der Platte
   // neu aufgebaut. Deshalb NICHT readonly.
-  crdt = new CrdtManager();
+  // Der PRODUKTIVE Manager, nur um den Saat-Schalter erweitert (`spike/
+  // saat-kennung.ts`). Mit `kennung: 'zufall'` ist er Zeile fuer Zeile der
+  // Bestand — `setContent` faellt dann sofort auf `super` durch.
+  crdt = new SaatCrdtManager();
   sync: SyncHandler;
   // DIE ECHTE SCHREIBSPUR, nicht die Grundwahrheit `quelle`. Damit misst dieser
   // Treiber das ganze System: Signal, Tor, Parkplatz, Frist und Nachtrag sind
@@ -74,8 +78,12 @@ export class Geraet {
     // Der Zaehler des alten Managers muss VOR dem Wegwerfen eingesammelt werden —
     // sonst zaehlt die Aktivitaetsprobe nur, was nach dem Neustart passierte.
     this.diffZaehler += this.crdt.diffGeaendert;
-    this.crdt = new CrdtManager();
+    // Dasselbe fuer die Gegenprobe der Saat-Kennung: die Praegungen des alten
+    // Managers muessen VOR dem Wegwerfen eingesammelt werden.
+    this.gepraegtFrueher = this.gepraegteKennungen;
+    this.crdt = new SaatCrdtManager();
     this.crdt.diffModus = this.diffModus;
+    this.crdt.kennung = this.kennung;
     this.sync = this.baueSync();
     this.provenance = new WriteProvenance(this.vault.adapter);
     this.provenance.install();
@@ -119,6 +127,23 @@ export class Geraet {
 
   get diffGeaendert(): number {
     return this.diffZaehler + this.crdt.diffGeaendert;
+  }
+
+  // DER DRITTE MESSSCHALTER: woraus die clientID der Saat-Transaktion stammt.
+  // Wie Schranke und Diff-Modus liegt er am Geraet und nicht am Manager — der
+  // Manager ist nach einem Neustart weg, der Schalter muss ihn ueberleben.
+  private kennung: Kennung = 'zufall';
+  // GEGENPROBE ueber Neustarts hinweg, aufsummiert aus weggeworfenen Managern;
+  // der lebende Manager kommt im Getter dazu.
+  private gepraegtFrueher: number[] = [];
+
+  setzeKennung(v: Kennung): void {
+    this.kennung = v;
+    this.crdt.kennung = v;
+  }
+
+  get gepraegteKennungen(): number[] {
+    return [...this.gepraegtFrueher, ...this.crdt.gepraegt];
   }
 
   private baueSync(): SyncHandler {
