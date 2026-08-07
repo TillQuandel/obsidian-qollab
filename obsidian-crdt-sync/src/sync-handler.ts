@@ -54,6 +54,15 @@ export const QOLLAB_DIR = '.qollab';
 //   'basis-immer'    — MUTATIONSPROBE: jeder verfuegbare fremde Sibling liefert die
 //                      Basis. Anders als 'immer' braucht sie einen Sibling — eine
 //                      Basis ohne Text gibt es nicht.
+//
+// DIE WAHLREGEL bei mehreren erklaerenden Geschwistern (ab drei Geraeten moeglich):
+//   'basis-signatur'  — nimmt den ERSTEN Treffer in Listenreihenfolge. Das ist der
+//                       Bestand seit `82b9fdb`; bei genau einem fremden Geraet kann
+//                       es gar keine zweite Wahl geben.
+//   'basis-naechster' — gleiche Erkennung wie 'basis-signatur', aber unter mehreren
+//                       Treffern gewinnt der, dessen Text dem vorgefundenen
+//                       `content` am naechsten liegt. Bei Gleichstand bleibt der
+//                       erste stehen, damit die Wahl deterministisch ist.
 export type SweepSchranke =
   | 'aus'
   | 'exakt'
@@ -62,7 +71,8 @@ export type SweepSchranke =
   | 'immer'
   | 'basis-exakt'
   | 'basis-signatur'
-  | 'basis-immer';
+  | 'basis-immer'
+  | 'basis-naechster';
 
 // Der Schalter traegt zwei Achsen: WORAN die Schranke den Fremdtext erkennt und WAS
 // sie mit dem Befund tut. Basis- und Park-Variante teilen sich die Erkennung —
@@ -78,6 +88,7 @@ function erkennungVon(v: SweepSchranke): SchrankenErkennung | null {
       return 'deckung';
     case 'signatur':
     case 'basis-signatur':
+    case 'basis-naechster':
       return 'signatur';
     case 'immer':
     case 'basis-immer':
@@ -88,7 +99,24 @@ function erkennungVon(v: SweepSchranke): SchrankenErkennung | null {
 }
 
 function istBasisVariante(v: SweepSchranke): boolean {
-  return v === 'basis-exakt' || v === 'basis-signatur' || v === 'basis-immer';
+  return (
+    v === 'basis-exakt' ||
+    v === 'basis-signatur' ||
+    v === 'basis-immer' ||
+    v === 'basis-naechster'
+  );
+}
+
+// Wie weit liegen zwei Texte auseinander? Summe der Zeichen, die von `a` nach `b`
+// eingefuegt und von `b` nach `a` eingefuegt werden — ein symmetrisches Mass ueber
+// dieselbe Diff-Maschine, die die Erkennung ohnehin benutzt. Nur die Wahlregel
+// 'basis-naechster' braucht es, und nur bei mehr als einem Treffer.
+function abstand(a: string, b: string): number {
+  if (a === b) return 0;
+  let n = 0;
+  for (const t of insertedTexts(a, b)) n += t.length;
+  for (const t of insertedTexts(b, a)) n += t.length;
+  return n;
 }
 
 // Der Standardwert jedes neuen SyncHandler. `process` ist im Browser-Bundle nicht
@@ -1537,6 +1565,15 @@ export class SyncHandler {
   // AKTIVITAETSPROBE: Wie oft hat die Schranke gegriffen? Ist die Zahl 0, ist der
   // Eingriff tot und keine Zahl des Laufs sagt etwas ueber ihn aus.
   sweepSchrankeZaehler = 0;
+  // MEHRDEUTIGKEITSPROBE (ab drei Geraeten): Wie oft lag MEHR ALS EIN erklaerender
+  // Sibling vor — und wie viele waren es zusammengenommen? Ohne beide Zahlen ist
+  // „der erste Treffer gewinnt" nicht zu beurteilen: bei genau einem fremden
+  // Geraet ist die Wahl gar keine.
+  sweepSchrankeMehrfach = 0;
+  sweepSchrankeTreffer = 0;
+  // Wie oft haette die Wahlregel 'basis-naechster' einen ANDEREN Sibling genommen
+  // als den ersten? Die Zahl trennt „mehrdeutig" von „folgenreich mehrdeutig".
+  sweepSchrankeAndereWahl = 0;
 
   // Wird `content` durch eine verfuegbare FREMDE Revision erklaert? Rueckgabe ist
   // deren TEXT — die Park-Varianten brauchen davon nur „ja/nein", die
@@ -1562,6 +1599,11 @@ export class SyncHandler {
     const ownPath = this.stateFilePath(notePath);
     const c = vergleichsfassung(content);
     const eigen = vergleichsfassung(docBeforeMerge);
+    // ALLE Treffer statt eines fruehen `return`. Die Listenreihenfolge bleibt
+    // unangetastet, `treffer[0]` ist also woertlich der Wert, den die Fassung mit
+    // dem fruehen Ausstieg geliefert hat — gesammelt wird nur, weil sich die
+    // Mehrdeutigkeit sonst nicht zaehlen laesst und die Wahlregel unten sie braucht.
+    const treffer: string[] = [];
     for (const s of siblings) {
       if (s.path === ownPath) continue;
       if (!carriesYjsOps(s.update)) continue;
@@ -1570,13 +1612,13 @@ export class SyncHandler {
       const fremd = vergleichsfassung(roh);
       if (fremd === '') continue;
       if (erkennung === 'immer') {
-        return roh;
+        treffer.push(roh);
       } else if (erkennung === 'exakt') {
-        if (fremd === c) return roh;
+        if (fremd === c) treffer.push(roh);
       } else if (erkennung === 'deckung') {
         // `fremd` deckt `content` ab: der gelesene Text traegt nichts bei, was die
         // fremde Kette nicht schon hat.
-        if (unionMerge(c, fremd) === fremd) return roh;
+        if (unionMerge(c, fremd) === fremd) treffer.push(roh);
       } else {
         // Zwei Haelften, beide noetig: `content` traegt eine Einfuegung, die nur die
         // fremde Revision beisteuert — und ihm fehlt Text, den nur der eigene
@@ -1584,10 +1626,28 @@ export class SyncHandler {
         const fremdNeu = insertedTexts(eigen, fremd);
         if (!fremdNeu.some((t) => c.includes(t))) continue;
         const eigenNur = insertedTexts(fremd, eigen);
-        if (eigenNur.some((t) => !c.includes(t))) return roh;
+        if (eigenNur.some((t) => !c.includes(t))) treffer.push(roh);
       }
     }
-    return null;
+    if (treffer.length === 0) return null;
+    this.sweepSchrankeTreffer += treffer.length;
+    if (treffer.length > 1) this.sweepSchrankeMehrfach++;
+    // DIE WAHLREGEL. Bestand: der erste Treffer — und zwar OHNE weitere Rechnung,
+    // damit der Standardstand auch im Aufwand unveraendert bleibt. Der Abstand wird
+    // nur unter 'basis-naechster' ueberhaupt gebildet; wie oft er die Wahl aendert,
+    // steht deshalb im Zaehler DIESES Standes, nicht im Lauf des Bestands.
+    if (this.sweepSchranke !== 'basis-naechster' || treffer.length === 1) return treffer[0];
+    let bester = treffer[0];
+    let besterAbstand = abstand(vergleichsfassung(bester), c);
+    for (const roh of treffer.slice(1)) {
+      const d = abstand(vergleichsfassung(roh), c);
+      if (d < besterAbstand) {
+        bester = roh;
+        besterAbstand = d;
+      }
+    }
+    if (bester !== treffer[0]) this.sweepSchrankeAndereWahl++;
+    return bester;
   }
 
   // Bringt eine lokale .md-Änderung in den CRDT.

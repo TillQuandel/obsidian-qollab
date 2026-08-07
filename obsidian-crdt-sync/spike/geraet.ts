@@ -88,6 +88,12 @@ export class Geraet {
   // AKTIVITAETSPROBE ueber Neustarts hinweg. Ohne sie ist nicht unterscheidbar, ob
   // der Eingriff wirkt oder tot ist.
   schrankeZaehler = 0;
+  // MEHRDEUTIGKEITSPROBE, ebenfalls ueber Neustarts hinweg: wie oft lagen mehrere
+  // erklaerende Geschwister vor, wie viele waren es zusammen, und wie oft haette
+  // die Wahlregel 'basis-naechster' einen anderen genommen.
+  schrankeMehrfachZaehler = 0;
+  schrankeTrefferZaehler = 0;
+  schrankeAndereWahlZaehler = 0;
 
   setzeSchranke(v: SweepSchranke): void {
     this.schranke = v;
@@ -294,6 +300,12 @@ export class Geraet {
     // Aktivitaetsprobe einsammeln, bevor der naechste Neustart den Handler wegwirft.
     this.schrankeZaehler += this.sync.sweepSchrankeZaehler;
     this.sync.sweepSchrankeZaehler = 0;
+    this.schrankeMehrfachZaehler += this.sync.sweepSchrankeMehrfach;
+    this.sync.sweepSchrankeMehrfach = 0;
+    this.schrankeTrefferZaehler += this.sync.sweepSchrankeTreffer;
+    this.sync.sweepSchrankeTreffer = 0;
+    this.schrankeAndereWahlZaehler += this.sync.sweepSchrankeAndereWahl;
+    this.sync.sweepSchrankeAndereWahl = 0;
     return angesehen;
   }
 

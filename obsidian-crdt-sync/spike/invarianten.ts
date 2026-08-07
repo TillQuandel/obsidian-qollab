@@ -26,15 +26,22 @@ export interface Befund {
 }
 
 export function bewerte(aText: string, bText: string, tokens: string[]): Befund {
+  return bewerteN([aText, bText], tokens);
+}
+
+// Dieselbe Bewertung fuer BELIEBIG VIELE Geraete — mit dreien gibt es drei Paare,
+// und „auf mindestens einer Seite" ist dann eine Aussage ueber drei Texte. Mit
+// zwei Texten ist es ziffernweise `bewerte` von oben; es gibt bewusst nur EINE
+// Implementierung, damit die Zahlen der Zwei-Geraete-Laeufe unberuehrt bleiben.
+export function bewerteN(texte: string[], tokens: string[]): Befund {
   const verlust: string[] = [];
   const doppel: string[] = [];
   for (const t of tokens) {
-    const na = occ(aText, t);
-    const nb = occ(bText, t);
-    if (na === 0 || nb === 0) verlust.push(t);
-    if (na > 1 || nb > 1) doppel.push(t);
+    const zahlen = texte.map((x) => occ(x, t));
+    if (zahlen.some((z) => z === 0)) verlust.push(t);
+    if (zahlen.some((z) => z > 1)) doppel.push(t);
   }
-  const divergenz = aText !== bText;
+  const divergenz = texte.some((x) => x !== texte[0]);
   return {
     divergenz,
     verlust,

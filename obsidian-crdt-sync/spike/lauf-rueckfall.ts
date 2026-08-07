@@ -30,7 +30,7 @@
 import { Geraet } from './geraet';
 import type { SweepSchranke } from '../src/sync-handler';
 import { Wolke } from './wolke';
-import { bewerte, occ, type Befund } from './invarianten';
+import { bewerteN, occ, type Befund } from './invarianten';
 import { decodeStateFile } from '../src/state-file';
 import { textFromUpdate, type DiffModus } from '../src/crdt-manager';
 import { setzeGuidFolge, guidQuelleAn } from './guid-quelle';
@@ -45,6 +45,11 @@ const GEMEINSAM = BASIS.replace('fuss\n', 'gemeinsam\nfuss\n');
 const KLEIN = '00000000000000000000000000000000';
 const GROSS = 'ffffffffffffffffffffffffffffffff';
 const MITTE = '8888888888888888888888888888888888'.slice(0, 32);
+// Die Kennungen des DRITTEN Geraets. Sie liegen zwischen MITTE und GROSS, damit C
+// den Tie-Break der umkaempften Note weder gewinnt noch mit B gleichzieht. Sie
+// werden NUR bei `geraete: 3` an die Folge gehaengt — mit zwei Geraeten ist die
+// Kennungsfolge damit Zeichen fuer Zeichen die des Bestands.
+const HOCH = 'cccccccccccccccccccccccccccccccc';
 
 // DER EIGENE OFFLINE-BAUSTEIN. Er kommt in KEINER Hilfsdatei vor — weder in A's
 // noch in B's —, denn er entsteht erst NACH der Zustellphase und ausserhalb von
@@ -78,6 +83,13 @@ export interface Notiz {
   posB: number; // dito fuer B / BBB
   posOffline: number; // dito fuer den Offline-Baustein OFFLINE
   geloescht: string[]; // die bei geschlossener App entfernten Zeilen
+  // Nur bei `geraete: 3`: der Zeilenindex des dritten Geraets (CCC). Bewusst
+  // hinter B, damit alle drei Eingriffe an VERSCHIEDENEN Stellen sitzen — sonst
+  // vermischte sich der Mehrgeraete-Fall mit dem Gleiche-Zeile-Fall.
+  posC?: number;
+  // Nur bei `editArt: 'gleiche-zeile'`: die GRUNDZEILE, die A und B BEIDE
+  // veraendern. Sie muss im Grundtext genau einmal als ganze Zeile vorkommen.
+  zeileGleich?: string;
 }
 
 export const NOTIZ_KLEIN: Notiz = {
@@ -87,6 +99,10 @@ export const NOTIZ_KLEIN: Notiz = {
   posB: 3,
   posOffline: 1,
   geloescht: [GELOESCHT],
+  // GEMEINSAM ist `kopf/zeile-1/zeile-2/zeile-3/gemeinsam/fuss/''` — Index 5 setzt
+  // C zwischen `gemeinsam` und `fuss`, also hinter B (Index 3).
+  posC: 5,
+  zeileGleich: 'zeile-2',
 };
 
 // Fuellwoerter der grossen Notiz. Bewusst klein geschrieben und ohne 'AAA',
@@ -207,9 +223,37 @@ export type Lage =
   | 'neustart-rueckspielung'
   | 'neustart-offline-loeschung';
 
+// DIE ZELLBASIS, portiert aus `spike/lauf.ts` auf `mess/verdopplung` (dort
+// `Szenario`). Sie beschreibt, was VOR der Divergenzphase schon da war:
+//
+// 'geteilt' — Bestand dieses Treibers und einzige bisher gefahrene Zelle: beide
+//             Geraete sind etabliert UND die umkaempfte Note hat bereits eine
+//             gemeinsame Historie. Es gibt keinen Praegemoment.
+// 'alltag'  — beide etabliert (eigene Hilfsdatei ueber die Kontext-Note), die
+//             umkaempfte Note hat aber KEINE gemeinsame Historie. Beide koennen
+//             sie unabhaengig praegen.
+// 'rollout' — B ist frisch: keine eigene Hilfsdatei irgendwo. `.qollab/` trifft
+//             verzoegert ein (`sperreBis`).
+//
+// WARUM DIE BEIDEN DAZUKOMMEN: Der frueher gefallene Geschwister-Abgleich
+// (`geschwister-abgleich-widerlegt-2026-08-04.md`) erzeugte genau in `rollout`
+// und `alltag` neuen STILLEN Verlust, waehrend `geteilt` sauber blieb. Ein
+// Instrument, das nur `geteilt` kennt, kann diese Klasse von Schaden nicht sehen.
+export type Zelle = 'geteilt' | 'rollout' | 'alltag';
+
+// 'getrennt'     — Bestand: A und B setzen ihre Bausteine an VERSCHIEDENE Stellen.
+//                  Bewusst so gebaut, damit das Ergebnis deterministisch bleibt.
+// 'gleiche-zeile'— A und B aendern DIESELBE Grundzeile (`Notiz.zeileGleich`): aus
+//                  `zeile-2` wird bei A `zeile-2 AAA`, bei B `zeile-2 BBB`. Damit
+//                  konkurrieren die Einfuegungen an derselben Position und der
+//                  YATA-Tie-Break entscheidet — deshalb ist die clientID-Folge
+//                  hier tragend und nicht nur Beiwerk.
+export type EditArt = 'getrennt' | 'gleiche-zeile';
+
 export interface Konfig {
   lage: Lage;
-  reihenfolge: number[]; // Permutation von [0..5]
+  // Permutation von [0..5] bei zwei Geraeten, von [0..8] bei dreien.
+  reihenfolge: number[];
   aWinnt: boolean;
   konfliktModus: 'kopie' | 'ohne' | 'ueberschreiben';
   // DER MESSSCHALTER. 'aus' = Bestand; der Seed haengt bewusst NICHT daran, damit
@@ -228,6 +272,16 @@ export interface Konfig {
   // 'neustart-ohne-sweep' tut dasselbe fuer die drei alten Lagen; dieses Feld
   // macht es fuer JEDE Lage verfuegbar, ohne den Lagen-Typ aufzublaehen.
   ohneSweep?: boolean;
+  // Ohne Angabe die bisherige Zellbasis `geteilt` — dann ist der Lauf mit dem
+  // Bestand dieses Treibers identisch.
+  zelle?: Zelle;
+  // Nur 'rollout': wie viele Zustellschritte lang B's `.qollab/` leer bleibt.
+  sperreBis?: number;
+  // Ohne Angabe zwei Geraete — dann laeuft exakt der Bestandsaufbau, bis hin zur
+  // Kennungsfolge und zur Zahl der Zustellereignisse.
+  geraete?: 2 | 3;
+  // Ohne Angabe 'getrennt' — der Bestand.
+  editArt?: EditArt;
   // DIAGNOSE: Zwischenstaende mitschreiben. Kostet Speicher und Zeit, deshalb
   // standardmaessig aus.
   spur?: boolean;
@@ -272,6 +326,13 @@ export interface Ergebnis {
   parkungen: number;
   // AKTIVITAETSPROBE: Wie oft hat die Sweep-Schranke in diesem Lauf gegriffen?
   schranke: number;
+  // MEHRDEUTIGKEITSPROBE (nur mit drei Geraeten ueberhaupt moeglich): wie oft lag
+  // mehr als ein erklaerender Sibling vor, wie viele waren es insgesamt, und wie
+  // oft haette 'basis-naechster' einen anderen als den ersten genommen (letzteres
+  // wird nur in genau diesem Schalterstand gebildet).
+  schrankeMehrfach: number;
+  schrankeTreffer: number;
+  schrankeAndereWahl: number;
   // AKTIVITAETSPROBE des Diff-Schalters: Wie oft hat er die Op-Folge von
   // `setContent` TATSAECHLICH veraendert? Bei 'roh' ist das per Bau 0.
   diffGeaendert: number;
@@ -324,34 +385,40 @@ export interface Ergebnis {
 // nicht dem Wuerfel.
 function seed(k: Konfig): number {
   return seedAusKonfig({
-    szenario: 'geteilt',
+    szenario: k.zelle ?? 'geteilt',
     editfall: 'beide',
     reihenfolge: k.reihenfolge,
     aWinnt: k.aWinnt,
     konfliktModus: k.konfliktModus,
-    sperreBis: 0,
+    sperreBis: k.sperreBis ?? 0,
   });
 }
 
 export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
+  const zelle = k.zelle ?? 'geteilt';
+  const dreiGeraete = (k.geraete ?? 2) === 3;
   guidQuelleAn();
   zufallQuelleAn();
   setzeZufallSeed(seed(k));
-  setzeGuidFolge(
-    k.aWinnt ? [MITTE, KLEIN, MITTE, GROSS, GROSS] : [MITTE, GROSS, MITTE, KLEIN, KLEIN]
-  );
+  const folge = k.aWinnt
+    ? [MITTE, KLEIN, MITTE, GROSS, GROSS]
+    : [MITTE, GROSS, MITTE, KLEIN, KLEIN];
+  // ANGEHAENGT, nicht eingemischt: mit zwei Geraeten bleibt die Folge woertlich die
+  // des Bestands, und die Kalibrierung gegen die alten Zahlen ist gueltig.
+  setzeGuidFolge(dreiGeraete ? [...folge, MITTE, HOCH, HOCH] : folge);
 
   const n = k.notiz ?? NOTIZ_KLEIN;
   const a = new Geraet('aaaa1111');
   const b = new Geraet('bbbb2222');
-  // Die Frist des Produkts (PARK_FRIST_TICKS = 4). Ohne sie waere das Tor aus.
-  a.parkFrist = 4;
-  b.parkFrist = 4;
-  a.setzeSchranke(k.schranke ?? 'aus');
-  b.setzeSchranke(k.schranke ?? 'aus');
-  a.setzeDiffModus(k.diffModus ?? 'roh');
-  b.setzeDiffModus(k.diffModus ?? 'roh');
-  const w = new Wolke([a, b]);
+  const c = dreiGeraete ? new Geraet('cccc3333') : undefined;
+  const geraete = c ? [a, b, c] : [a, b];
+  for (const g of geraete) {
+    // Die Frist des Produkts (PARK_FRIST_TICKS = 4). Ohne sie waere das Tor aus.
+    g.parkFrist = 4;
+    g.setzeSchranke(k.schranke ?? 'aus');
+    g.setzeDiffModus(k.diffModus ?? 'roh');
+  }
+  const w = new Wolke(geraete);
   w.konfliktModus = k.konfliktModus;
 
   // Der Grundtext — jede nicht-leere Zeile aus der Basis. In der Loeschungs-Lage
@@ -364,11 +431,21 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
     .filter(
       (z) => z !== '' && !(k.lage === 'neustart-offline-loeschung' && n.geloescht.includes(z))
     );
+  // DIE LISTE FUER DAS STRENGE MASS. Sie weicht in genau einem Fall von der obigen
+  // ab: aendern A und B DIESELBE Zeile, steht sie danach als `zeile-2 AAA` bzw.
+  // `zeile-2 BBB` da — als GANZE Zeile ist sie damit weg, und zwar auf Wunsch des
+  // Nutzers. Sie hier mitzufuehren hiesse, jeden Lauf dieser Lage als K.o. zu
+  // melden. Das lockere Mass (`occ`, Teilstring) behaelt sie: dort ist „der
+  // Grundtext steckt noch drin" genau die richtige Frage.
+  const grundzeilenGanz =
+    k.editArt === 'gleiche-zeile'
+      ? grundzeilen.filter((z) => z !== n.zeileGleich)
+      : grundzeilen;
   const spur: Schritt[] = [];
   const fehlt = (text: string): string[] => grundzeilen.filter((z) => occ(text, z) === 0);
   const fehltGanz = (text: string): string[] => {
     const da = new Set(text.split('\n'));
-    return grundzeilen.filter((z) => !da.has(z));
+    return grundzeilenGanz.filter((z) => !da.has(z));
   };
   // DIE STRENGE VERDOPPLUNG. `Befund.doppel` sieht ausschliesslich die drei
   // Marker AAA/BBB/OFFLINE — eine verdoppelte GRUNDTEXTZEILE faellt dort komplett
@@ -379,7 +456,7 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
   const doppeltGanz = (text: string): string[] => {
     const zahl = new Map<string, number>();
     for (const z of text.split('\n')) zahl.set(z, (zahl.get(z) ?? 0) + 1);
-    return grundzeilen.filter((z) => (zahl.get(z) ?? 0) > 1);
+    return grundzeilenGanz.filter((z) => (zahl.get(z) ?? 0) > 1);
   };
   const halte = (schritt: string): void => {
     if (k.spur !== true) return;
@@ -396,45 +473,93 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
     });
   };
 
-  // --- Ausgangslage: beide etabliert, die Note hat GEMEINSAME Historie -----
+  // --- Ausgangslage --------------------------------------------------------
+  // In 'geteilt' (Bestand): beide etabliert UND die Note hat gemeinsame Historie.
+  // In 'alltag': beide etabliert, die Note ohne Historie. In 'rollout': B (und C)
+  // sind frisch — sie fassen die Kontext-Note nie an und haben deshalb nirgends
+  // eine eigene Hilfsdatei.
   const KTX = 'kontext.md';
-  w.saeen([a, b], KTX, 'ktx\n');
-  w.saeen([a, b], NOTE, n.basis);
+  w.saeen(geraete, KTX, 'ktx\n');
+  w.saeen(geraete, NOTE, n.basis);
 
   await a.tippe(KTX, 'ktx\nA-vorher\n');
   await a.modify(KTX);
   w.ladeMdHoch(a, KTX);
   w.ladeSidecarsHoch(a);
   w.ladeMdHerunter(b, KTX);
-  w.ladeSidecarsHerunter(b);
-  await b.poll(KTX);
-  await b.tippe(KTX, 'ktx\nA-vorher\nB-vorher\n');
-  await b.modify(KTX);
-  w.ladeSidecarsHoch(b);
-  w.ladeMdHoch(b, KTX);
-  w.ladeSidecarsHerunter(a);
-  await a.poll(KTX);
+  if (c) w.ladeMdHerunter(c, KTX);
 
-  // EINE Inkarnation der umkaempften Note: A praegt, B adoptiert, beide konvergent.
-  await a.tippe(NOTE, n.gemeinsam);
-  await a.modify(NOTE);
-  w.ladeMdHoch(a, NOTE);
-  w.ladeSidecarsHoch(a);
-  w.ladeMdHerunter(b, NOTE);
-  w.ladeSidecarsHerunter(b);
-  await b.modify(NOTE);
-  await b.poll(NOTE);
-  w.ladeSidecarsHoch(b);
-  w.ladeMdHoch(b, NOTE);
-  w.ladeSidecarsHerunter(a);
-  await a.poll(NOTE);
+  let bGesperrt = zelle === 'rollout';
+  if (zelle !== 'rollout') {
+    w.ladeSidecarsHerunter(b);
+    await b.poll(KTX);
+    await b.tippe(KTX, 'ktx\nA-vorher\nB-vorher\n');
+    await b.modify(KTX);
+    w.ladeSidecarsHoch(b);
+    w.ladeMdHoch(b, KTX);
+    w.ladeSidecarsHerunter(a);
+    await a.poll(KTX);
+    if (c) {
+      w.ladeMdHerunter(c, KTX);
+      w.ladeSidecarsHerunter(c);
+      await c.poll(KTX);
+      await c.tippe(KTX, 'ktx\nA-vorher\nB-vorher\nC-vorher\n');
+      await c.modify(KTX);
+      w.ladeSidecarsHoch(c);
+      w.ladeMdHoch(c, KTX);
+      w.ladeSidecarsHerunter(a);
+      await a.poll(KTX);
+      w.ladeSidecarsHerunter(b);
+      await b.poll(KTX);
+    }
+  }
 
-  // --- Divergenzphase: je ein NUTZER-Edit, beide noch nicht ausgetauscht ---
+  if (zelle === 'geteilt') {
+    // EINE Inkarnation der umkaempften Note: A praegt, die anderen adoptieren,
+    // alle konvergent.
+    await a.tippe(NOTE, n.gemeinsam);
+    await a.modify(NOTE);
+    w.ladeMdHoch(a, NOTE);
+    w.ladeSidecarsHoch(a);
+    w.ladeMdHerunter(b, NOTE);
+    w.ladeSidecarsHerunter(b);
+    await b.modify(NOTE);
+    await b.poll(NOTE);
+    w.ladeSidecarsHoch(b);
+    w.ladeMdHoch(b, NOTE);
+    w.ladeSidecarsHerunter(a);
+    await a.poll(NOTE);
+    if (c) {
+      w.ladeMdHerunter(c, NOTE);
+      w.ladeSidecarsHerunter(c);
+      await c.modify(NOTE);
+      await c.poll(NOTE);
+      w.ladeSidecarsHoch(c);
+      w.ladeMdHoch(c, NOTE);
+      w.ladeSidecarsHerunter(a);
+      await a.poll(NOTE);
+      w.ladeSidecarsHerunter(b);
+      await b.poll(NOTE);
+    }
+  }
+
+  // --- Divergenzphase: je ein NUTZER-Edit, noch nicht ausgetauscht ---------
   const tokens: string[] = [];
   const editiere = async (g: Geraet, t: string, pos: number): Promise<void> => {
     tokens.push(t);
     const zeilen = g.md(NOTE).split('\n');
-    zeilen.splice(Math.min(pos, zeilen.length - 1), 0, t);
+    if (k.editArt === 'gleiche-zeile') {
+      // DIESELBE Zeile, nicht dieselbe Position: der Marker haengt sich an die
+      // vorgefundene Grundzeile. Findet sie sich nicht (dann hat ein anderes
+      // Geraet sie schon veraendert), faellt der Lauf auf das Einfuegen zurueck —
+      // im gemessenen Aufbau tritt das nicht ein, weil die Edits vor jeder
+      // Zustellung passieren.
+      const i = zeilen.indexOf(n.zeileGleich ?? '');
+      if (i >= 0) zeilen[i] = `${zeilen[i]} ${t}`;
+      else zeilen.splice(Math.min(pos, zeilen.length - 1), 0, t);
+    } else {
+      zeilen.splice(Math.min(pos, zeilen.length - 1), 0, t);
+    }
     const text = zeilen.join('\n');
     // Ueber den Adapter — ein Nutzer-Edit mit Editor-Autosave. Genau das, was die
     // Schreibspur als EIGEN erkennt und was danach in der eigenen Hilfsdatei steht.
@@ -445,6 +570,15 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
   // UND in A's eigener Hilfsdatei — und er ist noch NICHT hochgeladen.
   await editiere(a, 'AAA', n.posA);
   await editiere(b, 'BBB', n.posB);
+  // C setzt immer an eine EIGENE Stelle — auch im Gleiche-Zeile-Fall. Sonst
+  // lieferte der Mehrgeraete-Lauf zwei Befunde in einem.
+  if (c) {
+    tokens.push('CCC');
+    const zeilen = c.md(NOTE).split('\n');
+    zeilen.splice(Math.min(n.posC ?? zeilen.length - 1, zeilen.length - 1), 0, 'CCC');
+    await c.tippe(NOTE, zeilen.join('\n'));
+    await c.modify(NOTE);
+  }
   halte('vor-zustellung');
 
   // --- Zustellphase --------------------------------------------------------
@@ -480,18 +614,39 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
       if (w.ladeMdHerunter(b, NOTE)) await b.modify(NOTE, 'sync');
     },
     async () => {
-      if (w.ladeSidecarsHerunter(b)) await b.poll(NOTE);
+      // 'rollout': B's `.qollab/` bleibt die ersten `sperreBis` Schritte leer.
+      if (!bGesperrt && w.ladeSidecarsHerunter(b)) await b.poll(NOTE);
     },
   ];
+  // DIE DREI EREIGNISSE DES DRITTEN GERAETS. Sie kommen HINTEN dran, damit die
+  // Indizes 0..5 dieselben Ereignisse bezeichnen wie bisher — sonst waere keine
+  // einzige Zustellordnung zwischen zwei und drei Geraeten vergleichbar.
+  if (c) {
+    ereignisse.push(
+      async () => {
+        w.ladeMdHoch(c, NOTE);
+        w.ladeSidecarsHoch(c);
+      },
+      async () => {
+        if (w.ladeMdHerunter(c, NOTE)) await c.modify(NOTE, 'sync');
+      },
+      async () => {
+        if (w.ladeSidecarsHerunter(c)) await c.poll(NOTE);
+      }
+    );
+  }
   const tick = async (): Promise<void> => {
     if (aWach) await a.parkTick(NOTE);
     await b.parkTick(NOTE);
+    if (c) await c.parkTick(NOTE);
   };
-  for (const e of k.reihenfolge) {
+  for (const [i, e] of k.reihenfolge.entries()) {
+    if (i >= (k.sperreBis ?? 0)) bGesperrt = false;
     await ereignisse[e]();
     await tick();
     halte(`zustell-${e}`);
   }
+  bGesperrt = false;
 
   // --- Der Eingriff bei geschlossener App ----------------------------------
   // NACH der Zustellphase, VOR dem Start. Genau das Zeitfenster, in dem Obsidian
@@ -567,11 +722,20 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
   }
 
   // --- Ruhephase: abwechselnd zustellen bis zum Fixpunkt -------------------
+  // Mit drei Geraeten wird aus dem Hin und Her ein RING (a->b->c->a). Mit zweien
+  // bleibt es Paar fuer Paar genau die Folge des Bestands.
+  const paare: Array<[Geraet, Geraet]> = c
+    ? [
+        [a, b],
+        [b, c],
+        [c, a],
+      ]
+    : [
+        [a, b],
+        [b, a],
+      ];
   for (let i = 0; i < 8; i++) {
-    for (const [sender, empfaenger] of [
-      [a, b],
-      [b, a],
-    ] as Array<[Geraet, Geraet]>) {
+    for (const [sender, empfaenger] of paare) {
       w.ladeMdHoch(sender, NOTE);
       w.ladeSidecarsHoch(sender);
       if (w.ladeMdHerunter(empfaenger, NOTE)) await empfaenger.modify(NOTE, 'sync');
@@ -579,45 +743,42 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
       await empfaenger.poll(NOTE);
       await a.parkTick(NOTE);
       await b.parkTick(NOTE);
-      halte(`ruhe-${i}-${sender === a ? 'a' : 'b'}`);
+      if (c) await c.parkTick(NOTE);
+      halte(`ruhe-${i}-${sender === a ? 'a' : sender === b ? 'b' : 'c'}`);
     }
   }
 
-  const befund = bewerte(a.md(NOTE), b.md(NOTE), tokens);
+  const alleMd = geraete.map((g) => g.md(NOTE));
+  const befund = bewerteN(alleMd, tokens);
   // Konfliktkopien des Sync-Dienstes UND Sicherungen des Plugins. Beide sind
   // dasselbe fuer die Frage „steht der Text noch irgendwo": eine Datei, die der
   // Nutzer oeffnen kann. Ohne die zweite Haelfte zaehlte die Messung einen
   // Verlust, den es nicht gibt.
-  const alleKopien = [
-    ...w.alleKopien(),
-    ...[...a.kopien.values()].flat(),
-    ...[...b.kopien.values()].flat(),
-  ];
+  const alleKopien = [...w.alleKopien(), ...geraete.flatMap((g) => [...g.kopien.values()].flat())];
   const inKopie = befund.verlust.filter((t) => alleKopien.some((kk) => occ(kk, t) > 0));
   const stillVerloren = befund.verlust.filter((t) => !inKopie.includes(t));
 
-  // Der Grundtext, auf beiden Seiten. `grundzeilen` steht oben — dieselbe Liste,
-  // die die Spur benutzt.
+  // Der Grundtext, auf ALLEN Geraeten. `grundzeilen` steht oben — dieselbe Liste,
+  // die die Spur benutzt. Die beiden ausgewiesenen Listen bleiben A und B; mit
+  // drei Geraeten geht C ueber die Sammelspalten unten mit ein.
   const fehltA = fehlt(a.md(NOTE));
   const fehltB = fehlt(b.md(NOTE));
-  const grundtextDa = fehltA.length === 0 && fehltB.length === 0;
+  const grundtextDa = alleMd.every((t) => fehlt(t).length === 0);
   const ganzFehltA = fehltGanz(a.md(NOTE));
   const ganzFehltB = fehltGanz(b.md(NOTE));
-  const grundtextGanzDa = ganzFehltA.length === 0 && ganzFehltB.length === 0;
-  const ganzDoppelt = [
-    ...new Set([...doppeltGanz(a.md(NOTE)), ...doppeltGanz(b.md(NOTE))]),
-  ];
+  const grundtextGanzDa = alleMd.every((t) => fehltGanz(t).length === 0);
+  const ganzDoppelt = [...new Set(alleMd.flatMap((t) => doppeltGanz(t)))];
   halte('ende');
 
-  // Der Eingriff, aus beiden `.md` am Ende abgelesen.
+  // Der Eingriff, aus allen `.md` am Ende abgelesen.
   const daA = occ(a.md(NOTE), OFFLINE) > 0;
-  const daB = occ(b.md(NOTE), OFFLINE) > 0;
-  const aaaWeg = occ(a.md(NOTE), 'AAA') === 0 && occ(b.md(NOTE), 'AAA') === 0;
+  const daB = alleMd.slice(1).every((t) => occ(t, OFFLINE) > 0);
+  const aaaWeg = alleMd.every((t) => occ(t, 'AAA') === 0);
   // Die geloeschte Zeile ist NIRGENDS mehr — die Loeschung wurde erfasst und
   // propagiert. Der Gegenfall ist der Schaden: sie ist ZURUECKGEKEHRT.
-  const zeileWeg = n.geloescht.every(
-    (z) => occ(a.md(NOTE), z) === 0 && occ(b.md(NOTE), z) === 0
-  );
+  const zeileWeg = n.geloescht.every((z) => alleMd.every((t) => occ(t, z) === 0));
+  const summe = (f: (g: Geraet) => number): number =>
+    geraete.reduce((s, g) => s + f(g), 0);
   const eingriffDurch =
     k.lage === 'neustart-offline-edit'
       ? daA && daB
@@ -639,9 +800,12 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
     stillVerloren,
     sweepAngesehen,
     aUeberschrieben,
-    parkungen: a.parkZaehler + b.parkZaehler,
-    schranke: a.schrankeZaehler + b.schrankeZaehler,
-    diffGeaendert: a.diffGeaendert + b.diffGeaendert,
+    parkungen: summe((g) => g.parkZaehler),
+    schranke: summe((g) => g.schrankeZaehler),
+    schrankeMehrfach: summe((g) => g.schrankeMehrfachZaehler),
+    schrankeTreffer: summe((g) => g.schrankeTrefferZaehler),
+    schrankeAndereWahl: summe((g) => g.schrankeAndereWahlZaehler),
+    diffGeaendert: summe((g) => g.diffGeaendert),
     beweisDa,
     eingriffDurch,
     eingriffStillWeg,
@@ -672,5 +836,41 @@ export function permutationen(n: number): number[][] {
     Array.from({ length: n }, (_, i) => i),
     []
   );
+  return aus;
+}
+
+function fakultaet(n: number): number {
+  let f = 1;
+  for (let i = 2; i <= n; i++) f *= i;
+  return f;
+}
+
+// Die i-te Permutation von [0..n-1] in derselben (lexikographischen) Ordnung, die
+// `permutationen` aufzaehlt — ueber das Fakultaets-Zahlensystem, also ohne die
+// Liste zu bauen. Mit drei Geraeten sind es 9! = 362.880 Ordnungen; sie alle im
+// Speicher zu halten, nur um daraus jede k-te zu nehmen, waere reine Verschwendung.
+export function permutationNr(n: number, i: number): number[] {
+  const rest = Array.from({ length: n }, (_, x) => x);
+  const aus: number[] = [];
+  let r = i;
+  for (let k = n - 1; k >= 0; k--) {
+    const f = fakultaet(k);
+    const idx = Math.floor(r / f);
+    r -= idx * f;
+    aus.push(rest.splice(idx, 1)[0]);
+  }
+  return aus;
+}
+
+// DIE BEWUSSTE KUERZUNG. Jede `schritt`-te Zustellordnung, beginnend bei 0. Bei
+// n = 9 und schritt = 504 sind das genau 720 Ordnungen — dieselbe Zellgroesse wie
+// die vollstaendige Aufzaehlung bei zwei Geraeten, und die Stichprobe ist ueber
+// die ersten beiden Ereignisplaetze exakt gleichverteilt (9!/504 = 720, 8!/504 =
+// 80, 7!/504 = 10). Systematisch statt zufaellig: sie ist damit ohne Seed
+// reproduzierbar und traegt keine Klumpen.
+export function stichprobe(n: number, schritt: number): number[][] {
+  const gesamt = fakultaet(n);
+  const aus: number[][] = [];
+  for (let i = 0; i < gesamt; i += schritt) aus.push(permutationNr(n, i));
   return aus;
 }
