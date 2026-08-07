@@ -1,0 +1,11 @@
+S3log N=2: unverwandt=0 Verlust=0 Verdopp=8 N-Verd=6 diverg=0 sauber=10/15  (171 ms)
+
+OFFEN: N=3 und N=4 sind mit diesem Harness NICHT fertig geworden.
+  - probe-fixpunkt.mjs (3 Geraete, 2 Notizen, 900 Ticks): erreicht einen
+    Fixpunkt (12 Knoten, stabil ueber 750 Ticks), alle drei Geraete konvergent.
+  - probe-explosion.mjs (3 Geraete, 10 Notizen, 400 Ticks): Knoten 70, Pollzeit
+    unter 25 ms, Textlaenge stabil bei 184 (Basis 80) — keine diff3-Explosion.
+  - probe-seeds.mjs / probe-n.mjs (3 Geraete, 10 Notizen, 1200 Ticks ueber
+    harness.run): KEIN Seed in 115 s fertig.
+Das Verhalten beim dritten Replikat ist damit ungeklaert — nicht widerlegt und
+nicht belegt. Genau dort ist Kandidat B gebrochen (Unison-Spec §11).

@@ -1,0 +1,29 @@
+
+=== 40 Seeds x 10 Notizen, je 1 Edit pro Geraet, Praegefenster 120 Ticks
+    .md-Kanal: Konfliktkopie — der Sync fasst eine lokal geaenderte Datei nicht an
+
+Schnitt                                             Erstk.  Verlust  Verdopp  N-Verl  N-Verd  diverg   sauber
+--------------------------------------------------------------------------------------------------------------
+S0real  Sidecar je Notiz je Geraet  [ECHTER CODE]      184        0       59       0      47       0    13/40
+S1real  Segmente je Geraet (GH-12)  [ECHTER CODE]      197        0       74       0      56       0     8/40
+S2frei  Vault-Doc, beide praegen unabhaengig             0      151      103     114      80       0     0/40
+S2einr  Vault-Doc + Einrichtung/Verweigerung             0      101       85      75      67       0     1/40
+S3log   Zustands-Log, inhaltsadressiert                  0        0       25       0      13       0    28/40
+
+Verlust/Verdopplung in ZEILEN ueber 400 Notizen; N-Verl/N-Verd = Notizen mit
+mindestens einem Vorfall; diverg = Notizen mit verschiedenem Endtext auf den Geraeten.
+
+=== 40 Seeds x 10 Notizen, je 1 Edit pro Geraet, Praegefenster 120 Ticks
+    .md-Kanal: Ueberschreiben — der Sync ueberschreibt die lokale Datei
+
+Schnitt                                             Erstk.  Verlust  Verdopp  N-Verl  N-Verd  diverg   sauber
+--------------------------------------------------------------------------------------------------------------
+S0real  Sidecar je Notiz je Geraet  [ECHTER CODE]       76      256      214      97     106       4     0/40
+S1real  Segmente je Geraet (GH-12)  [ECHTER CODE]       80      188      719      92     133      15     0/40
+S2frei  Vault-Doc, beide praegen unabhaengig             0       22      558      21     172       0     0/40
+S2einr  Vault-Doc + Einrichtung/Verweigerung             0       15      627      15     172       0     0/40
+S3log   Zustands-Log, inhaltsadressiert                  0      223        0     143       0       9     0/40
+
+Verlust/Verdopplung in ZEILEN ueber 400 Notizen; N-Verl/N-Verd = Notizen mit
+mindestens einem Vorfall; diverg = Notizen mit verschiedenem Endtext auf den Geraeten.
+

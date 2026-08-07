@@ -1,0 +1,23 @@
+
+A) Segment-Roll-Intervall gegen Erstkontakt-Schaden — ECHTER CODE, 2 Geraete
+   25 Seeds x 10 Notizen. Ein Tick = eine Sekunde.
+
+   Ablage                               Erstk.  Verlust  Verdopp  N-Verd   sauber  Dateien  Transf
+   -------------------------------------------------------------------------------------------
+   Sidecar je Notiz (Ist)                     132        0       34      26     7/25      864    1695
+   Segment, Roll  30 s                        137        0       29      23     6/25      378    1213
+   Segment, Roll 120 s                        140        0       37      28     7/25      151    1100
+   Segment, Roll 900 s (15 min, GH-12)        130        0       42      31     6/25      100    1108
+   Segment, kein Roll                         127        0       40      31     7/25      100    1109
+
+B) Das dritte und vierte Replikat
+   25 Seeds x 10 Notizen
+
+   Schnitt                               N  Erstk./unv  Verlust  Verdopp  diverg   sauber
+   -----------------------------------------------------------------------------------------
+   Sidecar je Notiz (Ist, echt)             2         127        0       30       0     9/25
+   Segmente je Geraet (echt)                2         134        0       43       0     6/25
+   Zustands-Log (S3)                        2           0        0       13       0    17/25
+
+   Sidecar je Notiz (Ist, echt)             3         456       36      327       0     0/25
+   Segmente je Geraet (echt)                3         539       26      420       0     0/25
