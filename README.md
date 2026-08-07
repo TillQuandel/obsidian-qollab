@@ -25,7 +25,7 @@ Everything below describes what is **measured today**, which is a good deal less
 
 ## What is clean and what is not
 
-All figures come from a deterministic simulation of two or more devices exchanging files in every possible delivery order. "Runs" are complete scenarios, not test cases.
+Most figures come from a deterministic simulation of two or more devices exchanging files in every possible delivery order. "Runs" are complete scenarios, not test cases. **One exception, marked where it occurs:** the three-and-four-device figures come from a driver that leaves the two random sources of the real code in place — the incarnation id and Yjs's per-document `clientID`. Repeating the same call gives a different number each time, so those figures are given as a mean over repeated runs with the range, never as a single value.
 
 ### Clean — measured
 
@@ -47,7 +47,7 @@ All figures come from a deterministic simulation of two or more devices exchangi
 |---|---|---|
 | **A line you deleted comes back** | **47.4 %** of runs containing a deletion (4–26 % if the note has shared history, 53–83 % if not) | Yes, but possibly hours later |
 | More devices or several contested notes at once | duplication rises to 9–16 % | Yes |
-| **Three or more devices — possible loss of text nobody touched** | Measured on the **previous** version: 6 cases with 3 devices, 22 with 4 (40 seeds × 10 notes). **Whether the current version still does this has not been measured.** The change that removed the same failure in the two-device case (296 of 720 runs → 0) may or may not cover it here. | Not necessarily |
+| **Three or more devices — loss of text nobody touched.** Confirmed on the current version. | Baseline lines missing at the end of a run, out of 3,200 per run (40 seeds × 10 notes × 8 lines), mean over 13 runs: **4.6 with 3 devices** (range 2–9), **19.7 with 4** (range 9–30). **Never zero in any run.** Lower than the previous version (7.1 and 27.7; p = 0.018 and p = 0.004), but the fix that removed the two-device failure (296 of 720 runs → 0) does **not** cover this one. With **two** devices the loss is 0 in all 28 runs of both versions. | Not necessarily |
 | A program **outside Obsidian** edits the file (script, other editor, `git checkout`) while Obsidian is open | text loss up to 19.4 % | Yes — the text stays in the note or in a copy Qollab writes before overwriting |
 | **Obsidian was closed while your `.md` was overwritten** — your sync provider delivered the other device's version, a version was restored from history, or a read came back short | **8.3 %** of delivery orders (**24.4 %** of those in which the overwrite actually happened), down from 33.3 % — see below. Where it still happens, your unsynced edit is written into your own helper file **as a deletion** and travels to the other device. | **Only if your sync provider left a conflict copy.** Otherwise the text is gone without a word. |
 | A `.yjs` helper file arrives **corrupted** (zero-filled at unchanged size — happens with cloud sync and interrupted writes) | caught by the checksum, file skipped and reported | Yes |
@@ -147,7 +147,7 @@ node esbuild.config.mjs production   # → main.js
 npx jest                             # tests
 ```
 
-Every figure in this README comes from the measurement harness — a deterministic multi-device simulator plus the corruption spikes. It is **not part of this branch**: it lives under `obsidian-crdt-sync/spike/` on the `mess/*` branches, together with the runs the numbers were read off. Checking a figure means checking out one of those.
+Every figure in this README comes from the measurement harness — a multi-device simulator plus the corruption spikes. Most of it is deterministic: `spike/guid-quelle.ts` and `spike/zufall-quelle.ts` pin the incarnation ids and Yjs's `clientID`, so a run repeats exactly. The three-and-four-device driver (`spike/schnitt/bilanz-n.mjs`) does **not** use them and therefore varies from run to run; its figures are means over repeated runs, with the range. The harness is **not part of this branch**: it lives under `obsidian-crdt-sync/spike/` on the `mess/*` branches, together with the runs the numbers were read off. Checking a figure means checking out one of those.
 
 ## License
 

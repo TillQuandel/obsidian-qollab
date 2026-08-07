@@ -211,21 +211,36 @@ zu übernehmen.**
 
 ## Offen und vorrangig: Grundtext-Verlust ab drei Geräten
 
-Eine Messung vom 2026-08-07 (40 Seeds × 10 Notizen) zeigt für den **Ist-Zustand**:
+**Am heutigen Stand nachgemessen (2026-08-07, `grundtext-n-2026-08-07.md`): Der Befund hält.
+K.o.-Kriterium 1 wird ab drei Geräten weiterhin verletzt.**
+
+Strenger Grundtext-Verlust (eine Zeile des Ausgangstextes fehlt am Ende), Zellbasis je Lauf
+40 Seeds × 10 Notizen × 8 Basiszeilen = 3.200 Zeilen, Mittelwert (Spanne):
 
 | | N = 2 | N = 3 | N = 4 |
 | --- | --- | --- | --- |
-| zerstörter Grundtext | 0 | **6** | **22** |
+| Bestand (Bundle vor dem 05.08., n = 15) | 0 (0–0) | 7,1 (3–16) | 27,7 (11–37) |
+| **Heutiger Stand** (n = 13) | 0 (0–0) | **4,6 (2–9)** | **19,7 (9–30)** |
 
-Das verletzt K.o.-Kriterium 1 — und das Zielszenario lautet ausdrücklich „zwei **oder mehr**".
+Der Rückgang ist signifikant (Permutationstest zweiseitig: p = 0,0175 bzw. p = 0,0040), **aber in
+keinem einzigen der 13 Läufe ist der Verlust bei N ≥ 3 null**. Bei N = 2 ist er in allen 28 Läufen
+beider Arme exakt null — die Zwei-Geräte-Zusage hält. Das Zielszenario lautet ausdrücklich „zwei
+**oder mehr**", der Befund bleibt damit vorrangig vor jedem weiteren Feature.
 
-**Einschränkung, geprüft:** Der Produktivcode-Arm jener Messung ist ein Bundle von **vor dem
-05.08.**; er enthält weder `basis-signatur` noch `semantisch` noch `QLB2` (null Treffer). Der
-Befund gilt für den alten Stand. Ob er heute noch gilt, ist **nicht gemessen** — der semantische
-Diff hat dieselbe Schadensklasse in der Zwei-Geräte-Messung von 296/720 auf 0 gebracht.
+**Zum Instrument, für jede künftige Zahl daraus:** `bilanz-n.mjs` ist **nicht reproduzierbar** —
+derselbe Aufruf gibt bei jedem Start eine andere Zahl (dreimal hintereinander, Bestand, N = 3:
+9, 8, 8). Der Apparat selbst enthält keinen Zufall; der gemessene Produktivcode hat zwei Quellen:
+`generateGuid` (`crypto.getRandomValues`) und die pro `Y.Doc` zufällige Yjs-`clientID`. Die früher
+zitierten Einzelwerte **6 und 22** sind damit Einzelziehungen ohne Streuungsangabe; beide liegen
+innerhalb der oben gemessenen Bestandsspanne, tragen als Messwerte aber nicht. Zahlen aus diesem
+Instrument brauchen Wiederholungen und eine Spanne.
 
-**Nächste Messung, mit Vorrang vor allem anderen:** Grundtext-Verlust bei N = 3 und N = 4 am
-heutigen Stand.
+**Was der Fix von 2026-08-07 geleistet hat und was nicht:** Der semantische Diff hat die
+Schadensklasse „Zeichen-Diff zerreißt die Nachbarzeile" beseitigt (N = 2 bleibt bei null). Der
+Verlust ab drei Geräten ist eine **andere** Schadensklasse und unbenannt.
+
+**Nächster Schritt:** einen einzelnen verlustbehafteten Lauf zerlegen, statt weitere Aggregate zu
+messen.
 
 ## Woher die Verdopplung wirklich kommt
 
