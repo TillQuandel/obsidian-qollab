@@ -16,7 +16,12 @@
 import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
 const require = createRequire(import.meta.url);
-const R = require('./real.cjs');
+// Welcher Produktivcode-Bundle gefahren wird, entscheidet `SPIKE_BUNDLE`. Ohne
+// die Variable bleibt es bei `real.cjs` (Stand vor dem 05.08.) — damit sind die
+// veroeffentlichten Zahlen weiter reproduzierbar; `real-neu.cjs` ist der heutige
+// Stand. Genau daran hing ein Fehlschluss: Ein Bundle sah aktuell aus und war es
+// nicht.
+const R = require(process.env.SPIKE_BUNDLE ?? './real.cjs');
 const Y = require('yjs');
 const DMP = new (require('diff-match-patch').diff_match_patch)();
 
