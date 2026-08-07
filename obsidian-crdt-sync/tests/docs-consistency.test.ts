@@ -421,13 +421,30 @@ describe('Rueckfall der .md: README haelt, welche Haelfte des Wegs offen ist', (
 
     // CODE-ANKER: nachher nicht mehr. Der Sweep hat den `.md`-Rueckfall als
     // lokale Loeschung verbucht und sie in die eigene Hilfsdatei geschrieben —
-    // genau dort, wo der Edit als letztes noch existierte. Faellt diese Zeile,
-    // ist der Weg zu und der README-Absatz zu streichen.
+    // genau dort, wo der Edit als letztes noch existierte.
+    //
+    // 2026-08-07: Der Weg ist seither NICHT ganz zu, sondern halb. Der Sweep
+    // befragt jetzt die Hilfsdateien auf der Platte (`sweepSchranke`), und wo
+    // eine fremde Revision den vorgefundenen Text erklaert, nimmt er DEREN Text
+    // als Diff-Basis — der eigene Edit ueberlebt. Genau diese Haelfte pinnt
+    // `sweep-schranke-basiswahl.test.ts`.
+    //
+    // HIER liegt die andere Haelfte, und sie ist der Grund, warum der
+    // README-Absatz stehen bleibt: In dieser Lage ist gar keine fremde
+    // Hilfsdatei da, und die zurueckgefallene `.md` bringt keinen Fremdtext mit
+    // — es gibt nichts zu belegen, die Schranke greift nicht, der Edit stirbt
+    // wie zuvor. Ueber die vollstaendige Zustellordnung gemessen liegt der
+    // Nachweis in 360 von 720 Faellen vor; die restlichen 60 Verluste (von
+    // vormals 240) sind genau das hier. Faellt diese Zeile, ist der Weg
+    // vollstaendig zu und der README-Absatz zu streichen.
     expect(inHilfsdatei(vault, 'deadbeef')).toBe(BASIS);
 
-    // Und der README sagt es, statt „never silently gone" zu behaupten.
+    // Und der README sagt es, statt „never silently gone" zu behaupten — mit
+    // der Einschraenkung, dass es nur noch die Haelfte der Zustellordnungen
+    // trifft.
     expect(CLAIMS).toContain('**Obsidian was closed while your `.md` was overwritten**');
-    expect(CLAIMS).toContain('the startup scan has no such signal');
+    expect(CLAIMS).toContain('does one of the helper files on disk explain the text');
+    expect(CLAIMS).toContain('it is not there yet when the scan runs');
   });
 
   it('LAUFENDER BETRIEB: dasselbe ueber den modify-Handler laesst den Edit stehen', async () => {
