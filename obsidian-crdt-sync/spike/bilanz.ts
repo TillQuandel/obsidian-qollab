@@ -23,6 +23,21 @@ export interface Zellwerte {
   andereWahl: number; // nur 'basis-naechster': Wahl weicht vom ersten Treffer ab
   beweisDa: number;
   eingriffDurch: number;
+  // DIE KAUSALITAETS-ZERLEGUNG. Nur in den Loeschungs-Lagen belegt (`loeschLauf`
+  // sagt, wie viele Laeufe der Zelle ueberhaupt eine Loeschung enthielten).
+  loeschLauf: number;
+  kannteFremd: number; // Loeschung lag KAUSAL NACH dem fremden Stand
+  sahFremdMd: number; // Diagnose: der fremde Baustein stand in A's `.md`
+  fremdImDoc: number; // Diagnose: der fremde Baustein stand in A's Doc
+  wieder: number; // die geloeschte Zeile ist am Ende ZURUECK
+  wiederKausal: number; // ... obwohl die Loeschung den fremden Stand kannte: FEHLER
+  wiederNebenlaeufig: number; // ... bei nebenlaeufiger Loeschung: legitimes Add-wins
+  // DIESELBE ZERLEGUNG UNTER DER SCHWAECHEREN DEFINITION von „kannte den fremden
+  // Stand": nicht kausal, sondern nur „stand beim Loeschen in der `.md`" bzw.
+  // „stand im Doc". Beide sind der naheliegende Einwand gegen die Zerlegung
+  // oben — wer sie so liest, bekommt eine andere Zahl, und die gehoert daneben.
+  wiederSahMd: number;
+  wiederImDoc: number;
   grundtextWeg: number; // K.O., lockeres Mass (`occ`, Teilstring)
   ganzWeg: number; // K.O., STRENGES Mass (ganze Zeile)
   ganzDoppel: number; // strenge Verdopplung einer GRUNDZEILE
@@ -51,6 +66,15 @@ const leer = (): Zellwerte => ({
   andereWahl: 0,
   beweisDa: 0,
   eingriffDurch: 0,
+  loeschLauf: 0,
+  kannteFremd: 0,
+  sahFremdMd: 0,
+  fremdImDoc: 0,
+  wieder: 0,
+  wiederKausal: 0,
+  wiederNebenlaeufig: 0,
+  wiederSahMd: 0,
+  wiederImDoc: 0,
   grundtextWeg: 0,
   ganzWeg: 0,
   ganzDoppel: 0,
@@ -85,6 +109,21 @@ export async function messe(
     z.andereWahl += e.schrankeAndereWahl;
     if (e.beweisDa) z.beweisDa++;
     if (e.eingriffDurch) z.eingriffDurch++;
+    if (e.loeschLage) {
+      z.loeschLauf++;
+      if (e.kannteFremd) z.kannteFremd++;
+      if (e.sahFremdMd) z.sahFremdMd++;
+      if (e.fremdImDoc) z.fremdImDoc++;
+      // `eingriffDurch` heisst in der Loeschungs-Lage „die Zeile ist nirgends
+      // mehr". Der Gegenfall ist die Wiederbelebung — und nur der wird zerlegt.
+      if (!e.eingriffDurch) {
+        z.wieder++;
+        if (e.kannteFremd) z.wiederKausal++;
+        else z.wiederNebenlaeufig++;
+        if (e.sahFremdMd) z.wiederSahMd++;
+        if (e.fremdImDoc) z.wiederImDoc++;
+      }
+    }
     if (!e.grundtextDa) z.grundtextWeg++;
     if (!e.grundtextGanzDa) z.ganzWeg++;
     if (e.ganzDoppelt.length > 0) z.ganzDoppel++;
@@ -116,6 +155,20 @@ export function zeile(name: string, z: Zellwerte): string {
     `Eingriff durch ${z3(z.eingriffDurch)} | park ${z3(z.parkungen)} | ` +
     `diff-geaendert ${z.diffGeaendert} | ` +
     `Aufwand: Text ${z.text} (frueher ${z.textFrueher}), Abstand ${z.abstand}, ` +
-    `${(z.ms / Math.max(1, z.n)).toFixed(1)} ms/Lauf`
+    `${(z.ms / Math.max(1, z.n)).toFixed(1)} ms/Lauf` +
+    (z.loeschLauf > 0 ? ' | ' + kausalzeile(z) : '')
+  );
+}
+
+// Die Zerlegung als eigene Zeile — sie steht nur, wo ueberhaupt geloescht wurde.
+export function kausalzeile(z: Zellwerte): string {
+  const p = (x: number, von: number): string =>
+    von === 0 ? '  0,0 %' : `${((x / von) * 100).toFixed(1).padStart(5)} %`;
+  return (
+    `Loeschlaeufe ${z.loeschLauf} | kausal danach ${z3(z.kannteFremd)} ` +
+    `(sah .md ${z3(z.sahFremdMd)}, im Doc ${z3(z.fremdImDoc)}) | ` +
+    `WIEDER ${z3(z.wieder)} (${p(z.wieder, z.loeschLauf)}) = ` +
+    `FEHLERHAFT ${z3(z.wiederKausal)} + legitim ${z3(z.wiederNebenlaeufig)} | ` +
+    `schwaechere Definition: davon sah .md ${z3(z.wiederSahMd)}, im Doc ${z3(z.wiederImDoc)}`
   );
 }

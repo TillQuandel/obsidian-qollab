@@ -27,6 +27,7 @@
 // Praegemoment und keine Erstkontakt-Verdopplung, die das Ergebnis faerben
 // koennte. Was hier gemessen wird, ist allein der Rueckfall.
 
+import * as Y from 'yjs';
 import { Geraet } from './geraet';
 import type { SweepSchranke } from '../src/sync-handler';
 import { Wolke } from './wolke';
@@ -215,8 +216,28 @@ export function notizGross(nah = false): Notiz {
 //                  inhaltliches Verfahren die eigene Herkunft erkennen koennte.
 //                  ERWARTUNG: die Schranke darf nicht greifen, die Zeile darf
 //                  nicht zurueckkehren.
+//
+// DIE LAGE FUER DIE KAUSALITAETSFRAGE:
+//
+// 'laufend-loeschung' — Obsidian laeuft auf A die GANZE Zustellphase ueber, und
+//                  ERST DANACH loescht der Nutzer die Zeile — im laufenden
+//                  Betrieb, ueber den Adapter, mit Schreibspur und modify-Handler.
+//                  Kein Neustart, kein Sweep.
+//
+//                  WOZU: In 'neustart-offline-loeschung' ist A waehrend der
+//                  ganzen Zustellung ZU. Die Loeschung kann den fremden Stand
+//                  dort per Bau nicht kennen — sie ist IMMER nebenlaeufig. Damit
+//                  laesst sich die Frage „wie viel der zurueckkehrenden Zeilen
+//                  ist legitimes Add-wins und wie viel ist Fehler?" gar nicht
+//                  stellen. In dieser Lage haengt es an der Zustellordnung: liegt
+//                  Ereignis 1 (B laedt hoch) VOR Ereignis 3 (A zieht Hilfsdateien
+//                  und pollt), hat A B's Ops eingespielt, BEVOR es loescht — die
+//                  Loeschung liegt dann KAUSAL DANACH. Sonst ist sie nebenlaeufig.
+//                  Beide Faelle kommen in derselben Zelle vor und sind ueber
+//                  `kannteFremd` einzeln auszaehlbar.
 export type Lage =
   | 'laufend'
+  | 'laufend-loeschung'
   | 'neustart'
   | 'neustart-ohne-sweep'
   | 'neustart-offline-edit'
@@ -282,6 +303,10 @@ export interface Konfig {
   geraete?: 2 | 3;
   // Ohne Angabe 'getrennt' — der Bestand.
   editArt?: EditArt;
+  // Nach WIE VIELEN Zustellereignissen greift der Nutzer ein? `0` = vor allen,
+  // `3` = nach dem dritten. Ohne Angabe nach allen — der Bestand jeder
+  // bisherigen Lage, Zahl fuer Zahl unveraendert.
+  loeschungNach?: number;
   // DIAGNOSE: Zwischenstaende mitschreiben. Kostet Speicher und Zeit, deshalb
   // standardmaessig aus.
   spur?: boolean;
@@ -361,6 +386,34 @@ export interface Ergebnis {
   // Nur 'neustart-offline-edit': `OFFLINE` steht in keiner `.md` UND in keiner
   // Konfliktkopie und in keiner Sicherung — der eigene Offline-Edit ist STILL WEG.
   eingriffStillWeg: boolean;
+  // DIE KAUSALITAETSPROBE. Nur in den beiden Loeschungs-Lagen belegt; sonst
+  // `false` und ohne Aussage (`loeschLage` sagt, welches von beidem gilt).
+  //
+  // Erhoben UNMITTELBAR vor der Loeschung, aus dem Zustandsvektor von A's
+  // lebendem Doc gegen den Zustandsvektor, den B's Doc direkt nach dem
+  // BBB-Edit trug. Das ist die Kausalitaet im CRDT-Sinn (Lamport/Shapiro):
+  // deckt A's Vektor B's Vektor in JEDEM Client ab, hat A B's Ops eingespielt,
+  // die Loeschung liegt also KAUSAL DANACH. Sonst sind Loeschung und fremder
+  // Edit NEBENLAEUFIG — und dann gewinnt der Add nach Shapiro et al. 2018 zu
+  // Recht („a concurrent add and remove of the same element, the add wins").
+  //
+  // Bewusst NICHT am Text abgelesen: steht 'BBB' in A's Doc, kann es auch der
+  // Sweep oder ein Diff aus der ueberschriebenen `.md` als A's EIGENE Ops
+  // hineingeschrieben haben — das waere Textkenntnis ohne kausale Kenntnis. Der
+  // Zustandsvektor kennt diesen Unterschied, der Text nicht.
+  kannteFremd: boolean;
+  // Dieselbe Frage am TEXT, zwei Wege, beide zum Zeitpunkt der Loeschung:
+  //   `sahFremdMd`  — der Nutzer hat den fremden Baustein in der `.md` vor sich
+  //                   gehabt, als er loeschte.
+  //   `fremdImDoc`  — A's Doc trug den fremden Baustein, egal auf wessen Ops.
+  // Beide sind Diagnose, nicht das Urteil: sie zeigen, wo Textkenntnis und
+  // kausale Kenntnis auseinanderlaufen.
+  sahFremdMd: boolean;
+  fremdImDoc: boolean;
+  // Ist diese Lage ueberhaupt eine Loeschungs-Lage? Ohne das Feld liest sich
+  // `kannteFremd === false` in `neustart` wie ein Messwert, obwohl dort gar
+  // nicht geloescht wird.
+  loeschLage: boolean;
   // DAS K.O.-KRITERIUM, in ALLEN Lagen erhoben: Stehen die Zeilen des Grundtexts
   // am Ende noch in BEIDEN `.md`? Die Token-Bilanz oben sieht das nicht — sie
   // zaehlt nur AAA/BBB/OFFLINE. Ein Kandidat der Vorarbeiten bestand 5/5
@@ -399,6 +452,26 @@ function seed(k: Konfig): number {
   });
 }
 
+// DER ZUSTANDSVEKTOR eines lebenden Docs: Client -> hoechste bekannte Uhr.
+//
+// Er ist der einzige Weg, „hat dieses Geraet die Ops des anderen eingespielt?" zu
+// beantworten, ohne den Text zu befragen — und der Text ist an genau dieser
+// Stelle unbrauchbar: er sagt nur, dass der fremde Baustein DASTEHT, nicht, ob
+// er ueber die fremden Ops hereinkam oder ueber einen eigenen Diff aus der
+// ueberschriebenen `.md`. Das erste ist kausale Kenntnis, das zweite nicht.
+//
+// Loeschungen bewegen die Uhr nicht (sie erzeugen keine neuen Structs, nur
+// Eintraege im DeleteSet). Fuer die Frage hier ist das genau richtig: es geht um
+// die fremde EINFUEGUNG, und die zaehlt die Uhr.
+function zustandsvektor(g: Geraet): Map<number, number> {
+  if (!g.crdt.hasDoc(NOTE)) return new Map();
+  try {
+    return Y.decodeStateVector(Y.encodeStateVectorFromUpdate(g.crdt.encodeState(NOTE)));
+  } catch {
+    return new Map();
+  }
+}
+
 export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
   const zelle = k.zelle ?? 'geteilt';
   const dreiGeraete = (k.geraete ?? 2) === 3;
@@ -431,11 +504,12 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
   // Verschwinden der Nutzerwille und kein Grundtext-Verlust. Bewusst HIER
   // gebildet und nicht erst am Ende — die Spur unten braucht dieselbe Liste, und
   // zwei Fassungen davon waeren zwei Messungen.
+  // Beide Lagen, in denen der Nutzer eine Grundzeile ABSICHTLICH entfernt.
+  const loeschLage =
+    k.lage === 'neustart-offline-loeschung' || k.lage === 'laufend-loeschung';
   const grundzeilen = n.basis
     .split('\n')
-    .filter(
-      (z) => z !== '' && !(k.lage === 'neustart-offline-loeschung' && n.geloescht.includes(z))
-    );
+    .filter((z) => z !== '' && !(loeschLage && n.geloescht.includes(z)));
   // DIE LISTE FUER DAS STRENGE MASS. Sie weicht in genau einem Fall von der obigen
   // ab: aendern A und B DIESELBE Zeile, steht sie danach als `zeile-2 AAA` bzw.
   // `zeile-2 BBB` da — als GANZE Zeile ist sie damit weg, und zwar auf Wunsch des
@@ -575,6 +649,10 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
   // UND in A's eigener Hilfsdatei — und er ist noch NICHT hochgeladen.
   await editiere(a, 'AAA', n.posA);
   await editiere(b, 'BBB', n.posB);
+  // DER BEZUGSPUNKT DER KAUSALITAETSPROBE: B's Zustandsvektor unmittelbar nach
+  // dem BBB-Edit. Alles, was B zu diesem Zeitpunkt weiss — genau das muss A
+  // eingespielt haben, damit A's spaetere Loeschung kausal DANACH liegt.
+  const svB = zustandsvektor(b);
   // C setzt immer an eine EIGENE Stelle — auch im Gleiche-Zeile-Fall. Sonst
   // lieferte der Mehrgeraete-Lauf zwei Befunde in einem.
   if (c) {
@@ -590,7 +668,7 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
   // Dieselben sechs Ereignisse wie in der Vorlage. Der Unterschied steckt in
   // `aWach`: ist A geschlossen, landen die Dateien auf der Platte, ohne dass ein
   // Handler feuert — genau so, wie es ein Sync-Dienst bei geschlossener App tut.
-  const aWach = k.lage === 'laufend';
+  const aWach = k.lage === 'laufend' || k.lage === 'laufend-loeschung';
   let aUeberschrieben = false;
   const ereignisse: Array<() => Promise<void>> = [
     async () => {
@@ -645,49 +723,93 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
     await b.parkTick(NOTE);
     if (c) await c.parkTick(NOTE);
   };
+  // --- Der Eingriff --------------------------------------------------------
+  // Ohne `loeschungNach`: NACH der Zustellphase, VOR dem Start. Genau das
+  // Zeitfenster, in dem Obsidian zu ist und trotzdem etwas an der `.md`
+  // passiert — und der einzige Ort, an dem dieser Treiber in den `neustart`-Lagen
+  // einen ECHTEN eigenen Vorgang erzeugen kann, den keine Hilfsdatei kennt.
+  //
+  // In den `neustart`-Lagen bewusst ueber `setMd` statt `tippe`: Der
+  // Schreibvorgang laeuft NICHT ueber den Adapter dieses Prozesses — ein anderer
+  // Editor, `git checkout`, ein Wiederherstellungs-Dialog. Der Zeitstempel
+  // springt dabei ueber alles, was auf der Platte liegt (wie bei jedem echten
+  // Schreibvorgang); damit sieht der Start-Sweep die Datei garantiert an, statt
+  // sie am mtime-Gate zu ueberspringen. In `laufend-loeschung` dagegen ueber
+  // `tippe` — dort IST es ein Vorgang dieses Prozesses.
+  //
+  // DIE KAUSALITAETSPROBE wird UNMITTELBAR VOR dem Eingriff genommen — und damit
+  // vor jedem Neustart, der A's Doc ohnehin wegwerfen wuerde.
+  let kannteFremd = false;
+  let sahFremdMd = false;
+  let fremdImDoc = false;
+  let eingriffGetan = false;
+  const eingriff = async (): Promise<void> => {
+    if (eingriffGetan) return;
+    eingriffGetan = true;
+    const svVor = zustandsvektor(a);
+    kannteFremd = svB.size > 0 && [...svB].every(([client, uhr]) => (svVor.get(client) ?? 0) >= uhr);
+    sahFremdMd = occ(a.md(NOTE), 'BBB') > 0;
+    fremdImDoc = a.crdt.hasDoc(NOTE) && occ(a.crdt.getContent(NOTE), 'BBB') > 0;
+
+    if (k.lage === 'laufend-loeschung') {
+      // DIESELBE Loeschung wie unten — aber im LAUFENDEN Betrieb: ueber den
+      // Adapter (also mit Schreibspur, das Tor erkennt sie als eigen) und mit
+      // feuerndem modify-Handler. Genau der Vorgang, den ein Nutzer ausloest, der
+      // in der offenen App eine Zeile entfernt.
+      await a.tippe(
+        NOTE,
+        a
+          .md(NOTE)
+          .split('\n')
+          .filter((z) => !n.geloescht.includes(z))
+          .join('\n')
+      );
+      await a.modify(NOTE);
+    } else if (k.lage === 'neustart-offline-edit') {
+      tokens.push(OFFLINE);
+      const zeilen = a.md(NOTE).split('\n');
+      zeilen.splice(Math.min(n.posOffline, zeilen.length - 1), 0, OFFLINE);
+      a.setMd(NOTE, zeilen.join('\n'));
+    } else if (k.lage === 'neustart-rueckspielung') {
+      // Die Sicherung von gestern: der letzte gemeinsame Stand. A's eigener Edit
+      // AAA ist damit zurueckgenommen — das ist der Nutzerwille, nicht ein Verlust.
+      a.setMd(NOTE, n.gemeinsam);
+    } else if (k.lage === 'neustart-offline-loeschung') {
+      // Eine Zeile RAUS, die beide Geraete kennen. Was danach in der Datei steht,
+      // ist eine echte Teilmenge dessen, was ohnehin ueberall bekannt ist — und
+      // damit von „der Sync hat eine aeltere Fassung abgelegt" inhaltlich nicht
+      // mehr zu unterscheiden.
+      a.setMd(
+        NOTE,
+        a
+          .md(NOTE)
+          .split('\n')
+          .filter((z) => !n.geloescht.includes(z))
+          .join('\n')
+      );
+    }
+    halte('nach-eingriff');
+  };
+
+  // DER ZEITPUNKT DES EINGRIFFS. Ohne Angabe: NACH der ganzen Zustellphase — der
+  // Bestand aller bisherigen Lagen, Zahl fuer Zahl unveraendert.
+  //
+  // WOZU DER SCHALTER: Liegt die Loeschung hinter allen Ereignissen, kann DANACH
+  // keine veraltete fremde `.md` mehr eintreffen — und genau dieser Weg ist der
+  // interessante. Trifft eine fremde `.md`, die die Zeile noch traegt, NACH der
+  // Loeschung ein, wird sie geparkt und die Frist loest per `unionMerge` auf;
+  // Vereinigen kann nichts loeschen, die Zeile kaeme also zurueck. Ohne diesen
+  // Schalter waere „0 fehlerhafte Wiederbelebungen" eine Aussage ueber genau EINE
+  // Anordnung statt ueber den Raum.
   for (const [i, e] of k.reihenfolge.entries()) {
     if (i >= (k.sperreBis ?? 0)) bGesperrt = false;
+    if (k.loeschungNach === i) await eingriff();
     await ereignisse[e]();
     await tick();
     halte(`zustell-${e}`);
   }
   bGesperrt = false;
-
-  // --- Der Eingriff bei geschlossener App ----------------------------------
-  // NACH der Zustellphase, VOR dem Start. Genau das Zeitfenster, in dem Obsidian
-  // zu ist und trotzdem etwas an der `.md` passiert — und der einzige Ort, an dem
-  // dieser Treiber einen ECHTEN eigenen Vorgang erzeugen kann, den keine
-  // Hilfsdatei kennt.
-  //
-  // Bewusst ueber `setMd` statt `tippe`: Der Schreibvorgang laeuft NICHT ueber den
-  // Adapter dieses Prozesses — ein anderer Editor, `git checkout`, ein
-  // Wiederherstellungs-Dialog. Der Zeitstempel springt dabei ueber alles, was auf
-  // der Platte liegt (wie bei jedem echten Schreibvorgang); damit sieht der
-  // Start-Sweep die Datei garantiert an, statt sie am mtime-Gate zu ueberspringen.
-  if (k.lage === 'neustart-offline-edit') {
-    tokens.push(OFFLINE);
-    const zeilen = a.md(NOTE).split('\n');
-    zeilen.splice(Math.min(n.posOffline, zeilen.length - 1), 0, OFFLINE);
-    a.setMd(NOTE, zeilen.join('\n'));
-  } else if (k.lage === 'neustart-rueckspielung') {
-    // Die Sicherung von gestern: der letzte gemeinsame Stand. A's eigener Edit
-    // AAA ist damit zurueckgenommen — das ist der Nutzerwille, nicht ein Verlust.
-    a.setMd(NOTE, n.gemeinsam);
-  } else if (k.lage === 'neustart-offline-loeschung') {
-    // Eine Zeile RAUS, die beide Geraete kennen. Was danach in der Datei steht,
-    // ist eine echte Teilmenge dessen, was ohnehin ueberall bekannt ist — und
-    // damit von „der Sync hat eine aeltere Fassung abgelegt" inhaltlich nicht
-    // mehr zu unterscheiden.
-    a.setMd(
-      NOTE,
-      a
-        .md(NOTE)
-        .split('\n')
-        .filter((z) => !n.geloescht.includes(z))
-        .join('\n')
-    );
-  }
-  halte('nach-eingriff');
+  await eingriff();
 
   // --- Der Start ----------------------------------------------------------
   // Obsidian wird geoeffnet: neuer Prozess (leere Schreibspur, leerer Parkplatz,
@@ -711,7 +833,7 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
   const beweisDa = occ(fremdText, 'BBB') > 0;
 
   let sweepAngesehen = false;
-  if (k.lage !== 'laufend') {
+  if (k.lage !== 'laufend' && k.lage !== 'laufend-loeschung') {
     await a.neustart();
     halte('nach-neustart');
     // Nur die MUTATIONSPROBE laesst den Sweep aus; jede andere Neustart-Lage
@@ -789,7 +911,7 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
       ? daA && daB
       : k.lage === 'neustart-rueckspielung'
         ? aaaWeg
-        : k.lage === 'neustart-offline-loeschung'
+        : loeschLage
           ? zeileWeg
           : false;
   const eingriffStillWeg =
@@ -817,6 +939,10 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
     beweisDa,
     eingriffDurch,
     eingriffStillWeg,
+    kannteFremd,
+    sahFremdMd,
+    fremdImDoc,
+    loeschLage,
     grundtextDa,
     fehltA,
     fehltB,
