@@ -92,11 +92,19 @@ function istBasisVariante(v: SweepSchranke): boolean {
 }
 
 // Der Standardwert jedes neuen SyncHandler. `process` ist im Browser-Bundle nicht
-// definiert, deshalb der typeof-Riegel; ohne gesetzte Variable bleibt es 'aus'.
+// definiert, deshalb der typeof-Riegel.
+//
+// Seit 2026-08-07 steht der Standard auf 'basis-signatur': der Start-Sweep hatte
+// kein Herkunftstor und verbuchte eine vom Datei-Sync ueberschriebene `.md` als
+// eigene Bearbeitung — der eigene, noch nicht hochgeladene Edit starb dabei genau
+// dort, wo er als letztes existierte (240/720 = 33,3 %). Die Variante belegt die
+// Herkunft aus der fremden Hilfsdatei und nimmt deren Text als Diff-Basis, statt
+// zu parken; damit sinkt der stille Verlust auf 60/720, ohne dass eine bewusste
+// Offline-Loeschung verlorengeht. 'aus' bleibt als Schalterstand erhalten.
 let sweepSchrankeStandard: SweepSchranke =
   (typeof process !== 'undefined'
     ? (process.env?.QOLLAB_SWEEP_SCHRANKE as SweepSchranke | undefined)
-    : undefined) ?? 'aus';
+    : undefined) ?? 'basis-signatur';
 
 export function setzeSweepSchrankeStandard(v: SweepSchranke): void {
   sweepSchrankeStandard = v;

@@ -221,13 +221,18 @@ export type DiffModus = 'roh' | 'semantisch' | 'ganz';
 
 // Der Standardwert jedes neuen CrdtManager — dieselbe Bauform wie
 // `sweepSchrankeStandard` in `sync-handler.ts`. `process` ist im Browser-Bundle
-// nicht definiert, deshalb der typeof-Riegel; ohne gesetzte Variable bleibt es
-// 'roh', also der Bestand. Damit laesst sich die ganze Suite in BEIDEN
-// Schalterstaenden fahren, ohne dass ein Test angefasst wird.
+// nicht definiert, deshalb der typeof-Riegel.
+//
+// Seit 2026-08-07 steht der Standard auf 'semantisch': der rohe Diff zerstoert
+// bei einer Offline-Loeschung die NACHBARZEILE, sobald beide Zeilen ein
+// gemeinsames Anfangszeichen haben — also bei jeder Aufzaehlung, jeder
+// Ueberschriftenfolge, jeder Checkbox-Liste (296/720 = 41 %, gemessen ueber
+// sieben Praefix-Formen). 'roh' bleibt als Schalterstand erhalten, damit der
+// Bestand jederzeit nachmessbar ist.
 const diffModusStandard: DiffModus =
   (typeof process !== 'undefined'
     ? (process.env?.QOLLAB_DIFF_MODUS as DiffModus | undefined)
-    : undefined) ?? 'roh';
+    : undefined) ?? 'semantisch';
 
 export class CrdtManager {
   private dmp = new diff_match_patch();
