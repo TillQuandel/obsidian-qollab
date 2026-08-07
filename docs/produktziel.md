@@ -209,6 +209,24 @@ zu übernehmen.**
    entfernen. Qollab würde einen Git-Konflikt also nicht auflösen, sondern **verteilen**.
    Erkennung, Test und Doku dazu: null Treffer im gesamten Repo.
 
+## Offen und vorrangig: Grundtext-Verlust ab drei Geräten
+
+Eine Messung vom 2026-08-07 (40 Seeds × 10 Notizen) zeigt für den **Ist-Zustand**:
+
+| | N = 2 | N = 3 | N = 4 |
+| --- | --- | --- | --- |
+| zerstörter Grundtext | 0 | **6** | **22** |
+
+Das verletzt K.o.-Kriterium 1 — und das Zielszenario lautet ausdrücklich „zwei **oder mehr**".
+
+**Einschränkung, geprüft:** Der Produktivcode-Arm jener Messung ist ein Bundle von **vor dem
+05.08.**; er enthält weder `basis-signatur` noch `semantisch` noch `QLB2` (null Treffer). Der
+Befund gilt für den alten Stand. Ob er heute noch gilt, ist **nicht gemessen** — der semantische
+Diff hat dieselbe Schadensklasse in der Zwei-Geräte-Messung von 296/720 auf 0 gebracht.
+
+**Nächste Messung, mit Vorrang vor allem anderen:** Grundtext-Verlust bei N = 3 und N = 4 am
+heutigen Stand.
+
 ## Woher die Verdopplung wirklich kommt
 
 **Gemessen (`task-18-report.md`): Die Duplikate stammen zu 100 % aus der Materialisierung der per
