@@ -164,6 +164,22 @@ zu übernehmen.**
    **Die 24 echten Fälle bleiben ein Bug** mit klarer Adresse: `unionMerge` in `tickParked`
    (`src/sync-handler.ts:514`). Vereinigen kann nichts löschen.
 
+   **Der produktive Stand erkauft weniger Verlust mit mehr sichtbarer Wiederbelebung.** Gemessen
+   in der Lage `laufend-loeschung`, Zelle `geteilt`, je 720 Ordnungen, zweimal reproduziert:
+
+   | Löschzeitpunkt | `roh/aus` | `semantisch/basis-signatur` |
+   | --- | --- | --- |
+   | nach 0 | 28 wieder, **0** fehlerhaft | **54** wieder, **0** fehlerhaft |
+   | nach 2 | 16 wieder, **6** fehlerhaft | **36** wieder, **6** fehlerhaft |
+   | nach 3 | **0** wieder | **14** wieder, **0** fehlerhaft |
+
+   **Jede zusätzliche Wiederbelebung ist legitim** (kausal nebenläufig), die Zahl echter Fehler
+   ist in jeder Zeile identisch. Der Stand verschlechtert also nichts an der Korrektheit — er
+   behält mehr Text, den ein CRDT nach Standard behalten soll, und tauscht dafür stillen Verlust
+   (240 → 60). Nach Gruppe 5 („Sichtbarkeit statt Stille") ist das der richtige Tausch.
+   **Trotzdem gilt:** Für den Nutzer sieht eine legitime Wiederbelebung genauso aus wie ein
+   Fehler. Nach dem Adoptionskriterium ist der Preis mit diesem Stand höher als vorher.
+
    **Zwei Einschränkungen, ausdrücklich:** Die 47,4 % selbst wurden dabei **nicht** reproduziert —
    sie stammen aus einem Apparat auf `mess/verdopplung` mit anderer Zellbasis. Und die 0,12 % sind
    eine Zusammenfassung der Messmatrix, keine Feldrate: Beschränkt man sich auf Zellen mit
