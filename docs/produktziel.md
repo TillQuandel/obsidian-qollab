@@ -230,15 +230,13 @@ heutigen Stand.
 ## Woher die Verdopplung wirklich kommt
 
 **Gemessen (`task-18-report.md`): Die Duplikate stammen zu 100 % aus der Materialisierung der per
-Sync gelieferten `.md` als eigene Op** — nicht aus der Inkarnations-Identität.
+Sync gelieferten `.md` als eigene Op** — nicht aus der Inkarnations-Identität. Wer die Verdopplung
+angehen will, muss dort ansetzen, nicht an der Kennung.
 
-Das erklärt rückblickend, warum **jeder** Kandidat wirkungslos blieb, der an der Kennung ansetzte:
-deterministischer Genesis (8640 Läufe zahlengleich), `clientID` aus dem Texthash, Saat-Kennung
-(Vorbedingung 0/720), Kandidat A (ändert real nur den Tie-Break-Schlüssel). Sie alle behandeln,
-wer die Historie prägt — die Verdopplung entsteht aber eine Ebene tiefer, dort wo ein fremder Text
-in den eigenen CRDT geschrieben wird.
-
-Wer die Verdopplung angehen will, muss an dieser Stelle ansetzen, nicht an der Kennung.
+Das erklärt, warum jeder Kandidat wirkungslos blieb, der an der Kennung ansetzte. **Die
+vollständige Kandidatenlage mit Instrumenten, Zellbasen und Zahlen steht in der Vault-Note
+`[[CRDT-Erstkontakt-ohne-gemeinsame-Historie]]`** — dort ist die Single Source of Truth für den
+Erstkontakt. Dieses Dokument führt nur, was für die Produktentscheidung nötig ist.
 
 ## Quellen
 
