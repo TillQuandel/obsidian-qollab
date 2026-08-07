@@ -271,6 +271,44 @@ export type Zelle = 'geteilt' | 'rollout' | 'alltag';
 //                  hier tragend und nicht nur Beiwerk.
 export type EditArt = 'getrennt' | 'gleiche-zeile';
 
+// DER TRANSPORT — reisen `.md` und Hilfsdatei getrennt oder als ein Paket?
+//
+// 'datei'  — Bestand und Ist-Zustand des Produkts: der Datei-Sync kennt nur
+//            Dateien. Die `.md` und `.qollab/<notiz>.<geraet>.yjs` sind zwei
+//            davon, sie reisen unabhaengig und in beliebiger Reihenfolge. Genau
+//            daraus entsteht der Zustand „die fremde Notiz liegt da, ihr
+//            Nachweis noch nicht".
+// 'atomar' — Notiz und zugehoerige Hilfsdatei(en) eines Geraets reisen
+//            ZUSAMMEN, wie in einem Git-Commit. HOCHGELADEN wird ohnehin schon
+//            paarweise (Ereignis 0 und 1 tun beides); neu ist, dass auch JEDES
+//            HERUNTERLADE-Ereignis das ganze Paket zieht statt einer Haelfte.
+//            Die Reihenfolge ZWISCHEN den Geraeten bleibt frei — nur das Paar
+//            bleibt zusammen.
+//
+// WARUM DIE ZELLBASIS DABEI UNVERAENDERT BLEIBT: Es sind weiterhin dieselben
+// sechs Zustellereignisse und damit dieselben 720 Ordnungen; jedes Ereignis
+// traegt nur ein ganzes Paket statt einer Haelfte. Jedes Geraet behaelt damit
+// genau so viele Zustellmomente wie im Bestand — geaendert hat sich allein, WAS
+// in einem Moment reist.
+//
+// 'atomar-einmal' — KONTROLLARM, kein Betriebszustand. Der naheliegende Einwand
+//            gegen 'atomar' lautet: dort zieht A das Paket ZWEIMAL (Ereignis 2
+//            und 3), im Bestand kommt die fremde `.md` dagegen nur EINMAL
+//            (Ereignis 2). Ein Teil des Unterschieds koennte also schlicht daran
+//            haengen, dass mehr zugestellt wird, und nicht an der Atomaritaet.
+//            Dieser Arm zieht das Paket je Geraet nur EINMAL: Ereignis 3 (und 5,
+//            und 8) tut gar nichts mehr.
+//
+//            SEINE ZELLBASIS IST EINE ANDERE, und das ist ausdruecklich zu
+//            nennen: von den sechs Ereignissen wirken nur noch vier (0, 1, 2, 4).
+//            Es bleiben 720 Laeufe, aber nur 4! = 24 VERSCHIEDENE
+//            Zustellordnungen — jede genau 30-mal. Die Verteilung ueber die 24
+//            ist exakt gleichverteilt (das Weglassen zweier Elemente aus einer
+//            gleichverteilten Permutation laesst den Rest gleichverteilt), die
+//            Prozentzahlen sind also sauber; mit den 720 verschiedenen Ordnungen
+//            der anderen beiden Arme ist die Zelle aber NICHT gepaart.
+export type Transport = 'datei' | 'atomar' | 'atomar-einmal';
+
 export interface Konfig {
   lage: Lage;
   // Permutation von [0..5] bei zwei Geraeten, von [0..8] bei dreien.
@@ -303,6 +341,9 @@ export interface Konfig {
   geraete?: 2 | 3;
   // Ohne Angabe 'getrennt' — der Bestand.
   editArt?: EditArt;
+  // Ohne Angabe 'datei' — dann laeuft exakt der Bestandsaufbau, Ereignis fuer
+  // Ereignis unveraendert.
+  transport?: Transport;
   // Nach WIE VIELEN Zustellereignissen greift der Nutzer ein? `0` = vor allen,
   // `3` = nach dem dritten. Ohne Angabe nach allen — der Bestand jeder
   // bisherigen Lage, Zahl fuer Zahl unveraendert.
@@ -372,6 +413,17 @@ export interface Ergebnis {
   // Schalter erhoben — sie ist eine Eigenschaft der Zustellordnung, nicht des
   // Eingriffs.
   beweisDa: boolean;
+  // DIE GEGENPROBE ZUM TRANSPORT, zum selben Zeitpunkt erhoben: Lag die FREMDE
+  // Notiz auf A's Platte, als der Sweep lief — traegt also A's `.md` B's
+  // Baustein?
+  fremdMdDa: boolean;
+  // DER ZUSTAND, DEN ATOMARITAET UNMOEGLICH MACHEN SOLL: die fremde Notiz ist da,
+  // ihr Nachweis nicht. `beweisDa` allein taugt als Gegenprobe nicht — es faellt
+  // auch dann auf `false`, wenn B ueberhaupt noch nichts hochgeladen hat und
+  // deshalb auch gar keine fremde Notiz da ist. Erst das Paar trennt „der
+  // Nachweis fehlt" von „die Notiz ist OHNE ihren Nachweis gereist". Unter
+  // 'atomar' muss diese Zahl per Bau 0 sein, unter 'datei' groesser 0.
+  notizOhneNachweis: boolean;
   // DIE FALSCH-POSITIV-PROBE. Hat sich der Eingriff durchgesetzt, den der Nutzer
   // bei geschlossener App an A's `.md` vorgenommen hat?
   //   'neustart-offline-edit'  — `OFFLINE` steht am Ende in BEIDEN `.md`.
@@ -669,12 +721,41 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
   // `aWach`: ist A geschlossen, landen die Dateien auf der Platte, ohne dass ein
   // Handler feuert — genau so, wie es ein Sync-Dienst bei geschlossener App tut.
   const aWach = k.lage === 'laufend' || k.lage === 'laufend-loeschung';
+  const atomar = (k.transport ?? 'datei') !== 'datei';
+  // Nur im Kontrollarm: das zweite Herunterlade-Ereignis je Geraet faellt weg.
+  const einmal = k.transport === 'atomar-einmal';
   let aUeberschrieben = false;
+  // DIE BEIDEN HAELFTEN EINES PAKETS, je Geraet einmal. Unter 'datei' liegt jede
+  // in ihrem eigenen Ereignis — woertlich der Bestand. Unter 'atomar' zieht
+  // JEDES der beiden Herunterlade-Ereignisse BEIDE Haelften, in der Reihenfolge,
+  // in der Obsidian sie sieht (erst die `.md` mit ihrem modify, dann die
+  // Hilfsdateien mit dem Poll). Damit kann die Notiz nie ohne ihren Nachweis
+  // ankommen — und genau das ist die Hypothese, die hier auf dem Pruefstand steht.
+  const aMd = async (): Promise<void> => {
+    // DAS EREIGNIS. Der Sync-Dienst legt B's Fassung an A's Originalnamen; A's
+    // lokal geaenderte Fassung wird zur Konfliktkopie (konfliktModus 'kopie').
+    const ueberschrieben = w.ladeMdHerunter(a, NOTE);
+    if (ueberschrieben) aUeberschrieben = true;
+    if (ueberschrieben && aWach) await a.modify(NOTE, 'sync');
+  };
+  const aSidecars = async (): Promise<void> => {
+    const neu = w.ladeSidecarsHerunter(a);
+    if (neu && aWach) await a.poll(NOTE);
+  };
+  const bMd = async (): Promise<void> => {
+    if (w.ladeMdHerunter(b, NOTE)) await b.modify(NOTE, 'sync');
+  };
+  const bSidecars = async (): Promise<void> => {
+    // 'rollout': B's `.qollab/` bleibt die ersten `sperreBis` Schritte leer.
+    if (!bGesperrt && w.ladeSidecarsHerunter(b)) await b.poll(NOTE);
+  };
   const ereignisse: Array<() => Promise<void>> = [
     async () => {
       // A laedt nur hoch, wenn es laeuft. Bei geschlossener App synchronisiert der
       // Dienst die Dateien weiter — der Stand auf der Platte ist der, den A
       // hinterlassen hat.
+      // HOCHLADEN IST SCHON IM BESTAND ATOMAR: beide Haelften liegen in
+      // demselben Ereignis. 'atomar' aendert hier nichts.
       w.ladeMdHoch(a, NOTE);
       w.ladeSidecarsHoch(a);
     },
@@ -683,38 +764,47 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
       w.ladeSidecarsHoch(b);
     },
     async () => {
-      // DAS EREIGNIS. Der Sync-Dienst legt B's Fassung an A's Originalnamen; A's
-      // lokal geaenderte Fassung wird zur Konfliktkopie (konfliktModus 'kopie').
-      const ueberschrieben = w.ladeMdHerunter(a, NOTE);
-      if (ueberschrieben) aUeberschrieben = true;
-      if (ueberschrieben && aWach) await a.modify(NOTE, 'sync');
+      await aMd();
+      if (atomar) await aSidecars();
     },
     async () => {
-      const neu = w.ladeSidecarsHerunter(a);
-      if (neu && aWach) await a.poll(NOTE);
+      if (einmal) return; // Kontrollarm: A hat sein Paket schon in Ereignis 2 gezogen
+      if (atomar) await aMd();
+      await aSidecars();
     },
     async () => {
-      if (w.ladeMdHerunter(b, NOTE)) await b.modify(NOTE, 'sync');
+      await bMd();
+      if (atomar) await bSidecars();
     },
     async () => {
-      // 'rollout': B's `.qollab/` bleibt die ersten `sperreBis` Schritte leer.
-      if (!bGesperrt && w.ladeSidecarsHerunter(b)) await b.poll(NOTE);
+      if (einmal) return;
+      if (atomar) await bMd();
+      await bSidecars();
     },
   ];
   // DIE DREI EREIGNISSE DES DRITTEN GERAETS. Sie kommen HINTEN dran, damit die
   // Indizes 0..5 dieselben Ereignisse bezeichnen wie bisher — sonst waere keine
   // einzige Zustellordnung zwischen zwei und drei Geraeten vergleichbar.
   if (c) {
+    const cMd = async (): Promise<void> => {
+      if (w.ladeMdHerunter(c, NOTE)) await c.modify(NOTE, 'sync');
+    };
+    const cSidecars = async (): Promise<void> => {
+      if (w.ladeSidecarsHerunter(c)) await c.poll(NOTE);
+    };
     ereignisse.push(
       async () => {
         w.ladeMdHoch(c, NOTE);
         w.ladeSidecarsHoch(c);
       },
       async () => {
-        if (w.ladeMdHerunter(c, NOTE)) await c.modify(NOTE, 'sync');
+        await cMd();
+        if (atomar) await cSidecars();
       },
       async () => {
-        if (w.ladeSidecarsHerunter(c)) await c.poll(NOTE);
+        if (einmal) return;
+        if (atomar) await cMd();
+        await cSidecars();
       }
     );
   }
@@ -831,6 +921,11 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
     }
   }
   const beweisDa = occ(fremdText, 'BBB') > 0;
+  // Zum selben Zeitpunkt: liegt die FREMDE Notiz schon auf A's Platte? In den
+  // `neustart`-Lagen ist A durchgehend zu, A's `.md` traegt B's Baustein also
+  // genau dann, wenn der Sync-Dienst B's Fassung dorthin geschrieben hat.
+  const fremdMdDa = occ(a.md(NOTE), 'BBB') > 0;
+  const notizOhneNachweis = fremdMdDa && !beweisDa;
 
   let sweepAngesehen = false;
   if (k.lage !== 'laufend' && k.lage !== 'laufend-loeschung') {
@@ -937,6 +1032,8 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
     schrankeAbstand: summe((g) => g.schrankeAbstandZaehler),
     diffGeaendert: summe((g) => g.diffGeaendert),
     beweisDa,
+    fremdMdDa,
+    notizOhneNachweis,
     eingriffDurch,
     eingriffStillWeg,
     kannteFremd,

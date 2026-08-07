@@ -22,6 +22,10 @@ export interface Zellwerte {
   treffer: number; // Summe aller erklaerenden Siblings ueber alle Befunde
   andereWahl: number; // nur 'basis-naechster': Wahl weicht vom ersten Treffer ab
   beweisDa: number;
+  // GEGENPROBE ZUM TRANSPORT: die fremde Notiz lag zum Sweep-Zeitpunkt da, ihr
+  // Nachweis nicht. Unter 'atomar' muss das 0 sein.
+  fremdMdDa: number;
+  notizOhneNachweis: number;
   eingriffDurch: number;
   // DIE KAUSALITAETS-ZERLEGUNG. Nur in den Loeschungs-Lagen belegt (`loeschLauf`
   // sagt, wie viele Laeufe der Zelle ueberhaupt eine Loeschung enthielten).
@@ -65,6 +69,8 @@ const leer = (): Zellwerte => ({
   treffer: 0,
   andereWahl: 0,
   beweisDa: 0,
+  fremdMdDa: 0,
+  notizOhneNachweis: 0,
   eingriffDurch: 0,
   loeschLauf: 0,
   kannteFremd: 0,
@@ -108,6 +114,8 @@ export async function messe(
     z.treffer += e.schrankeTreffer;
     z.andereWahl += e.schrankeAndereWahl;
     if (e.beweisDa) z.beweisDa++;
+    if (e.fremdMdDa) z.fremdMdDa++;
+    if (e.notizOhneNachweis) z.notizOhneNachweis++;
     if (e.eingriffDurch) z.eingriffDurch++;
     if (e.loeschLage) {
       z.loeschLauf++;
@@ -150,6 +158,7 @@ export function zeile(name: string, z: Zellwerte): string {
     `GRUNDTEXT WEG ${z3(z.grundtextWeg)} (ganz ${z3(z.ganzWeg)}) | ` +
     `sauber ${z3(z.sauber)} | ` +
     `Sweep sah ${z3(z.sweepAngesehen)} | Beweis da ${z3(z.beweisDa)} | ` +
+    `fremde .md da ${z3(z.fremdMdDa)} | NOTIZ OHNE NACHWEIS ${z3(z.notizOhneNachweis)} | ` +
     `GREIFT ${z3(z.schranke)} (mehrfach ${z3(z.mehrfach)}, Treffer ${z3(z.treffer)}, ` +
     `andere Wahl ${z3(z.andereWahl)}) | ` +
     `Eingriff durch ${z3(z.eingriffDurch)} | park ${z3(z.parkungen)} | ` +

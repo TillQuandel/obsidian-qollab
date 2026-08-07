@@ -29,6 +29,8 @@ mit dem der normalen Suite (EPERM).
 | --- | --- |
 | `geraet.ts` | Zwei-Geräte-Treiber gegen den **echten** `SyncHandler` samt echter Schreibspur. Nachgebaut ist nur die Klammer aus `main.ts`: modify-Handler, Write-Back, Poll und der **Start-Sweep**. |
 | `wolke.ts` | Der Datei-Sync als eigene Schicht, mit getrenntem Hoch- und Herunterladen und drei Konfliktmodi. |
+| `zzRFH-atomar-lagen.spec.ts` | **Atomare Zustellung**, Zelle `geteilt`: `transport: 'datei' \| 'atomar'` über die Lagen `neustart`, `neustart-offline-loeschung`, `laufend-loeschung`, je beide Schalterstände. Enthält die Kalibrierung als `expect` und den Kontrollarm `atomar-einmal`. |
+| `zzRFI-atomar-zellen.spec.ts` | Dasselbe in den Zellen `alltag` und `rollout` — dort liegt der Erstkontakt. |
 | `lauf-rueckfall.ts` | Das Szenario „die `.md` fällt fremdbestimmt hinter den Merge-Zustand zurück". |
 | `zzRF-rueckfall.spec.ts` | Die Messung dazu. Erster Block: drei Lagen × zwei Konfliktmodi. Zweiter Block: die zwei **Falsch-Positiv-Lagen** (`neustart-offline-edit`, `neustart-rueckspielung`) × zwei Konfliktmodi. Je die **vollständigen** 720 Zustellreihenfolgen. |
 | `zzRF0-rauch.spec.ts` | Rauchtest — läuft das Szenario überhaupt den Weg, den es messen soll. |
