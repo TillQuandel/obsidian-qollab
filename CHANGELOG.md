@@ -4,6 +4,21 @@ Alle nennenswerten Aenderungen an Qollab. Format orientiert sich an [Keep a Chan
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-08-07
+
+> **Breaking: das Hilfsdatei-Format aendert sich.** Ein Geraet auf v0.4.0 kann eine `QLB2`-Datei
+> nicht lesen. Es ignoriert sie nicht, sondern haelt sie zunaechst fuer beschaedigt und praegt eine
+> eigene Inkarnation — und **loescht sie bei einem spaeteren Lauf ohne ein Wort**, worauf der
+> Datei-Sync die Loeschung auf alle Geraete traegt. Ein halb aktualisierter Vault verliert deshalb
+> Hilfsdateien und mit ihnen die Aenderungshistorie der betroffenen Notizen; die Notizen selbst
+> bleiben, das Zusammenfuehren nicht. **Alle Geraete zusammen aktualisieren** — oder ueberall auf
+> der alten Version bleiben, bis das moeglich ist. Diese Richtung ist nicht reparabel: sie liegt im
+> ausgelieferten v0.4.0-Code.
+>
+> Die Versionsnummer 0.5.0 war im README fuer „Loeschung als CRDT-Operation" angekuendigt. Die
+> kommt hier **nicht** mit; der Formatbruch hat die Nummer bekommen, weil sie die einzige Warnung
+> ist, die ein Nutzer vor dem Update sieht. Der README ist entsprechend richtiggestellt.
+
 ### Added
 
 - **Auch das Gerät, das eine fremde Fassung verwirft, sagt das jetzt** — die Ergänzung zum Eintrag darunter, und der Grund dafür kommt aus dem Realtest an der echten App (2026-07-31), nicht aus einer Code-Lesung. Die Meldung von v0.4.1 hängt an `unite`, feuert also nur dort, wo zwei Ketten tatsächlich **vereinigt** werden: beim Wechsel auf die Gewinner-Kette. Gewinnt die eigene Kette den Tie-Break, nimmt `loadAndMerge` den anderen Zweig, `mergeCompatible` überspringt die fremde Kennung („Verlierer-GUIDs ignorieren") — und genau auf diesem Gerät fehlt anschließend der Text des anderen. Dort blieb es still, über **beide** Kanäle. Gemessen mit drei Läufen an zwei echten Obsidian-Instanzen, Meldungen über einen vorher installierten und im selben Lauf gegen eine bewusst ausgelöste Meldung validierten Beobachter mitgeschnitten: Empfänger verliert den Tie-Break → Meldung erscheint, Textstand beide Marken je 1×; Empfänger gewinnt → **0** Meldungen und **0** Konsolenzeilen in beiden Fenstern, fremde Marke 0×. Beide Läufe hatten dieselbe Zustellreihenfolge (nur die Historie reiste), unterschieden sich also allein im Ausgang des Tie-Breaks; ein dritter Lauf mit zusätzlich zugestellter `.md` bestätigt dasselbe Bild. Damit ist die Zustellreihenfolge als Erklärung ausgeschlossen — es entscheidet der Vergleich zweier Zufallskennungen, und die schweigende Seite ist immer die, auf der Text fehlt. Neu ist deshalb ein zweiter Kanal mit eigenem Wortlaut (die Lage ist die umgekehrte: dort steht eine Fassung zu viel, hier fehlt eine). Eng geschnitten, damit daraus kein Fehlalarm wird: gemeldet wird **nur**, wo der Verwurf endgültig ist (entschiedener Tie-Break, Adoption einer von mehreren fremden Ketten) — ausdrücklich **nicht** im Änderungs-Pfad `mergePendingForeign`, wo das Übergehen einer fremden Kennung vorläufig ist und der nächste Abgleich sie auflöst —, und nur, wenn die verworfene Datei nachweisbar Operationen trägt (`carriesYjsOps`); eine leere oder halb materialisierte Hilfsdatei, der dokumentierte OneDrive-Hauptauslöser, hat nichts zu verlieren. Höchstens eine Meldung je Notiz und Sitzung; ab der vierten betroffenen Notiz eine einmalige Sammelmeldung statt einer Flut, weil ein frisch geteilter Vault Dutzende auf einmal treffen kann — die vollständige Liste geht in jedem Fall als `console.warn` mit vollem Pfad heraus. Bewusst **ohne** laufende Zählung in der Sammelmeldung: Die genaue Zahl stünde erst nach dem letzten Merge fest, müsste also nachgezogen werden, und die Handlung ist in jedem Fall dieselbe. Am Zusammenführen selbst ändert sich nichts — kein Merge-Pfad, keine Reihenfolge, keine Datei wird anders behandelt.

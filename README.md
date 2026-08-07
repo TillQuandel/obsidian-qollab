@@ -120,7 +120,7 @@ The price, and it is a real one: a **truncated** helper file from another device
 
 **A deleted note coming back — fixed, with two exceptions.** Delete a note and create a new one under the same name, and a late-arriving old helper file no longer resurrects the old text: deleting marks that incarnation locally, and stale helper files carrying that marker are ignored and cleaned up. The first exception: if Qollab was **switched off** on this device at the moment of the deletion, no marker is set — off means *change nothing*, otherwise a disabled plugin would bury a note that your sync provider had merely renamed. The second: if the **device profile is lost** (reinstall, new machine), every existing marker goes with it, and putting them anywhere else would mean writing them into the synced `data.json` — the mistake described above. In both cases a helper file arriving later can bring the old text back into a same-named new note.
 
-**Deletion markers are device-local.** A device that was offline during delete-and-recreate keeps its old history and no longer participates in the new incarnation's merge. Two guards prevent an empty returning state from wiping a note. Full deletion as a CRDT operation is planned for v0.5.
+**Deletion markers are device-local.** A device that was offline during delete-and-recreate keeps its old history and no longer participates in the new incarnation's merge. Two guards prevent an empty returning state from wiping a note. Full deletion as a CRDT operation is still planned, but **not** in 0.5.0 — that version number went to the helper file format change instead.
 
 **Concurrent edits to the same line.** Both texts survive, but the resulting order can be surprising.
 
