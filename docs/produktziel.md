@@ -189,6 +189,26 @@ zu übernehmen.**
    `.superpowers/sdd/recherche-herkunft-2026-08-04-b.md` existiert die Funktion dort nicht.
    Ungeklärt.
 
+4. **Git/GitHub als Transport vs. „keine Registrierung" — Zielkonflikt in diesem Dokument.**
+   Oben steht beides: GitHub ist ausdrücklich Zielszenario, und „kein Konto, keine Registrierung"
+   ist Teil von „niemand betreibt einen Dienst". Ein GitHub-Konto ist kein *betriebener Dienst*,
+   aber es ist eine Registrierung. **Das ist nicht entschieden**, und es entscheidet mit, welche
+   Commit-Variante überhaupt zulässig ist (Plugin bringt Git mit → braucht Token; fremdes
+   Git-Plugin → Handarbeit bei der Einrichtung).
+
+5. **Die Konfliktfreiheit unter Git gilt nur für die Hilfsdateien, nicht für die Notiz.** Oben
+   steht, die Per-Geräte-Dateinamen sorgten dafür, dass „Git nie einen Konflikt sieht". Das
+   stimmt für `.yjs` — die `.md` schreiben aber **beide** Seiten. Der Plan von 2026-05-19
+   behandelt nur die Hilfsdateien; die Notiz-Hälfte ist nie spezifiziert worden. Die Formulierung
+   oben ist damit breiter, als die Konstruktion trägt.
+
+   **Was heute passieren würde** (aus dem Kontrollfluss gelesen, **nicht gemessen**): Eine `.md`
+   mit Git-Konfliktmarkern trägt keinen Lock und stammt nicht aus diesem Prozess → sie wird
+   geparkt → später vereinigt → die Markerzeilen stehen als gewöhnlicher Text im CRDT und wandern
+   über die eigene Hilfsdatei zu **allen** Peers. Und `unionMerge` kann sie nicht wieder
+   entfernen. Qollab würde einen Git-Konflikt also nicht auflösen, sondern **verteilen**.
+   Erkennung, Test und Doku dazu: null Treffer im gesamten Repo.
+
 ## Quellen
 
 - `README.md` — Ist-Zustand mit Messzahlen (nutzerorientiert)
