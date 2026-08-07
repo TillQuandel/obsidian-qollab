@@ -28,6 +28,12 @@ export interface Zellwerte {
   ganzDoppel: number; // strenge Verdopplung einer GRUNDZEILE
   diffGeaendert: number;
   parkungen: number;
+  // AUFWAND: dekodierte Geschwister-Texte gegen die Zahl beim fruehen Ausstieg,
+  // die Abstands-Diffs der Wahlregel, und die reine Laufzeit der Zelle.
+  text: number;
+  textFrueher: number;
+  abstand: number;
+  ms: number;
 }
 
 const leer = (): Zellwerte => ({
@@ -50,6 +56,10 @@ const leer = (): Zellwerte => ({
   ganzDoppel: 0,
   diffGeaendert: 0,
   parkungen: 0,
+  text: 0,
+  textFrueher: 0,
+  abstand: 0,
+  ms: 0,
 });
 
 // Faehrt dieselbe Konfiguration ueber jede uebergebene Zustellordnung.
@@ -58,6 +68,7 @@ export async function messe(
   ordnungen: number[][]
 ): Promise<Zellwerte> {
   const z = leer();
+  const start = Date.now();
   for (const reihenfolge of ordnungen) {
     const e = await laufRueckfall({ ...basis, reihenfolge });
     z.n++;
@@ -79,7 +90,11 @@ export async function messe(
     if (e.ganzDoppelt.length > 0) z.ganzDoppel++;
     z.diffGeaendert += e.diffGeaendert;
     z.parkungen += e.parkungen;
+    z.text += e.schrankeText;
+    z.textFrueher += e.schrankeTextFrueher;
+    z.abstand += e.schrankeAbstand;
   }
+  z.ms = Date.now() - start;
   return z;
 }
 
@@ -99,6 +114,8 @@ export function zeile(name: string, z: Zellwerte): string {
     `GREIFT ${z3(z.schranke)} (mehrfach ${z3(z.mehrfach)}, Treffer ${z3(z.treffer)}, ` +
     `andere Wahl ${z3(z.andereWahl)}) | ` +
     `Eingriff durch ${z3(z.eingriffDurch)} | park ${z3(z.parkungen)} | ` +
-    `diff-geaendert ${z.diffGeaendert}`
+    `diff-geaendert ${z.diffGeaendert} | ` +
+    `Aufwand: Text ${z.text} (frueher ${z.textFrueher}), Abstand ${z.abstand}, ` +
+    `${(z.ms / Math.max(1, z.n)).toFixed(1)} ms/Lauf`
   );
 }

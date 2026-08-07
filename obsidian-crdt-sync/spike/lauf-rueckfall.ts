@@ -333,6 +333,11 @@ export interface Ergebnis {
   schrankeMehrfach: number;
   schrankeTreffer: number;
   schrankeAndereWahl: number;
+  // AUFWANDSPROBE: dekodierte Geschwister-Texte, dieselbe Zahl beim fruehen
+  // Ausstieg, und die Abstands-Diffs der Wahlregel.
+  schrankeText: number;
+  schrankeTextFrueher: number;
+  schrankeAbstand: number;
   // AKTIVITAETSPROBE des Diff-Schalters: Wie oft hat er die Op-Folge von
   // `setContent` TATSAECHLICH veraendert? Bei 'roh' ist das per Bau 0.
   diffGeaendert: number;
@@ -805,6 +810,9 @@ export async function laufRueckfall(k: Konfig): Promise<Ergebnis> {
     schrankeMehrfach: summe((g) => g.schrankeMehrfachZaehler),
     schrankeTreffer: summe((g) => g.schrankeTrefferZaehler),
     schrankeAndereWahl: summe((g) => g.schrankeAndereWahlZaehler),
+    schrankeText: summe((g) => g.schrankeTextZaehler),
+    schrankeTextFrueher: summe((g) => g.schrankeTextFrueherZaehler),
+    schrankeAbstand: summe((g) => g.schrankeAbstandZaehler),
     diffGeaendert: summe((g) => g.diffGeaendert),
     beweisDa,
     eingriffDurch,

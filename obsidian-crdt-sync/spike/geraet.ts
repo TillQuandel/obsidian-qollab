@@ -94,6 +94,10 @@ export class Geraet {
   schrankeMehrfachZaehler = 0;
   schrankeTrefferZaehler = 0;
   schrankeAndereWahlZaehler = 0;
+  // AUFWANDSPROBE, ebenfalls ueber Neustarts hinweg.
+  schrankeTextZaehler = 0;
+  schrankeTextFrueherZaehler = 0;
+  schrankeAbstandZaehler = 0;
 
   setzeSchranke(v: SweepSchranke): void {
     this.schranke = v;
@@ -306,6 +310,12 @@ export class Geraet {
     this.sync.sweepSchrankeTreffer = 0;
     this.schrankeAndereWahlZaehler += this.sync.sweepSchrankeAndereWahl;
     this.sync.sweepSchrankeAndereWahl = 0;
+    this.schrankeTextZaehler += this.sync.sweepSchrankeTextAufrufe;
+    this.sync.sweepSchrankeTextAufrufe = 0;
+    this.schrankeTextFrueherZaehler += this.sync.sweepSchrankeTextFrueher;
+    this.sync.sweepSchrankeTextFrueher = 0;
+    this.schrankeAbstandZaehler += this.sync.sweepSchrankeAbstandAufrufe;
+    this.sync.sweepSchrankeAbstandAufrufe = 0;
     return angesehen;
   }
 

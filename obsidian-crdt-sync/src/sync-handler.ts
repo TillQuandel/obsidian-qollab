@@ -1574,6 +1574,14 @@ export class SyncHandler {
   // Wie oft haette die Wahlregel 'basis-naechster' einen ANDEREN Sibling genommen
   // als den ersten? Die Zahl trennt „mehrdeutig" von „folgenreich mehrdeutig".
   sweepSchrankeAndereWahl = 0;
+  // AUFWANDSPROBE. Das Sammeln aller Treffer dekodiert mehr Geschwister als der
+  // fruehere Ausstieg beim ersten. `TextAufrufe` zaehlt die tatsaechlichen
+  // `textFromUpdate`-Aufrufe, `TextFrueher` die, die bis zum ersten Treffer
+  // gereicht haetten — die Differenz IST der Mehraufwand. `AbstandAufrufe` sind
+  // die zusaetzlichen Diffs der Wahlregel 'basis-naechster'.
+  sweepSchrankeTextAufrufe = 0;
+  sweepSchrankeTextFrueher = 0;
+  sweepSchrankeAbstandAufrufe = 0;
 
   // Wird `content` durch eine verfuegbare FREMDE Revision erklaert? Rueckgabe ist
   // deren TEXT — die Park-Varianten brauchen davon nur „ja/nein", die
@@ -1604,11 +1612,16 @@ export class SyncHandler {
     // dem fruehen Ausstieg geliefert hat — gesammelt wird nur, weil sich die
     // Mehrdeutigkeit sonst nicht zaehlen laesst und die Wahlregel unten sie braucht.
     const treffer: string[] = [];
+    // AUFWANDSPROBE, siehe die Zaehler oben: `dekodiert` ist, was das Sammeln
+    // kostet; `bisTreffer` ist, was der fruehe Ausstieg gekostet haette.
+    let dekodiert = 0;
+    let bisTreffer = 0;
     for (const s of siblings) {
       if (s.path === ownPath) continue;
       if (!carriesYjsOps(s.update)) continue;
       // Der ROHE Text ist die Basis: `vergleichsfassung` dient nur dem Vergleich.
       const roh = textFromUpdate(s.update);
+      dekodiert++;
       const fremd = vergleichsfassung(roh);
       if (fremd === '') continue;
       if (erkennung === 'immer') {
@@ -1628,7 +1641,12 @@ export class SyncHandler {
         const eigenNur = insertedTexts(fremd, eigen);
         if (eigenNur.some((t) => !c.includes(t))) treffer.push(roh);
       }
+      if (treffer.length > 0 && bisTreffer === 0) bisTreffer = dekodiert;
     }
+    this.sweepSchrankeTextAufrufe += dekodiert;
+    // Ohne Treffer laeuft auch der fruehe Ausstieg durch ALLE Geschwister — dort
+    // ist der Mehraufwand per Bau null.
+    this.sweepSchrankeTextFrueher += bisTreffer === 0 ? dekodiert : bisTreffer;
     if (treffer.length === 0) return null;
     this.sweepSchrankeTreffer += treffer.length;
     if (treffer.length > 1) this.sweepSchrankeMehrfach++;
@@ -1637,6 +1655,7 @@ export class SyncHandler {
     // nur unter 'basis-naechster' ueberhaupt gebildet; wie oft er die Wahl aendert,
     // steht deshalb im Zaehler DIESES Standes, nicht im Lauf des Bestands.
     if (this.sweepSchranke !== 'basis-naechster' || treffer.length === 1) return treffer[0];
+    this.sweepSchrankeAbstandAufrufe += treffer.length;
     let bester = treffer[0];
     let besterAbstand = abstand(vergleichsfassung(bester), c);
     for (const roh of treffer.slice(1)) {
