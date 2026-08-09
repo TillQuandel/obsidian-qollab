@@ -12,8 +12,52 @@
 // Zahlen werden NICHT ueber beide Klassen gemittelt: „konvergent" und
 // „gekappt" stehen getrennt, weil ein gekappter Lauf mitten im Wachstum
 // bewertet wird und seine Verdopplungszahl damit eine Untergrenze ist.
+import { createRequire } from 'node:module';
 import { buildScenario, Transport, rng, score } from './harness.mjs';
 import * as S from './schnitte.mjs';
+
+const require = createRequire(import.meta.url);
+
+// ---------------------------------------------------------------------------
+// SPIKE_DET=<seed> — wahlweise reproduzierbar.
+//
+// OHNE die Variable aendert sich nichts: der Apparat streut wie bisher, und das
+// ist fuer die absolute Verlustrate auch richtig — eine feste Tie-Break-Folge
+// ist eine Stichprobe der Groesse 1. MIT der Variable liegen beide
+// Zufallsquellen des GEMESSENEN Produktivcodes fest:
+//
+//   1. Yjs zieht `doc.clientID` ueber `lib0/webcrypto` (entscheidet den
+//      YATA-Tie-Break bei nebenlaeufigen Einfuegungen).
+//   2. `generateGuid` (state-file.ts) zieht `crypto.getRandomValues` — in beiden
+//      Bundles als freier Bezeichner, also `globalThis.crypto` zur AUFRUFZEIT.
+//
+// Beide Punkte liegen AUSSERHALB der Bundles: `yjs` ist in `build.mjs` wie in
+// `build-neu.mjs` als extern markiert, `globalThis.crypto` ist ohnehin global.
+// Der Schalter wirkt deshalb in BEIDEN Armen — auch im Bestandsarm `real.cjs`,
+// der neu gebaut werden muesste, um Exporte zu tragen (und genau das darf er
+// nicht).
+//
+// Punkt 2 wird bewusst auf DIESELBE geseedete Quelle gelegt statt auf
+// `guid-quelle.ts`: deren `setzeGuidFolge` erwartet eine vorab erzeugte
+// Hex-Liste, und dieser Apparat zieht 217.867 GUIDs je Lauf (N=4, 40 Seeds,
+// gemessen). Nach Erschoepfung der Liste zaehlt `guid-quelle` hoch und
+// KOLLIDIERT ab 256 Eintraegen (`zaehler=17` und `zaehler=273` ergeben beide
+// `1111...`) — verschiedene Inkarnationen bekaemen dieselbe Kennung. Die
+// lib0-Quelle hat 2^32 Periode und liefert hier durchweg verschiedene GUIDs.
+// ---------------------------------------------------------------------------
+const DET = process.env.SPIKE_DET;
+if (DET !== undefined && DET !== '') {
+  const det = require('./det-quelle.cjs');
+  const webcrypto = require('lib0/webcrypto');
+  det.setzeZufallSeed(Number(DET));
+  det.zufallQuelleAn();
+  // Zur Aufrufzeit aufloesen, damit die soeben gesetzte Fassung greift.
+  globalThis.crypto.getRandomValues = (arr) => webcrypto.getRandomValues(arr);
+  // Auf stderr, damit die Messzeile auf stdout unveraendert bleibt. Ein still
+  // ignorierter Schalter waere genau der Fehler, den dieser Apparat schon
+  // sechsmal hatte.
+  console.error(`[SPIKE_DET=${Number(DET)}] Zufallsquellen festgelegt`);
+}
 
 const NAME = process.argv[2] ?? 'S3log';
 const N = Number(process.argv[3] ?? 3);

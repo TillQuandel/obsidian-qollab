@@ -1,3 +1,10 @@
+// UEBERHOLT seit 2026-08-09 — nicht mehr benutzen. `bilanz-n.mjs` hat jetzt
+// `SPIKE_DET=<seed>`, das BEIDE Quellen festlegt (clientID ueber
+// `lib0/webcrypto` aus `zufall-quelle.ts`, GUID ueber `globalThis.crypto`).
+// Diese Datei deckt nur die GUID-Quelle ab und laesst die clientID streuen; sie
+// bleibt ausschliesslich als Beleg der Gegenprobe vom 2026-08-07 liegen, auf die
+// sich `grundtext-n-2026-08-07.md` beruft.
+//
 // Preload, das die EINZIGE Zufallsquelle des Messaufbaus stillegt.
 //
 // Befund 2026-08-07: `bilanz-n.mjs` liefert bei identischem Aufruf
