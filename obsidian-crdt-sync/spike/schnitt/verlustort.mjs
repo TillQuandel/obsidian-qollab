@@ -13,7 +13,8 @@
 // den Doc-Vorlauf schon traegt. NUR im Spike, `src/` bleibt unberuehrt.
 import { createRequire } from 'node:module';
 import { buildScenario, Transport, rng } from './harness.mjs';
-import * as S from './schnitte.mjs';
+// Siehe einzel.mjs: der statische Import ignorierte `SPIKE_SCHNITTE` still.
+const S = await import(process.env.SPIKE_SCHNITTE ?? './schnitte.mjs');
 
 const require = createRequire(import.meta.url);
 const det = require('./det-quelle.cjs');
@@ -92,9 +93,39 @@ P.mergeForLocalDiff = async function (notePath, content, imSweep) {
   return erg;
 };
 
+// --- tickParked: das unionMerge aus sync-handler.ts:514 -------------------
+// Der Zaehler zaehlte bisher nur die AUFRUFE. Die Stelle, um die es geht, ist
+// aber das `unionMerge(p.text, doc)` INNEN — es ist nicht `this.unite` und wird
+// vom `uniteRuf`-Zaehler oben deshalb NICHT erfasst.
+//
+// Von aussen sind die beiden Ausgaenge an der Deckungsfrage zu unterscheiden:
+// deckt der Doc den geparkten Stand, loest `resolveParked` auf (kein
+// `unionMerge`, keine Op). Sonst ist die Frist abgelaufen und der Stand wird
+// vereinigt und per `applyLocalContent` erfasst. Beides wird hier NACHGERECHNET,
+// nicht nachgebaut — der Aufruf selbst bleibt unberuehrt.
 const origTick = P.tickParked;
-let tickRuf = 0;
-P.tickParked = function (...a) { tickRuf++; return origTick.apply(this, a); };
+let tickRuf = 0, tickNachtrag = 0, tickAufgeloest = 0, tickTot = 0, tickZeilen = 0;
+P.tickParked = async function (notePath, frist) {
+  tickRuf++;
+  const geparkt = this.parkedText(notePath);
+  const docVor = this.crdtManager.getContent(notePath);
+  const erg = await origTick.call(this, notePath, frist);
+  if (geparkt !== undefined && !this.hasParked(notePath)) {
+    const vereinigt = R.unionMerge(geparkt, docVor);
+    if (vereinigt === docVor) tickAufgeloest++;
+    else {
+      tickNachtrag++;
+      const nach = new Set(this.crdtManager.getContent(notePath).split('\n'));
+      // Kriterium wie oben: eine Grundtextzeile, die BEIDE Seiten der Vereinigung
+      // kannten und die danach im Doc fehlt.
+      const weg = basisZeilen(geparkt)
+        .filter((z) => basisZeilen(docVor).includes(z))
+        .filter((z) => !nach.has(z));
+      if (weg.length) { tickTot++; tickZeilen += weg.length; }
+    }
+  }
+  return erg;
+};
 globalThis.__tick = () => tickRuf;
 
 // --- loadAndMerge ---------------------------------------------------------
@@ -156,8 +187,12 @@ CP.setContent = function (notePath, text) {
     // Aufrufstelle aus dem Stack — es gibt genau drei (sync-handler.ts 1307,
     // 1454, 1703). Der Bundle ist unminifiziert, die Funktionsnamen stehen drin.
     const st = new Error().stack ?? '';
+    // `tickParked` ZUERST: sein Nachtrag laeuft ueber applyLocalContent:1703, ist
+    // aber ein voellig anderer Anlass (Fristablauf statt Tastendruck). Ohne diese
+    // Reihenfolge verschwaende der Parkplatz-Pfad in der 1703-Zeile.
     const ort =
-      /switchToGuid/.test(st) ? 'switchToGuid:1454'
+      /tickParked/.test(st) ? 'tickParked:516->applyLocalContent:1703'
+      : /switchToGuid/.test(st) ? 'switchToGuid:1454'
       : /ensureDoc/.test(st) ? 'ensureDoc:1307'
       : /applyLocalContent/.test(st) ? 'applyLocalContent:1703'
       : 'unbekannt';
@@ -229,7 +264,8 @@ console.log(`  mergeForLocalDiff: ${zahl.mfldRuf} Aufrufe, davon ${zahl.mfldTot}
 console.log(`  unite/unionMerge : ${zahl.uniteRuf} Aufrufe, davon ${zahl.uniteTot} mit toter Grundtextzeile`);
 console.log(`  loadAndMerge     : ${zahl.lamRuf} Aufrufe, davon ${zahl.lamTot} mit toter Grundtextzeile`);
 console.log(`  crdt.setContent  : ${zahl.setRuf} Aufrufe, davon ${zahl.setTot} mit GEBORENER Loesch-Op auf Grundtext (${zahl.setZeilen} Zeilen)`);
-console.log(`  tickParked       : ${globalThis.__tick()} Aufrufe`);
+console.log(`  tickParked       : ${globalThis.__tick()} Aufrufe, davon ${tickAufgeloest} aufgeloest (Doc deckt) / ${tickNachtrag} NACHTRAG per unionMerge (sync-handler.ts:514)`);
+console.log(`                     davon ${tickTot} Nachtraege mit toter Grundtextzeile (${tickZeilen} Zeilen)`);
 console.log(`  crdt.setContent  : ${zahl.setBruch} Aufrufe mit ZEILENGRENZEN-UEBERSCHREITENDER Op, ${zahl.setDel} Aufrufe mit ueberhaupt einer DELETE-Op`);
 for (const [ort, n] of setOrte) console.log(`      davon ueber ${ort}: ${n} Zeilen`);
 console.log('  3-Wege-Zweig nach Zahl VERSCHIEDENER fremder Geraete im Doc-Vorlauf:');

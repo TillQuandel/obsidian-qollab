@@ -6,4 +6,8 @@ export { SyncHandler } from '../../src/sync-handler';
 export { CrdtManager } from '../../src/crdt-manager';
 export { encodeStateFile, decodeStateFile, generateGuid } from '../../src/state-file';
 export { unionMerge, threeWayMerge, insertedTexts } from '../../src/text-merge';
+// Das HERKUNFTSTOR des modify-Handlers (main.ts:329-335) steht und faellt mit
+// dieser Klasse. Der Spike bildet das Tor nicht nach, sondern fuehrt denselben
+// Code — sonst misst man eine Nachbildung des Tors statt des Tors.
+export { WriteProvenance } from '../../src/write-provenance';
 export { makeVaultMock, toArrayBuffer } from '../../tests/helpers/vault-mock';

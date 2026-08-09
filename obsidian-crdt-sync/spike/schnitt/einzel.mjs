@@ -15,7 +15,12 @@
 // Diagnosewerkzeug, kein Messwerkzeug. Fuer Raten weiter ueber `bilanz-n.mjs`.
 import { createRequire } from 'node:module';
 import { buildScenario, Transport, rng, score } from './harness.mjs';
-import * as S from './schnitte.mjs';
+// BEFUND 2026-08-09: Hier stand `import * as S from './schnitte.mjs'` — statisch.
+// `SPIKE_SCHNITTE` wurde also STILL IGNORIERT, und jeder „Vorher"-Lauf ueber
+// dieses Werkzeug (auch die davon abhaengigen `verlustort.mjs`/`zerlege.mjs`) hat
+// in Wahrheit den AKTUELLEN Treiber gefahren. Dieselbe Klasse Blindheit wie die
+// sechs bereits aktenkundigen Instrumente.
+const S = await import(process.env.SPIKE_SCHNITTE ?? './schnitte.mjs');
 
 const require = createRequire(import.meta.url);
 const det = require('./det-quelle.cjs');

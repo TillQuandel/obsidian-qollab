@@ -25,11 +25,6 @@ const R = require(process.env.SPIKE_BUNDLE ?? './real.cjs');
 const Y = require('yjs');
 const DMP = new (require('diff-match-patch').diff_match_patch)();
 
-// main.ts:92 — die Frist des Parkens in Ticks der 30-s-Uhr. Hier woertlich
-// uebernommen statt frei gewaehlt: die Zahl ist eine Produktentscheidung, und ein
-// abweichender Wert im Apparat waere eine stille zweite Fassung davon.
-const PARK_FRIST_TICKS = 4;
-
 const sha = (s) => createHash('sha256').update(s).digest('hex');
 const guid32 = (r) =>
   Array.from({ length: 8 }, () => Math.floor(r() * 65536).toString(16).padStart(4, '0')).join('');
@@ -152,15 +147,6 @@ export function makeS0real(transport, scenario, { layout = 'sidecar', rollTicks 
       out.frames = frames.slice();
       return out;
     };
-    // --- main.ts:193-194 `writeProvenance` ------------------------------------
-    // Die Schreibspur wird NACH der Umhuellung oben installiert, damit sie —
-    // wie im Plugin — die AEUSSERSTE Schicht ist: Aufrufer -> Schreibspur ->
-    // (Spike-Umhuellung) -> Mock. Im Plugin liegt sie genauso aussen
-    // (`sidecarAdapter` ruft `rawAdapter.writeBinary` zur Aufrufzeit, also durch
-    // die Umhuellung hindurch).
-    //
-    // KEIN Nachbau: das ist dieselbe Klasse, die `main.ts` benutzt. Ein
-    // nachgebautes Tor haette gemessen, wie gut ich das Tor nachbaue.
     const orig = vault.adapter.writeBinary;
     vault.adapter.writeBinary = async (p, data) => {
       await orig(p, data);
@@ -178,28 +164,11 @@ export function makeS0real(transport, scenario, { layout = 'sidecar', rollTicks 
     // `onDiscardedIncarnation`, wenn eine getrennt entstandene Fassung NICHT
     // uebernommen wurde. Zusammen sind das genau die Erstkontakt-Ereignisse.
     const zaehler = { vereinigt: 0, verworfen: 0 };
-    // Die Schreibspur. `R.WriteProvenance` fehlt im Bestandsbundle `real.cjs`
-    // (dessen `entry.ts` exportiert sie nicht und darf nicht neu gebaut werden) —
-    // dort bleibt das Tor zwangslaeufig offen, und `torRuf` bleibt 0. Das ist
-    // ausgewiesen statt verschwiegen.
-    const spur = R.WriteProvenance ? new R.WriteProvenance(vault.adapter) : null;
-    spur?.install();
     const crdt = new R.CrdtManager();
     const handler = new R.SyncHandler(
       vault, crdt, clientId, undefined, undefined, undefined, undefined,
       () => zaehler.vereinigt++,
-      () => zaehler.verworfen++,
-      // main.ts:1591 `saveConflictCopy` — die reine fremde Fassung, die der
-      // Nachtrag gleich verdraengt. Als `.md` NEBEN der Notiz, ueber den Adapter
-      // (also mit Schreibspur), wie `vault.create` im Plugin.
-      async (notePath, text) => {
-        const punkt = notePath.lastIndexOf('.');
-        const basis = punkt > 0 ? notePath.slice(0, punkt) : notePath;
-        const ziel = `${basis} (ungeklaerte Fassung ${pfad.sicherung}).md`;
-        if (vault.getAbstractFileByPath(ziel)) return;
-        pfad.sicherung++;
-        await vault.adapter.write(ziel, text);
-      }
+      () => zaehler.verworfen++
     );
     const pendingHistory = new Set();
     // Zaehlwerk der nachgebildeten Produktivzweige. Ein Zweig, der 0 meldet, ist
@@ -210,18 +179,10 @@ export function makeS0real(transport, scenario, { layout = 'sidecar', rollTicks 
       lamRuf: 0, lamOhneMd: 0, lamNull: 0, lamAbbruch: 0, lamLeerguard: 0,
       lamGeschrieben: 0, lamSchonAktuell: 0, lamPending: 0, lamPending2: 0,
       basisNachWb: 0, basisNachLam: 0, basisNachPending: 0,
-      // Herkunftstor (main.ts:329-335) und Frist-Uhr (main.ts:611-613/1613-1621).
-      torRuf: 0, torEigen: 0, torFremd: 0, torGit: 0,
-      uhrDurchlaeufe: 0, uhrTicks: 0, uhrAufgeloest: 0, uhrNachtrag: 0, sicherung: 0,
     };
 
-    // Jeder Schreibvorgang DIESES Prozesses laeuft ueber den Adapter — genau wie
-    // in Obsidian (`vault.process`/`vault.create` gehen dort auf
-    // `DataAdapter.process`/`.write`). Vorher setzte der Spike `_textFiles`
-    // direkt: fuer die Schreibspur war damit JEDER Stand fremd, auch der eigene
-    // Tastendruck, und das Tor waere sofort im Dauerparken gelandet.
-    const schreibeMd = async (path, text) => {
-      await vault.adapter.write(path, text);
+    const schreibeMd = (path, text) => {
+      vault._textFiles.set(path, text);
       transport.write(clientId, path, text);
     };
 
@@ -234,38 +195,19 @@ export function makeS0real(transport, scenario, { layout = 'sidecar', rollTicks 
     //      Write-Back stehen, den `applyLocalContent` (sync-handler.ts:1718)
     //      gesetzt hat — und `chooseLocalDiffBase` rechnet gegen einen Text, der
     //      so nie in der Datei stand.
-    const schreibeZurueck = async (path, erwartet, merged) => {
+    const schreibeZurueck = (path, erwartet, merged) => {
       if (merged === undefined || merged === erwartet) return;
       pfad.wbAngeboten++;
       if ((vault._textFiles.get(path) ?? '') !== erwartet) { pfad.wbAbgelehnt++; return; }
-      await schreibeMd(path, merged);
+      schreibeMd(path, merged);
       pfad.wbGeschrieben++;
       handler.noteLocalDiffBase(path, merged);
       pfad.basisNachWb++;
     };
 
-    // --- main.ts:302-344 der modify-Handler, samt DEM TOR --------------------
-    // Stammt der gelesene Text nicht aus diesem Prozess, wird er GEPARKT statt als
-    // eigene Operation verbucht — und dann laeuft weder `applyLocalContent` noch
-    // ein Write-Back. Genau diese beiden Unterlassungen fehlten dem Apparat.
-    //
-    // `gitSchreibtGerade()` (main.ts:1570) ist mitgefuehrt statt weggelassen: im
-    // Szenario gibt es kein `.git/index.lock`, der Zweig ist also immer falsch —
-    // `torGit` weist die Null aus, statt sie anzunehmen.
-    const gitSchreibtGerade = async () => vault.adapter.exists('.git/index.lock');
     const verarbeiteLokal = async (path, text) => {
-      pfad.torRuf++;
-      if (spur !== null && !spur.istEigen(path, text)) {
-        if (await gitSchreibtGerade()) pfad.torGit++;
-        else {
-          pfad.torFremd++;
-          handler.parkForeign(path, text);
-          return;
-        }
-      }
-      pfad.torEigen++;
       const merged = await handler.applyLocalContent(path, text);
-      await schreibeZurueck(path, text, merged);
+      schreibeZurueck(path, text, merged);
     };
 
     // --- main.ts:1390-1547 `onRemoteYjsUpdate` --------------------------------
@@ -287,7 +229,7 @@ export function makeS0real(transport, scenario, { layout = 'sidecar', rollTicks 
       let pending = null;
       const data = vault._textFiles.get(note) ?? '';
       if (data === merged) pfad.lamSchonAktuell++;
-      else if (data === preMerge) { await schreibeMd(note, merged); pfad.lamGeschrieben++; }
+      else if (data === preMerge) { schreibeMd(note, merged); pfad.lamGeschrieben++; }
       else pending = data;
       handler.noteLocalDiffBase(note, merged);
       pfad.basisNachLam++;
@@ -299,7 +241,7 @@ export function makeS0real(transport, scenario, { layout = 'sidecar', rollTicks 
       const merged2 = crdt.getContent(note);
       const data2 = vault._textFiles.get(note) ?? '';
       let written = data2;
-      if (data2 !== merged2 && data2 === pending) { await schreibeMd(note, merged2); written = merged2; pfad.lamPending2++; }
+      if (data2 !== merged2 && data2 === pending) { schreibeMd(note, merged2); written = merged2; pfad.lamPending2++; }
       handler.noteLocalDiffBase(note, written);
       pfad.basisNachPending++;
     };
@@ -311,14 +253,12 @@ export function makeS0real(transport, scenario, { layout = 'sidecar', rollTicks 
       },
       async userEdit(path, token, pos) {
         const neu = insertLine(vault._textFiles.get(path) ?? '', token, pos);
-        await schreibeMd(path, neu);
+        schreibeMd(path, neu);
         await verarbeiteLokal(path, neu);
       },
       receiveFile(path, bytes) {
         if (path.endsWith('.md')) {
-          // Obsidian meldet die Fremdaenderung sofort. Bewusst AM ADAPTER VORBEI
-          // (`_textFiles.set`) — genau das unterscheidet einen Datei-Sync von
-          // einem prozessinternen Write, und genau darauf sieht die Schreibspur.
+          // Obsidian meldet die Fremdaenderung sofort.
           vault._textFiles.set(path, bytes);
           this._sofort.push(path);
           return;
@@ -355,38 +295,9 @@ export function makeS0real(transport, scenario, { layout = 'sidecar', rollTicks 
           pendingHistory.delete(note);
           await fremdZustellung(note);
         }
-        // --- main.ts:611-613 / 1613-1621 die FRIST-UHR ------------------------
-        // Ein Tick ist ein Durchlauf von SCAN_INTERVAL_MS (30 s) — dieselbe
-        // Konstante, die der Waechter benutzt. Im Apparat ist das Pollintervall
-        // (30 Ticks) genau dieser Durchlauf, die Uhr haengt deshalb hier dran.
-        //
-        // Reihenfolge wie im Plugin: `startSidecarWatcher()` registriert sein
-        // Intervall VOR dem Uhr-Intervall (main.ts:604 vor :611), gleiche
-        // Periode -> der Waechter feuert zuerst. Also erst die Fremdzustellung
-        // oben, dann die Uhr.
-        //
-        // Reine BEOBACHTUNG um den Aufruf herum: `tickParked` endet auf zwei
-        // voellig verschiedenen Wegen — Historie ist eingetroffen und deckt den
-        // geparkten Stand (`resolveParked`, kein `unionMerge`, keine Op), oder die
-        // Frist ist abgelaufen und der Stand wird per `unionMerge` nachgetragen
-        // (sync-handler.ts:514 — die Stelle mit den 24 Akten-Faellen). Von aussen
-        // sind beide nur an der Deckungsfrage zu unterscheiden; sie wird hier
-        // NACHGERECHNET, nicht nachgebaut: der Aufruf selbst bleibt unberuehrt.
-        pfad.uhrDurchlaeufe++;
-        for (const note of handler.parkedPaths()) {
-          pfad.uhrTicks++;
-          const geparkterText = handler.parkedText(note);
-          const docVorher = crdt.getContent(note);
-          await handler.tickParked(note, PARK_FRIST_TICKS);
-          if (!handler.hasParked(note)) {
-            if (R.unionMerge(geparkterText, docVorher) === docVorher) pfad.uhrAufgeloest++;
-            else pfad.uhrNachtrag++;
-          }
-        }
       },
       currentText: (path) => vault._textFiles.get(path) ?? '',
       stats: () => ({
-        parkOffen: handler.parkedPaths().length,
         dateien: layout === 'segment' ? dateien + 1 : vault._files.size,
         erstkontakt: zaehler.vereinigt + zaehler.verworfen,
         vereinigt: zaehler.vereinigt,

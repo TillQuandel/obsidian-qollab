@@ -1,0 +1,195 @@
+HERKUNFTSTOR IM MESSAPPARAT — Rohausgaben 2026-08-09
+=====================================================
+Arm "VORHER"  = SPIKE_SCHNITTE=./schnitte-vor-herkunft.mjs (Bytekopie von schnitte.mjs @ 981cd48)
+Arm "NACHHER" = ./schnitte.mjs (Herkunftstor + Parkplatz + Frist-Uhr)
+Bundle in BEIDEN Armen: ./real-neu.cjs (neu gebaut, nur um den Export WriteProvenance ergaenzt)
+
+
+0) BUNDLE-NEUTRALITAET
+----------------------
+Der Neubau ist eine reine ERGAENZUNG (diff ueber ';'-getrennte Zeilen:
+0 Zeilen nur im HEAD-Bundle, +209 Zeilen write-provenance.ts).
+Gegenprobe mit dem committeten Bundle aus HEAD, gleicher Treiber, gleicher DET:
+
+  HEAD-Bundle DET=42 N=3  Verlust=  35 GRUNDTEXT-WEG=   0 Verdopp=  405 diverg=  0
+  HEAD-Bundle DET=42 N=4  Verlust= 102 GRUNDTEXT-WEG=   9 Verdopp=15698 diverg=  0
+  HEAD-Bundle DET=7  N=3  Verlust=  44 GRUNDTEXT-WEG=   1 Verdopp=  438 diverg=  0
+  HEAD-Bundle DET=7  N=4  Verlust=  88 GRUNDTEXT-WEG=   6 Verdopp= 1461 diverg=  0
+
+  -> zeichengleich mit dem neu gebauten Bundle (siehe 3), VORHER-Zeilen.
+
+
+1) WIRKSAMKEITSNACHWEIS (fidelitaet.mjs 3 10 42, Bundle ./real-neu.cjs)
+-----------------------------------------------------------------------
+                                        VORHER    NACHHER
+  GRUNDTEXT-WEG                              1          0
+  applyLocalContent                        656        303
+  loadAndMerge                            1478       1046
+  noteLocalDiffBase                       1513       1033
+  mergeForLocalDiff                        656        303
+  mergeForLocalDiff(imSweep=true)            0          0     <- unveraendert 0 (Teil 2)
+  parkForeign                                0        270     <- 0 -> >0
+  tickParked                                 0         44     <- 0 -> >0
+  hasAbortedRead                          1478       1025
+  pendingLocalContent                     1478       1046
+  noteUncapturedLocalContent                 0          0
+  noteLocalDiffBase wirksam               1513       1033
+  noteLocalDiffBase unwirksam                0          0
+  chooseLocalDiffBase Aufrufe              334        137
+    Basis stand NIE in dieser .md            0          1
+    Ergebnis = lastSeen / docBeforeMerge  334/0     135/2
+  RUHELAGE (Basis == .md)                  288        288
+  RUHELAGE ABWEICHEND                        0          0
+  RUHELAGE ohne Basis-Eintrag               12         12
+
+  Zweige des nachgebildeten Produktivpfads:
+    wbAngeboten                             35          8
+    wbGeschrieben                           35          8
+    wbAbgelehnt                              0          0
+    lamRuf                                1478       1046
+    lamNull                                  0         21   <- loadAndMerge gibt null, solange geparkt
+    lamGeschrieben                         498        286
+    lamSchonAktuell                        980        739
+    lamPending / lamPending2               0/0        0/0
+    basisNachWb                             35          8
+    basisNachLam                          1478       1025
+    torRuf                                   -        572   <- neu
+    torEigen                                 -        302
+    torFremd                                 -        270
+    torGit                                   -          0   (kein .git/index.lock im Szenario)
+    uhrDurchlaeufe                           -        429
+    uhrTicks                                 -         44
+    uhrAufgeloest / uhrNachtrag              -        1/1
+    sicherung (saveConflictCopy)             -          1
+
+  GEGENPROBE zur Blindheit: alle Zaehler sitzen auf demselben Prototyp und werden
+  auf dieselbe Weise gesetzt. parkForeign/tickParked stehen VORHER auf 0, waehrend
+  neun danebenstehende Zaehler >0 melden — und NACHHER auf >0, waehrend dieselben
+  neun weiter >0 melden. Ein blinder Zaehler wuerde in beiden Armen 0 zeigen.
+
+  Am Ende jedes Laufs ist NICHTS mehr geparkt (30 Geraete-Laeufe, Summe
+  parkOffen = 0) — die RUHELAGE-Aussage bleibt damit gueltig.
+
+
+2) DIE FRIST-UHR ARBEITET, ABER SELTEN
+--------------------------------------
+191 tickParked-Aufrufe bei N=3 / 486 bei N=4 (40 Seeds, DET=42, verlustort.mjs).
+Davon enden nur 4 (N=3) bzw. 15 (N=4) im NACHTRAG per unionMerge
+(sync-handler.ts:514); 4 bzw. 8 loesen sich auf (Doc deckt den geparkten Stand).
+Der Rest ist noch nicht faellig. Grund: `loadAndMerge` loest den Parkplatz selbst
+auf (sync-handler.ts:1972), sobald die Historie eingetroffen ist — der Nachtrag
+ist der Ausnahmefall, nicht der Regelfall.
+
+
+3) RATEN, GEPAART UEBER DREI SPIKE_DET-FAMILIEN
+------------------------------------------------
+node bilanz-n.mjs S0real <N> 40, je 40 Seeds x 10 Notizen x 8 Basiszeilen = 3200 Zeilen.
+SPIKE_DET reproduziert: derselbe Aufruf zweimal gab zeichengleiche Zeilen.
+
+DET=42
+ VORHER  N=2  Verlust=   0 GRUNDTEXT-WEG=   0 Verdopp=   62 diverg=  0 sauber=10/40
+ VORHER  N=3  Verlust=  35 GRUNDTEXT-WEG=   0 Verdopp=  405 diverg=  0 sauber= 0/40
+ VORHER  N=4  Verlust= 102 GRUNDTEXT-WEG=   9 Verdopp=15698 diverg=  0 sauber= 0/40
+ NACHHER N=2  Verlust=   0 GRUNDTEXT-WEG=   0 Verdopp=    0 diverg=  0 sauber=40/40
+ NACHHER N=3  Verlust=   8 GRUNDTEXT-WEG=   0 Verdopp=   51 diverg=  0 sauber=11/40
+ NACHHER N=4  Verlust=  21 GRUNDTEXT-WEG=   1 Verdopp=  143 diverg=  0 sauber= 4/40
+
+DET=7
+ VORHER  N=2  Verlust=   0 GRUNDTEXT-WEG=   0 Verdopp=   59 diverg=  0 sauber=12/40
+ VORHER  N=3  Verlust=  44 GRUNDTEXT-WEG=   1 Verdopp=  438 diverg=  0 sauber= 0/40
+ VORHER  N=4  Verlust=  88 GRUNDTEXT-WEG=   6 Verdopp= 1461 diverg=  0 sauber= 0/40
+ NACHHER N=2  Verlust=   0 GRUNDTEXT-WEG=   0 Verdopp=    0 diverg=  0 sauber=40/40
+ NACHHER N=3  Verlust=   6 GRUNDTEXT-WEG=   0 Verdopp=   54 diverg=  0 sauber=10/40
+ NACHHER N=4  Verlust=  28 GRUNDTEXT-WEG=   1 Verdopp=  167 diverg=  0 sauber= 1/40
+
+DET=1234
+ VORHER  N=2  Verlust=   0 GRUNDTEXT-WEG=   0 Verdopp=   60 diverg=  0 sauber=11/40
+ VORHER  N=3  Verlust=  59 GRUNDTEXT-WEG=   3 Verdopp=  437 diverg=  0 sauber= 0/40
+ VORHER  N=4  Verlust=  89 GRUNDTEXT-WEG=   9 Verdopp= 5772 diverg=  0 sauber= 0/40
+ NACHHER N=2  Verlust=   0 GRUNDTEXT-WEG=   0 Verdopp=    0 diverg=  0 sauber=40/40
+ NACHHER N=3  Verlust=   5 GRUNDTEXT-WEG=   0 Verdopp=   57 diverg=  0 sauber= 7/40
+ NACHHER N=4  Verlust=  22 GRUNDTEXT-WEG=   1 Verdopp=  177 diverg=  0 sauber= 1/40
+
+
+4) RATEN OHNE SPIKE_DET (die Form, in der die veroeffentlichten Zahlen entstanden)
+----------------------------------------------------------------------------------
+ VORHER  N=3 (n=5): GRUNDTEXT-WEG 5, 2, 3, 2, 6      -> 3,6 (2-6)
+ NACHHER N=2 (n=3): GRUNDTEXT-WEG 0, 0, 0            -> 0   (0-0)
+ NACHHER N=3 (n=5): GRUNDTEXT-WEG 0, 0, 0, 0, 0      -> 0   (0-0)
+ NACHHER N=4 (n=5): GRUNDTEXT-WEG 1, 2, 1, 2, 1      -> 1,4 (1-2)
+ (Verlust NACHHER N=3: 8,7,6,4,6 | N=4: 20,38,27,23,24)
+ (Verdopp NACHHER N=3: 58,63,67,50,62 | N=4: 184,174,186,178,182)
+
+
+5) VERLUSTORT (verlustort.mjs <N> 40 42)
+-----------------------------------------
+                                             VORHER N=3   NACHHER N=3   VORHER N=4   NACHHER N=4
+ GRUNDTEXT-WEG am Ende                             6            0           11             1
+ mergeForLocalDiff Aufrufe / mit toter Zeile   2649/4       1224/0       4435/7        1709/0
+ unite (unionMerge) Aufrufe / mit toter Zeile  1514/0       1471/0       2228/0        2114/0
+ loadAndMerge Aufrufe / mit toter Zeile       5907/21      4246/0      10069/56        7233/4
+ setContent Aufrufe / GEBORENE Loesch-Op       4151/6       2630/0       6630/12       3709/0
+ setContent mit DELETE-Op                        461           31         1141            73
+ setContent zeilengrenzen-ueberschreitend        189           22          423            42
+ tickParked Aufrufe                                0          191            0           486
+   davon NACHTRAG per unionMerge (:514)            0            4            0            15
+   davon Nachtraege mit toter Grundtextzeile       0            0            0             0
+
+ Geburtsorte VORHER N=3 (applyLocalContent:1703): seed 24,26,39,40 — je 1 Zeile
+ Geburtsorte VORHER N=4 (applyLocalContent:1703): seed 14,18,21,28,35,39 — 7 Zeilen
+ Geburtsorte NACHHER N=3 / N=4: KEINE.
+
+
+6) DER VERBLIEBENE FALL BEI N=4 (einzel.mjs S0real 4 30 42)
+------------------------------------------------------------
+ VORHER : DET=42 N=4 seed=30: GRUNDTEXT-WEG=0 verlust=4 verdopp=18 div=0
+ NACHHER: DET=42 N=4 seed=30: GRUNDTEXT-WEG=1 verlust=6 verdopp=8  div=0
+   FEHLT n5.md:n5-base-1
+   Endtext (alle 4 Geraete gleich): ... n5-base-0 / n5-basebasebase-1 / n5-base-2 ...
+   -> Die Zeile ist nicht GELOESCHT, sie ist ZERSCHNITTEN: zwei nebenlaeufige
+      Zeichen-Einfuegungen landen INNERHALB von "n5-base-1". Keine DELETE-Op
+      beteiligt (setContent-Zaehler = 0), also die reine Einfuege-Form der
+      Schadensklasse "zeichenweise statt zeilenweise".
+
+
+7) DER DOKUMENTIERTE EINZELFALL (einzel.mjs S0real 3 1 42)
+-----------------------------------------------------------
+ Aktenstand: GRUNDTEXT-WEG=1, FEHLT n1.md:n1-base-4
+ Heute, ALLE drei Treiber (vor-fidelitaet / vor-herkunft / aktuell), Bundle ./real-neu.cjs:
+   DET=42 N=3 seed=1: GRUNDTEXT-WEG=0 verlust=0 verdopp=0 div=0
+ -> Der Fall ist mit dem Treiber aus b765c82 (= schnitte-vor-fidelitaet.mjs,
+    bytegleich geprueft) NICHT mehr reproduzierbar. Das haengt NICHT am
+    Herkunftstor.
+
+
+8) DIE BEIDEN SCHALTER (N=3, DET=42, 40 Seeds)
+-----------------------------------------------
+ NACHHER QOLLAB_SWEEP_SCHRANKE=aus            Verlust=8 GRUNDTEXT-WEG=0 Verdopp=51
+ NACHHER QOLLAB_SWEEP_SCHRANKE=basis-signatur Verlust=8 GRUNDTEXT-WEG=0 Verdopp=51
+   -> weiterhin BYTEIDENTISCH (mergeForLocalDiff(imSweep=true) = 0).
+
+ NACHHER QOLLAB_DIFF_MODUS=roh                Verlust=8 GRUNDTEXT-WEG=0 Verdopp=51
+ NACHHER QOLLAB_DIFF_MODUS=semantisch         Verlust=8 GRUNDTEXT-WEG=0 Verdopp=51
+   -> bei N=3 jetzt EBENFALLS byteidentisch. Gegenprobe, dass der Schalter nicht
+      blind ist:
+ VORHER  QOLLAB_DIFF_MODUS=roh                Verlust=44 GRUNDTEXT-WEG=5 Verdopp=425
+ VORHER  QOLLAB_DIFF_MODUS=semantisch         Verlust=35 GRUNDTEXT-WEG=0 Verdopp=405
+ NACHHER N=4 QOLLAB_DIFF_MODUS=roh            Verlust=19 GRUNDTEXT-WEG=0 Verdopp=151
+ NACHHER N=4 QOLLAB_DIFF_MODUS=semantisch     Verlust=21 GRUNDTEXT-WEG=1 Verdopp=143
+
+
+9) KEINE VERSCHIEBUNG IN UNSICHTBARE KONFLIKTKOPIEN
+----------------------------------------------------
+ Konfliktkopien des Datei-Sync-Modells (40 Seeds, DET=42):
+   VORHER  N=3: 2630     NACHHER N=3: 1808
+   VORHER  N=4: 8112     NACHHER N=4: 4425
+ Der geschlossene Tor-Pfad schreibt die `.md` seltener zurueck
+ (wbGeschrieben 35 -> 8, lamGeschrieben 498 -> 286) und erzeugt damit AUCH
+ weniger Konfliktkopien — der Gewinn ist nicht dorthin ausgelagert.
+
+
+10) SANITY
+-----------
+ npx jest --no-cache --cacheDirectory <eigen>: 554/554 gruen, 75 Suites
+ npx tsc --noEmit: Exit 0
+ git diff --stat -- obsidian-crdt-sync/src obsidian-crdt-sync/tests: LEER

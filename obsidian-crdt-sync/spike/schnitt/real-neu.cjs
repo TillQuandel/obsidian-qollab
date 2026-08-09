@@ -58,6 +58,7 @@ var entry_neu_exports = {};
 __export(entry_neu_exports, {
   CrdtManager: () => CrdtManager,
   SyncHandler: () => SyncHandler,
+  WriteProvenance: () => WriteProvenance,
   decodeStateFile: () => decodeStateFile,
   encodeStateFile: () => encodeStateFile,
   generateGuid: () => generateGuid,
@@ -1654,6 +1655,137 @@ var SyncHandler = class _SyncHandler {
   }
 };
 
+// ../../src/write-provenance.ts
+var UMHUELLTE = ["write", "process", "append", "writeBinary"];
+var MAX_STAENDE = 1;
+var FENSTER_MS = 200;
+function textSchluessel(text) {
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) h = (h * 33 ^ text.charCodeAt(i)) >>> 0;
+  return `${text.length}:${h}`;
+}
+var WriteProvenance = class {
+  constructor(adapter) {
+    this.adapter = adapter;
+    this.staende = /* @__PURE__ */ new Map();
+    this.laufend = /* @__PURE__ */ new Map();
+    // Wann der erste noch laufende Schreibvorgang dieses Pfades begonnen hat.
+    this.laufendSeit = /* @__PURE__ */ new Map();
+    this.originale = /* @__PURE__ */ new Map();
+    this.eigene = /* @__PURE__ */ new Map();
+    // Das Lebenszeichen der aktuellen Installation. Jede Installation bekommt ein
+    // EIGENES Objekt, damit eine stillgelegte Schicht, die nach uninstall unter
+    // einer fremden Umhüllung hängen bleibt, von einem späteren install() nicht
+    // wieder aufwacht — zwei aktive Schichten würden den Zähler doppelt heben.
+    this.lauf = null;
+  }
+  install() {
+    if (this.lauf) return;
+    const lauf = { aktiv: true };
+    this.lauf = lauf;
+    const traeger = this.adapter;
+    for (const name of UMHUELLTE) {
+      const original = traeger[name];
+      if (typeof original !== "function") continue;
+      const umhuellung = this.umhuelle(name, original, lauf);
+      this.originale.set(name, original);
+      this.eigene.set(name, umhuellung);
+      traeger[name] = umhuellung;
+    }
+  }
+  uninstall() {
+    if (!this.lauf) return;
+    this.lauf.aktiv = false;
+    this.lauf = null;
+    const traeger = this.adapter;
+    for (const name of UMHUELLTE) {
+      const original = this.originale.get(name);
+      if (original && traeger[name] === this.eigene.get(name)) traeger[name] = original;
+    }
+    this.originale.clear();
+    this.eigene.clear();
+    this.staende.clear();
+    this.laufend.clear();
+    this.laufendSeit.clear();
+  }
+  istEigen(pfad, text) {
+    const seit = this.laufendSeit.get(pfad);
+    if ((this.laufend.get(pfad) ?? 0) > 0 && seit !== void 0 && Date.now() - seit <= FENSTER_MS)
+      return true;
+    const liste = this.staende.get(pfad);
+    return liste !== void 0 && liste.includes(textSchluessel(text));
+  }
+  renameNote(altPfad, neuPfad) {
+    const liste = this.staende.get(altPfad);
+    if (liste === void 0) return;
+    this.staende.delete(altPfad);
+    this.staende.set(neuPfad, liste);
+  }
+  forget(pfad) {
+    this.staende.delete(pfad);
+  }
+  umhuelle(name, original, lauf) {
+    const spur = this;
+    return function(...args) {
+      const pfad = typeof args[0] === "string" ? args[0] : null;
+      if (!lauf.aktiv || pfad === null) return original.apply(this, args);
+      if (name === "write" && typeof args[1] === "string") {
+        spur.merke(pfad, args[1]);
+      }
+      if (name === "process" && typeof args[1] === "function") {
+        const fn = args[1];
+        args = [
+          args[0],
+          (data) => {
+            const neu = fn(data);
+            if (typeof neu === "string") spur.merke(pfad, neu);
+            return neu;
+          },
+          ...args.slice(2)
+        ];
+      }
+      const brauchtZaehler = name === "append" || name === "writeBinary";
+      if (brauchtZaehler) spur.hebe(pfad);
+      let ergebnis;
+      try {
+        ergebnis = original.apply(this, args);
+      } catch (e) {
+        if (brauchtZaehler) spur.senke(pfad);
+        throw e;
+      }
+      if (ergebnis && typeof ergebnis.then === "function") {
+        if (brauchtZaehler) {
+          ergebnis.then(
+            () => spur.senke(pfad),
+            () => spur.senke(pfad)
+          );
+        }
+        return ergebnis;
+      }
+      if (brauchtZaehler) spur.senke(pfad);
+      return ergebnis;
+    };
+  }
+  merke(pfad, text) {
+    const liste = this.staende.get(pfad) ?? [];
+    liste.push(textSchluessel(text));
+    if (liste.length > MAX_STAENDE) liste.splice(0, liste.length - MAX_STAENDE);
+    this.staende.set(pfad, liste);
+  }
+  hebe(pfad) {
+    if (!this.laufend.has(pfad)) this.laufendSeit.set(pfad, Date.now());
+    this.laufend.set(pfad, (this.laufend.get(pfad) ?? 0) + 1);
+  }
+  senke(pfad) {
+    const rest = (this.laufend.get(pfad) ?? 0) - 1;
+    if (rest > 0) this.laufend.set(pfad, rest);
+    else {
+      this.laufend.delete(pfad);
+      this.laufendSeit.delete(pfad);
+    }
+  }
+};
+
 // ../../tests/helpers/vault-mock.ts
 var import_obsidian = __toESM(require_obsidian_stub());
 function toArrayBuffer(data) {
@@ -1767,6 +1899,7 @@ function makeVaultMock() {
 0 && (module.exports = {
   CrdtManager,
   SyncHandler,
+  WriteProvenance,
   decodeStateFile,
   encodeStateFile,
   generateGuid,
