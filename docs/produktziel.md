@@ -209,11 +209,31 @@ zu übernehmen.**
    entfernen. Qollab würde einen Git-Konflikt also nicht auflösen, sondern **verteilen**.
    Erkennung, Test und Doku dazu: null Treffer im gesamten Repo.
 
-## Grundtext-Verlust ab vier Geräten — der Drei-Geräte-Befund ist gefallen
+## Grundtext-Verlust ab drei und vier Geräten — behoben
 
-**Revidiert am 2026-08-09 (`grundtext-n-2026-08-09.md`). Der frühere Satz „K.o.-Kriterium 1 wird ab
-drei Geräten verletzt" war zum großen Teil ein Artefakt des Messapparats und ist zurückgenommen.
-Ab vier Geräten hält der Befund — in schwächerer Form.**
+**Stand 2026-08-10: In allen gemessenen Zellen null.** Der Weg dorthin ging über zwei
+Apparat-Korrekturen und einen Fix am Produktivcode; die Zwischenstände stehen unten, weil sie
+zeigen, wie viel davon Messartefakt war.
+
+| Grundtext-Verlust je 3.200 Zeilen | N = 2 | N = 3 | N = 4 |
+| --- | --- | --- | --- |
+| Ausgangsbefund (2026-08-07) | 0 | 6 | 22 |
+| **heute** | **0** | **0** | **0** |
+
+Zwei Drittel des Befunds waren **Artefakte des Messapparats** (fehlendes `noteLocalDiffBase`,
+fehlendes Herkunftstor — Details unten). Der verbliebene Rest ab vier Geräten war ein **echter
+Fehler** und ist mit `diffModus = 'zeile'` behoben (`src/crdt-manager.ts`, Commit `82c5426`):
+`WEG` fällt in allen drei gemessenen Seed-Familien auf 0, bei byte-identischen Nebenzählern.
+
+**Der Preis, ausdrücklich:** Verdopplung +1,0 bis +1,7 %. Nach Gruppe 5 die richtige Richtung
+(sichtbar statt still) — für den Nutzer sieht eine doppelte Zeile aber wie ein Fehler aus.
+
+**Was ungemessen bleibt:** N ≥ 5, große Notizen, `mdModus: 'ueberschreiben'`, der Sweep
+(`QOLLAB_SWEEP_SCHRANKE` ist im Apparat weiterhin wirkungslos), Laufzeit und `.yjs`-Dateigrößen
+unter dem neuen Diff. **Kein Realtest.** Der Fix liegt auf `fix/loeschungen-kausal` und ist nicht
+nach `master` gemergt.
+
+### Wie der Befund zustande kam (Zwischenstände)
 
 Strenger Grundtext-Verlust (eine Zeile des Ausgangstextes fehlt am Ende), Zellbasis je Lauf
 40 Seeds × 10 Notizen × 8 Basiszeilen = 3.200 Zeilen, Mittelwert (Spanne):
@@ -221,9 +241,10 @@ Strenger Grundtext-Verlust (eine Zeile des Ausgangstextes fehlt am Ende), Zellba
 | Apparat-Stand | N = 2 | N = 3 | N = 4 |
 | --- | --- | --- | --- |
 | Bundle vor dem 05.08. (n = 15) | 0 (0–0) | 7,1 (3–16) | 27,7 (11–37) |
-| heute, ohne `noteLocalDiffBase` (n = 13) | 0 (0–0) | 4,6 (2–9) | 19,7 (9–30) |
-| heute, mit `noteLocalDiffBase` (n = 3/6/5) | 0 (0–0) | 2,0 (1–3) | 8,0 (3–11) |
-| **heute, mit Herkunftstor** (n = 3/5/5) | **0 (0–0)** | **0 (0–0)** | **1,2 (1–2)** |
+| ohne `noteLocalDiffBase` (n = 13) | 0 (0–0) | 4,6 (2–9) | 19,7 (9–30) |
+| mit `noteLocalDiffBase` (n = 3/6/5) | 0 (0–0) | 2,0 (1–3) | 8,0 (3–11) |
+| mit Herkunftstor (n = 3/5/5) | 0 (0–0) | 0 (0–0) | 1,2 (1–2) |
+| **mit `diffModus = 'zeile'`** (200 Seeds × 3 Familien) | **0** | **0** | **0** |
 
 **Maßgeblich ist die letzte Zeile.** Jede darüber ist mit einem Apparat gemessen, der etwas tat,
 was das Plugin nicht tut:
@@ -290,11 +311,26 @@ einziger Peer, keine unabhängige Mehrfachrechnung). **Bei N = 3 ist sie latent,
 ausgeschlossen** — beide Zutaten kommen einzeln vor, in 200 Seeds nur nie am selben Tripel.
 Strukturell sind drei Geräte das Minimum: eines läuft voraus, zwei rechnen dieselbe Rücknahme.
 
-**Zwei Hebel, beide ungemessen und keiner implementiert:** die Umrechnung Text → Ops an
-Zeilengrenzen ausrichten (macht die Ersetzung idempotent, weil DELETE-Ops auf ganzen Zeilen bei
-allen Geräten dieselben Items treffen); oder `istEigen` zusätzlich daran binden, dass der Doc seit
-dem gemerkten Stand nicht über einen anderen Kanal vorausgelaufen ist (dann fiele die Kollision am
-Tor weg).
+**Zwei Hebel wurden gebaut und gegeneinander gemessen** (je 200 Seeds, drei Seed-Familien):
+
+| N = 4, DET = 7 | Grundtext weg | Textverlust gesamt | Verdopplung |
+| --- | --- | --- | --- |
+| Bestand | 1 | 101 | 904 |
+| **A — zeilentreue Ops** | **0** | 96 | 913 |
+| B — schärferes `istEigen` | 1 | **65** | 920 |
+| A + B | **0** | **60** | 930 |
+
+**A ist eingebaut** (`diffModus = 'zeile'`, Commit `82c5426`). Er ist der einzige Hebel, der die
+Kopplung `Verlust = (mehrfach ∧ zeilenkreuzend)` **bricht**: Die Vorbedingung tritt unverändert oft
+ein, sie ist nur nicht mehr schädlich. Und seine Wirkung ist **ohne Harness als Eigenschaft**
+nachweisbar, nicht nur als Rate.
+
+**B ist nicht eingebaut und bleibt offen.** Er senkt den Textverlust deutlich stärker (−33 bis
+−55 %), löst K.o.-Kriterium 1 aber nur in einer von drei Seed-Familien. Zwei Dinge sind vor einem
+Einbau zu klären: Im echten Plugin liegt zwischen `merke()` und `istEigen()` das
+`pathQueue`-Fenster (`main.ts:302-344`), im Messapparat folgt der Vergleich synchron — **B würde
+real mehr Fehlparkungen erzeugen als gemessen.** Und die Doc-Marke müsste ein Hash sein, kein
+voller Doc-Text (der Grund, aus dem `MAX_STAENDE = 1` gilt).
 
 Die beiden früher gemessenen Untervarianten (verschobener Fuzzy-Hunk in `patch_apply`; DELETE-Op
 über die Zeilengrenze) verschwinden mit dem Herkunftstor und sind an dieser dritten **nicht**
