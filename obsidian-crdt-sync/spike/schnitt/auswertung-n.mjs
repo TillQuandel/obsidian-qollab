@@ -1,4 +1,4 @@
-// Wertet `ergebnis-grundtext-n-2026-08-07.txt` aus: je Gerätezahl und Arm die
+// Wertet `ergebnis-grundtext-n-2026-08-09.txt` aus: je Gerätezahl und Arm die
 // Verteilung des strengen Grundtext-Maßes, plus ein Permutationstest zwischen
 // den Armen.
 //
@@ -12,7 +12,7 @@
 //   node auswertung-n.mjs [datei]
 import { readFileSync } from 'node:fs';
 
-const datei = process.argv[2] ?? new URL('./ergebnis-grundtext-n-2026-08-07.txt', import.meta.url);
+const datei = process.argv[2] ?? new URL('./ergebnis-grundtext-n-2026-08-09.txt', import.meta.url);
 const zeilen = readFileSync(datei, 'utf8').split('\n');
 
 const daten = new Map(); // `${arm}|${N}` -> zahlen[]

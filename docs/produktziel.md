@@ -211,7 +211,7 @@ zu übernehmen.**
 
 ## Offen und vorrangig: Grundtext-Verlust ab drei Geräten
 
-**Am heutigen Stand nachgemessen (2026-08-07, `grundtext-n-2026-08-07.md`): Der Befund hält.
+**Am heutigen Stand nachgemessen (2026-08-09, `grundtext-n-2026-08-09.md`): Der Befund hält.
 K.o.-Kriterium 1 wird ab drei Geräten weiterhin verletzt.**
 
 Strenger Grundtext-Verlust (eine Zeile des Ausgangstextes fehlt am Ende), Zellbasis je Lauf
@@ -235,12 +235,48 @@ zitierten Einzelwerte **6 und 22** sind damit Einzelziehungen ohne Streuungsanga
 innerhalb der oben gemessenen Bestandsspanne, tragen als Messwerte aber nicht. Zahlen aus diesem
 Instrument brauchen Wiederholungen und eine Spanne.
 
-**Was der Fix von 2026-08-07 geleistet hat und was nicht:** Der semantische Diff hat die
-Schadensklasse „Zeichen-Diff zerreißt die Nachbarzeile" beseitigt (N = 2 bleibt bei null). Der
-Verlust ab drei Geräten ist eine **andere** Schadensklasse und unbenannt.
+### Die Schadensklasse, benannt (2026-08-09)
 
-**Nächster Schritt:** einen einzelnen verlustbehafteten Lauf zerlegen, statt weitere Aggregate zu
-messen.
+**Die Notiz wird zeilenweise gedacht, aber zeichenweise bearbeitet.** Beide Stellen, an denen
+Qollab Text in Operationen umrechnet, arbeiten auf Zeichenebene und richten sich nicht an
+Zeilengrenzen aus: `threeWayMerge` (diff-match-patch `patch_apply`, **fuzzy**) und
+`CrdtManager.setContent` (`diff_main`). Sobald zwei benachbarte Zeilen ein gemeinsames Präfix
+teilen, legt der Zeichen-Diff seine Op **über die Zeilengrenze**. In der Messung ist das Präfix
+`n1-`; **in echten Notizen ist es jede Aufzählung, jede Überschriftenfolge, jede Checkbox-Liste.**
+
+Zwei Untervarianten, beide belegt: **(A)** `match_main` verschiebt einen Zeichen-Hunk eine Zeile
+tiefer und löscht dort vier Zeichen aus einer unberührten Zeile. **(B)** Die DELETE-Op endet mitten
+in der Zeile; die Zeile verliert ihre Yjs-Item-Identität und wird von einer nebenläufigen
+Einfügung zerrissen (`n2-n2-D1-7|base-6`).
+
+**Geburtsort der Lösch-Op: `src/sync-handler.ts:1703`** (`crdtManager.setContent`). 6/6 bei N=3 und
+24/24 bei N=4 der geborenen Grundtext-Lösch-Ops laufen über diese eine Zeile; die beiden anderen
+`setContent`-Aufrufstellen tragen null. Beteiligt sind ferner `src/text-merge.ts:88` (A) und
+`src/crdt-manager.ts:264/291` (B).
+
+**Warum erst ab drei Geräten:** Die Bedingung ist nicht die Gerätezahl, sondern eine **DELETE-Op in
+`setContent`**. Über 40 Seeds: N=2 → 5 von 1946 Aufrufen (0,3 %), N=3 → 416 von 4147 (10,0 %),
+N=4 → 1163 von 6813 (17,1 %). Mit **einem** Peer ist die Differenz `.md` gegen Doc einseitig, der
+Merge ist reines Einfügen. Mit **zwei** Peers kann die `.md` gleichzeitig voraus und zurück sein —
+der Merge wird zur **Ersetzung**, und die Ersetzung ist zeichenweise.
+
+**Gegenprobe:** `match_main` auf exakte Suche zurückgeschnitten → geborene Grundtext-Lösch-Ops
+6 → 0 bei N=3. Der Endstand sinkt nur 6 → 5 (Untervariante B ist unberührt, und der Eingriff
+verschiebt die Ablaufbahn). **Das ist kein Fix.**
+
+**Ausgeschlossen:** `unite`/`unionMerge` (`sync-handler.ts:601`) — 1514 Aufrufe, **0** mit toter
+Grundtextzeile. **Ausdrücklich NICHT geprüft:** `unionMerge` in `tickParked`
+(`sync-handler.ts:514`) wird im Messapparat 0-mal aufgerufen; die 24 bekannten Fälle dort sind
+weder bestätigt noch entkräftet.
+
+**Was der Fix von 2026-08-07 geleistet hat und was nicht:** `diffModus = 'semantisch'` glättet den
+Diff und hat die Zwei-Geräte-Variante beseitigt (N = 2 bleibt bei null), **erzwingt aber keine
+Zeilentreue**. Genau daran hängt der Rest.
+
+**Nächster Schritt:** die Umrechnung Text → Ops an Zeilengrenzen ausrichten. Vorher ist eine
+Fidelitätslücke des Messapparats zu schließen — er ruft nach seinen Write-Backs kein
+`noteLocalDiffBase`, anders als `main.ts:995`/`1488`. Sie trägt den Befund nicht, verzerrt aber
+jeden Vergleich, den man gegen einen Fix stellt.
 
 ## Woher die Verdopplung wirklich kommt
 
