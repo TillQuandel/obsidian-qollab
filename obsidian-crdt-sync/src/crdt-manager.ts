@@ -190,17 +190,25 @@ export function isNulledYjsState(update: Uint8Array): boolean {
   }
 }
 
-// DER MESSSCHALTER fuer die Op-Folge von `setContent`. Er ist KEIN Produktivfix:
-// `roh` ist der Bestand und bleibt der Standard, damit sich am ausgelieferten
-// Verhalten nichts aendert, solange niemand ihn umlegt.
+// DER SCHALTER fuer die Op-Folge von `setContent`. Standard ist seit 2026-08-09
+// `zeile`; die drei aelteren Staende bleiben erreichbar, damit der jeweilige
+// Bestand nachmessbar bleibt (dieselbe Praxis wie bei `sweepSchrankeStandard`).
 //
-//   'roh'        — Bestand. `diff_main` pur, siehe Begruendung an `setContent`.
-//   'semantisch' — der Fix-Kandidat: zusaetzlich `diff_cleanupSemantic`. Er soll
-//                  den Schaden beheben, dass eine geloeschte Zeile als Stueck
-//                  UEBER die Zeilengrenze geloescht wird (`"2\nzeile-"` statt
-//                  `"zeile-2\n"`, gemessen), wenn zwei benachbarte Zeilen ein
-//                  Praefix teilen — eine fremde Einfuegung, die in diesem Stueck
-//                  verankert ist, landet beim Merge mitten in der Nachbarzeile.
+//   'zeile'      — STANDARD seit 2026-08-09. Der Diff wird ueber
+//                  `diff_linesToChars_` auf ZEILEN als kleinste Einheit gerechnet,
+//                  jede Op deckt danach ganze Zeilen. Begruendung und Messung
+//                  unten am Standardwert.
+//   'roh'        — Bestand bis 2026-08-07. `diff_main` pur, siehe Begruendung an
+//                  `setContent`.
+//   'semantisch' — Bestand vom 2026-08-07 bis 2026-08-09: zusaetzlich
+//                  `diff_cleanupSemantic`. Er sollte den Schaden beheben, dass
+//                  eine geloeschte Zeile als Stueck UEBER die Zeilengrenze
+//                  geloescht wird (`"2\nzeile-"` statt `"zeile-2\n"`, gemessen),
+//                  wenn zwei benachbarte Zeilen ein Praefix teilen — eine fremde
+//                  Einfuegung, die in diesem Stueck verankert ist, landet beim
+//                  Merge mitten in der Nachbarzeile. Er GLAETTET den Diff, er
+//                  ERZWINGT die Zeilentreue aber nicht; genau daran hing der
+//                  Rest-Verlust ab vier Geraeten.
 //   'ganz'       — MUTATIONSPROBE, kein Kandidat: der maximal grobe Diff (alles
 //                  raus, alles rein). Jedes Zeichen bekommt neue Item-IDs. Damit
 //                  ist pruefbar, ob die Verdopplungs-Spalten ueberhaupt steigen
@@ -217,22 +225,55 @@ export function isNulledYjsState(update: Uint8Array): boolean {
 //     `ganz`-Arm belegt: dort steht in JEDER Zelle 720/720 verdoppelte
 //     Grundtextzeilen, und die Suite wird rot. Das Mass ist also nicht blind —
 //     `semantisch` laesst es trotzdem bei 0.
-export type DiffModus = 'roh' | 'semantisch' | 'ganz';
+export type DiffModus = 'roh' | 'semantisch' | 'ganz' | 'zeile';
 
 // Der Standardwert jedes neuen CrdtManager — dieselbe Bauform wie
 // `sweepSchrankeStandard` in `sync-handler.ts`. `process` ist im Browser-Bundle
 // nicht definiert, deshalb der typeof-Riegel.
 //
-// Seit 2026-08-07 steht der Standard auf 'semantisch': der rohe Diff zerstoert
-// bei einer Offline-Loeschung die NACHBARZEILE, sobald beide Zeilen ein
-// gemeinsames Anfangszeichen haben — also bei jeder Aufzaehlung, jeder
-// Ueberschriftenfolge, jeder Checkbox-Liste (296/720 = 41 %, gemessen ueber
-// sieben Praefix-Formen). 'roh' bleibt als Schalterstand erhalten, damit der
-// Bestand jederzeit nachmessbar ist.
+// Von 2026-08-07 bis 2026-08-09 stand der Standard auf 'semantisch': der rohe
+// Diff zerstoert bei einer Offline-Loeschung die NACHBARZEILE, sobald beide
+// Zeilen ein gemeinsames Anfangszeichen haben — also bei jeder Aufzaehlung,
+// jeder Ueberschriftenfolge, jeder Checkbox-Liste (296/720 = 41 %, gemessen
+// ueber sieben Praefix-Formen).
+//
+// SEIT 2026-08-09 STEHT ER AUF 'zeile'. Der Grund ist eine Eigenschaft, die
+// `semantisch` nicht hat: IDEMPOTENZ. Ein Zeichen-Diff kann seine DELETE-Op ueber
+// die Zeilengrenze legen, eine unbeteiligte Grundtextzeile verschlucken und ihre
+// Mitte als NEUES Item zurueckschreiben. Fuer sich ist das textneutral — rechnen
+// aber mehrere Geraete dieselbe Ersetzung unabhaengig, verschmelzen die
+// DELETE-Haelften (gleiche Items) und die INSERT-Haelften STAPELN sich. Ohne
+// jeden Harness reproduzierbar (`spike/schnitt/probe-idempotenz.mjs`, als Test
+// in `tests/zeilentreue-ops.test.ts`), Bestand gegen Standard:
+//
+//   Replikate:      1                 2                   3
+//   'semantisch'    n5-base-1 da      n5-basebase-1       n5-basebasebase-1
+//   'zeile'         n5-base-1 da      n5-base-1 da        n5-base-1 da
+//
+// Die Konvergenz ist dabei durchgehend intakt: alle Geraete haben denselben
+// Text, den OHNE die Zeile — „Divergenz 0" ist kein Erfolgsmass.
+//
+// GEMESSEN (`spike/schnitt/mehrfach.mjs`, je 200 Seeds x 10 Notizen x 8
+// Basiszeilen = 16.000 Grundtextzeilen, drei DET-Familien, N = 4):
+//
+//   DET   WEG semantisch -> zeile    verlust        verdopplung
+//   42    2 -> 0                     124 -> 112     888 -> 902
+//    7    1 -> 0                     101 ->  96     904 -> 913
+//   99    1 -> 0                     105 -> 101     816 -> 830
+//
+// Bei N = 2 und N = 3 ist WEG in beiden Armen null; der Eingriff nimmt dort
+// nichts weg. DER PREIS, ausdruecklich: die Verdopplung steigt um 1,0-1,7 %.
+// Ein groeberer Diff gibt mehr Zeichen neue Item-IDs, und ein Zeichen mit neuer
+// ID kann bei nebenlaeufiger Bearbeitung doppelt stehen bleiben. Grundtext-
+// Verlust ist K.o.-Kriterium 1, sichtbare Verdopplung nicht — der Tausch ist
+// nach `docs/produktziel.md` §5 („Sichtbarkeit statt Stille") der richtige.
+//
+// 'roh', 'semantisch' und 'ganz' bleiben als Schalterstaende erhalten, damit der
+// jeweilige Bestand jederzeit nachmessbar ist.
 const diffModusStandard: DiffModus =
   (typeof process !== 'undefined'
     ? (process.env?.QOLLAB_DIFF_MODUS as DiffModus | undefined)
-    : undefined) ?? 'semantisch';
+    : undefined) ?? 'zeile';
 
 export class CrdtManager {
   private dmp = new diff_match_patch();
@@ -244,6 +285,11 @@ export class CrdtManager {
   // AKTIVITAETSPROBE: wie oft hat der Schalter die Op-Folge TATSAECHLICH
   // veraendert? Ohne diesen Zaehler waere „keine Wirkung gemessen" nicht von
   // „Schalter tot" zu unterscheiden.
+  //
+  // Einschraenkung, ausdruecklich: Fuer 'semantisch' ist es ein Differenz-,
+  // fuer 'ganz' und 'zeile' ein reiner LAUF-Zaehler. Ein Differenzzaehler
+  // brauchte dort einen zweiten, verworfenen `diff_main` je Aufruf — im
+  // Standardpfad waere das der doppelte Preis fuer eine Diagnosezahl.
   diffGeaendert = 0;
 
   private getOrCreate(filePath: string): Y.Doc {
@@ -257,10 +303,10 @@ export class CrdtManager {
   // Diff-basiertes Update: berechnet die minimalen Positions-Ops zwischen dem
   // aktuellen Doc-Text und content und wendet sie in EINER Transaktion an.
   // Unveränderte Zeichen behalten ihre Yjs-Item-IDs — dadurch dedupliziert der
-  // Merge zweier Replikate statt zu konkatenieren. Rohe Diffs (kein
-  // diff_cleanupSemantic): Positionsgenauigkeit vor Lesbarkeit.
-  // Der Preis dieser Wahl und ein gemessener Gegenkandidat stehen an `DiffModus`
-  // oben; ohne umgelegten Schalter laeuft hier unveraendert `roh`.
+  // Merge zweier Replikate statt zu konkatenieren.
+  // WELCHE Ops das sind, entscheidet `diffOps` anhand von `diffModus`; ohne
+  // umgelegten Schalter laeuft dort seit 2026-08-09 `zeile` (zeilentreue Ops).
+  // Die Staende, ihre Messung und der Preis stehen an `DiffModus` oben.
   setContent(filePath: string, content: string): void {
     const doc = this.getOrCreate(filePath);
     const text = doc.getText('content');
@@ -289,6 +335,31 @@ export class CrdtManager {
   // verschiebt Grenzen und kann dabei ein Surrogatpaar zerlegen, das die
   // Ausrichtung anschliessend wieder zusammenzieht.
   private diffOps(current: string, content: string): Diff[] {
+    if (this.diffModus === 'zeile') {
+      // Der Standardweg. `diff_linesToChars_` bildet jede VERSCHIEDENE Zeile auf
+      // genau ein Zeichen ab; der Diff laeuft danach auf diesen Zeichen, kennt
+      // also keine Grenze innerhalb einer Zeile. `diff_charsToLines_` faltet das
+      // Ergebnis zurueck — jede DELETE- und INSERT-Op deckt danach ganze Zeilen.
+      // `false` schaltet die Zeilenheuristik von `diff_main` ab: sie waere hier
+      // eine zweite, verschachtelte Zeilenreduktion auf bereits reduziertem Text.
+      //
+      // Die Op-SPARSAMKEIT bleibt: unveraenderte Zeilen bleiben EQUAL und
+      // behalten ihre Yjs-Item-IDs. Nur der Rand einer Aenderung wird groeber —
+      // eine angefasste Zeile geht ganz raus und ganz wieder rein, statt
+      // zeichenweise. Genau das ist der Punkt: dieselbe Aenderung, auf mehreren
+      // Geraeten unabhaengig gerechnet, trifft damit DIESELBEN Items.
+      //
+      // Grenze der Bibliothek, bewusst hingenommen: `diff_linesToChars_` bricht
+      // bei 65.535 verschiedenen Zeilen ab und fasst den Rest zu EINER Zeile
+      // zusammen. Der Diff bleibt dann korrekt, nur grob — bei einer Notiz, die
+      // diese Grenze erreicht, ist die Op-Sparsamkeit ohnehin nicht mehr das
+      // Problem.
+      this.diffGeaendert++;
+      const a = this.dmp.diff_linesToChars_(current, content);
+      const zeilenweise = this.dmp.diff_main(a.chars1, a.chars2, false) as Diff[];
+      this.dmp.diff_charsToLines_(zeilenweise, a.lineArray);
+      return zeilenweise.filter((d) => d[1].length > 0);
+    }
     if (this.diffModus === 'ganz') {
       this.diffGeaendert++;
       const grob: Diff[] = [

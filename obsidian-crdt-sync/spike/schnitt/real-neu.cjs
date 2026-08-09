@@ -154,7 +154,7 @@ function isNulledYjsState(update) {
     probe.destroy();
   }
 }
-var diffModusStandard = (typeof process !== "undefined" ? process.env?.QOLLAB_DIFF_MODUS : void 0) ?? "semantisch";
+var diffModusStandard = (typeof process !== "undefined" ? process.env?.QOLLAB_DIFF_MODUS : void 0) ?? "zeile";
 var CrdtManager = class {
   constructor() {
     this.dmp = new import_diff_match_patch.diff_match_patch();
@@ -165,6 +165,11 @@ var CrdtManager = class {
     // AKTIVITAETSPROBE: wie oft hat der Schalter die Op-Folge TATSAECHLICH
     // veraendert? Ohne diesen Zaehler waere „keine Wirkung gemessen" nicht von
     // „Schalter tot" zu unterscheiden.
+    //
+    // Einschraenkung, ausdruecklich: Fuer 'semantisch' ist es ein Differenz-,
+    // fuer 'ganz' und 'zeile' ein reiner LAUF-Zaehler. Ein Differenzzaehler
+    // brauchte dort einen zweiten, verworfenen `diff_main` je Aufruf — im
+    // Standardpfad waere das der doppelte Preis fuer eine Diagnosezahl.
     this.diffGeaendert = 0;
   }
   getOrCreate(filePath) {
@@ -177,10 +182,10 @@ var CrdtManager = class {
   // Diff-basiertes Update: berechnet die minimalen Positions-Ops zwischen dem
   // aktuellen Doc-Text und content und wendet sie in EINER Transaktion an.
   // Unveränderte Zeichen behalten ihre Yjs-Item-IDs — dadurch dedupliziert der
-  // Merge zweier Replikate statt zu konkatenieren. Rohe Diffs (kein
-  // diff_cleanupSemantic): Positionsgenauigkeit vor Lesbarkeit.
-  // Der Preis dieser Wahl und ein gemessener Gegenkandidat stehen an `DiffModus`
-  // oben; ohne umgelegten Schalter laeuft hier unveraendert `roh`.
+  // Merge zweier Replikate statt zu konkatenieren.
+  // WELCHE Ops das sind, entscheidet `diffOps` anhand von `diffModus`; ohne
+  // umgelegten Schalter laeuft dort seit 2026-08-09 `zeile` (zeilentreue Ops).
+  // Die Staende, ihre Messung und der Preis stehen an `DiffModus` oben.
   setContent(filePath, content) {
     const doc = this.getOrCreate(filePath);
     const text = doc.getText("content");
@@ -207,6 +212,13 @@ var CrdtManager = class {
   // verschiebt Grenzen und kann dabei ein Surrogatpaar zerlegen, das die
   // Ausrichtung anschliessend wieder zusammenzieht.
   diffOps(current, content) {
+    if (this.diffModus === "zeile") {
+      this.diffGeaendert++;
+      const a = this.dmp.diff_linesToChars_(current, content);
+      const zeilenweise = this.dmp.diff_main(a.chars1, a.chars2, false);
+      this.dmp.diff_charsToLines_(zeilenweise, a.lineArray);
+      return zeilenweise.filter((d) => d[1].length > 0);
+    }
     if (this.diffModus === "ganz") {
       this.diffGeaendert++;
       const grob = [
