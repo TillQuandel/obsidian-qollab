@@ -2,8 +2,10 @@
 //
 //   SPIKE_BUNDLE=./real-neu.cjs node mehrfach.mjs <N> <detSeed> [von] [bis] [modus]
 //
-// modus: 'zeichen' (Standard, = Produktivcode) | 'zeile' (Gegenprobe: der Diff in
-//        `setContent` wird an Zeilengrenzen ausgerichtet)
+// modus: 'zeichen' (Standard, = Produktivcode) | 'zeile' (HEBEL A: der Diff in
+//        `setContent` wird an Zeilengrenzen ausgerichtet) | 'tor' (HEBEL B:
+//        `istEigen` zusaetzlich an den Doc-Stand gebunden) | 'zeile+tor' (beide).
+//        Die Hebel selbst liegen in `hebel.mjs`.
 //
 // GEMESSEN WIRD, je Lauf und ueber alle Notizen:
 //   torKollision  ein per Transport GELIEFERTES .md passiert das Herkunftstor als
@@ -32,6 +34,7 @@ det.zufallQuelleAn();
 globalThis.crypto.getRandomValues = (arr) => webcrypto.getRandomValues(arr);
 const R = require(process.env.SPIKE_BUNDLE ?? './real.cjs');
 const DMP = new (require('diff-match-patch').diff_match_patch)();
+const H = await import('./hebel.mjs');
 
 const N = Number(process.argv[2] ?? 4);
 const DET = Number(process.argv[3] ?? 42);
@@ -41,29 +44,13 @@ const MODUS = process.argv[6] ?? 'zeichen';
 const NL = String.fromCharCode(10);
 const SEP = String.fromCharCode(0);
 
-// --- Gegenprobe: setContent zeilenweise ------------------------------------
-// Der EINZIGE Eingriff: die Op-Folge in `CrdtManager.setContent` wird an
-// Zeilengrenzen ausgerichtet (diff_linesToChars). Sonst nichts.
-if (MODUS === 'zeile') {
-  const CP = R.CrdtManager.prototype;
-  CP.setContent = function (filePath, content) {
-    const doc = this.getOrCreate(filePath);
-    const text = doc.getText('content');
-    const current = text.toString();
-    if (current === content) return;
-    const a = DMP.diff_linesToChars_(current, content);
-    const diffs = DMP.diff_main(a.chars1, a.chars2, false);
-    DMP.diff_charsToLines_(diffs, a.lineArray);
-    doc.transact(() => {
-      let pos = 0;
-      for (const [op, data] of diffs) {
-        if (op === 0) pos += data.length;
-        else if (op === 1) { text.insert(pos, data); pos += data.length; }
-        else text.delete(pos, data.length);
-      }
-    });
-  };
-}
+// --- Die Hebel --------------------------------------------------------------
+// Wortgleich zum bisherigen Inline-Block, nur ausgelagert: `zeile` ist Hebel A.
+// `tor` ist Hebel B und wird VOR der Tor-Probe unten installiert, damit
+// `torProbe`/`davonEigen` das WIRKSAME Tor zaehlen und nicht das darunter.
+const HEBEL = new Set(MODUS.split('+'));
+if (HEBEL.has('zeile')) H.installiereA(R, DMP);
+if (HEBEL.has('tor')) H.installiereB(R);
 
 // --- Zaehlwerk --------------------------------------------------------------
 let z;
@@ -177,6 +164,15 @@ async function laufe(seed, detSeed) {
     for (const d of devs) await d.poll();
   }
   const rr = score(sc, devs);
+  // Gegenprobe zum Tor-Hebel: parkt er am Ende alles weg? `parkOffen` > 0 hiesse,
+  // ein Stand hat den Lauf nie erreicht; `torFremd` ist die Zahl der Parkvorgaenge.
+  let parkOffen = 0, torFremd = 0, torEigen = 0;
+  for (const d of devs) {
+    const s = d.stats();
+    parkOffen += s.parkOffen;
+    torFremd += s.pfad.torFremd;
+    torEigen += s.pfad.torEigen;
+  }
   const fehlend = [];
   for (const n of sc.notes) {
     const da = new Set(devs[0].currentText(n.path).split(NL));
@@ -195,17 +191,19 @@ async function laufe(seed, detSeed) {
       console.log(`    nach = ${JSON.stringify(nachT).split('\\n').join('|')}`);
     }
   }
-  return { fehlend, rr, mehrfach, mehrfachKreuz, z };
+  return { fehlend, rr, mehrfach, mehrfachKreuz, z, parkOffen, torFremd, torEigen };
 }
 
 let gWeg = 0, gMehr = 0, gMehrK = 0, gKreuz = 0, gErs = 0, gKoll = 0, gZu = 0;
 let gVerlust = 0, gVerdopp = 0, gDiv = 0, gTP = 0, gTPE = 0;
+let gPark = 0, gFremd = 0, gEigen = 0;
 for (let seed = VON; seed <= BIS; seed++) {
   const o = await laufe(seed, DET);
   gWeg += o.fehlend.length; gMehr += o.mehrfach; gMehrK += o.mehrfachKreuz;
   gKreuz += o.z.kreuzend; gErs += o.z.ersetzung; gKoll += o.z.torKollision; gZu += o.z.zustellungen;
   gVerlust += o.rr.verlust; gVerdopp += o.rr.verdopplung; gDiv += o.rr.divergent;
   gTP += o.z.torProbe; gTPE += o.z.torProbeEigen;
+  gPark += o.parkOffen; gFremd += o.torFremd; gEigen += o.torEigen;
   if (o.z.kreuzend && process.env.ZEIGE_KREUZ)
     console.log(`  [kreuz] seed=${seed} kreuzend=${o.z.kreuzend} mehrfachKreuz=${o.mehrfachKreuz} WEG=${o.fehlend.length}`);
   if (o.fehlend.length || o.mehrfachKreuz)
@@ -218,5 +216,8 @@ for (let seed = VON; seed <= BIS; seed++) {
 console.log(
   `== N=${N} DET=${DET} Seeds ${VON}..${BIS} modus=${MODUS}: WEG=${gWeg} mehrfachKreuz=${gMehrK}` +
   ` mehrfach=${gMehr} kreuzend=${gKreuz} ersetzung=${gErs} torKollision=${gKoll} zustellungen=${gZu}` +
-  ` | verlust=${gVerlust} verdopp=${gVerdopp} div=${gDiv} | torProbe=${gTP} davonEigen=${gTPE}`
+  ` | verlust=${gVerlust} verdopp=${gVerdopp} div=${gDiv} | torProbe=${gTP} davonEigen=${gTPE} parkOffen=${gPark} torFremd=${gFremd} torEigen=${gEigen}` +
+  (HEBEL.has('tor')
+    ? ` | hebelB ${Object.entries(H.bZaehler).map(([k, v]) => `${k}=${v}`).join(' ')}`
+    : '')
 );

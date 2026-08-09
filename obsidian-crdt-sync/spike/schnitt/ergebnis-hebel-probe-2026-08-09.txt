@@ -1,0 +1,28 @@
+--- modus=zeichen
+VOR   = "n5-base-0|n5-D3-9|n5-base-1|n5-D3-1|n5-base-2|"
+NACH  = "n5-base-0|n5-base-1|n5-base-2|"   (das Ziel jedes einzelnen Replikats)
+1 Replikat(e) rechnen dieselbe Ersetzung -> "n5-base-0|n5-base-1|n5-base-2|"  konvergent=ja  n5-base-1 vorhanden=ja
+2 Replikat(e) rechnen dieselbe Ersetzung -> "n5-base-0|n5-basebase-1|n5-base-2|"  konvergent=ja  n5-base-1 vorhanden=NEIN
+3 Replikat(e) rechnen dieselbe Ersetzung -> "n5-base-0|n5-basebasebase-1|n5-base-2|"  konvergent=ja  n5-base-1 vorhanden=NEIN
+4 Replikat(e) rechnen dieselbe Ersetzung -> "n5-base-0|n5-basebasebasebase-1|n5-base-2|"  konvergent=ja  n5-base-1 vorhanden=NEIN
+--- modus=zeile
+VOR   = "n5-base-0|n5-D3-9|n5-base-1|n5-D3-1|n5-base-2|"
+NACH  = "n5-base-0|n5-base-1|n5-base-2|"   (das Ziel jedes einzelnen Replikats)
+1 Replikat(e) rechnen dieselbe Ersetzung -> "n5-base-0|n5-base-1|n5-base-2|"  konvergent=ja  n5-base-1 vorhanden=ja
+2 Replikat(e) rechnen dieselbe Ersetzung -> "n5-base-0|n5-base-1|n5-base-2|"  konvergent=ja  n5-base-1 vorhanden=ja
+3 Replikat(e) rechnen dieselbe Ersetzung -> "n5-base-0|n5-base-1|n5-base-2|"  konvergent=ja  n5-base-1 vorhanden=ja
+4 Replikat(e) rechnen dieselbe Ersetzung -> "n5-base-0|n5-base-1|n5-base-2|"  konvergent=ja  n5-base-1 vorhanden=ja
+--- modus=tor
+VOR   = "n5-base-0|n5-D3-9|n5-base-1|n5-D3-1|n5-base-2|"
+NACH  = "n5-base-0|n5-base-1|n5-base-2|"   (das Ziel jedes einzelnen Replikats)
+1 Replikat(e) rechnen dieselbe Ersetzung -> "n5-base-0|n5-base-1|n5-base-2|"  konvergent=ja  n5-base-1 vorhanden=ja
+2 Replikat(e) rechnen dieselbe Ersetzung -> "n5-base-0|n5-basebase-1|n5-base-2|"  konvergent=ja  n5-base-1 vorhanden=NEIN
+3 Replikat(e) rechnen dieselbe Ersetzung -> "n5-base-0|n5-basebasebase-1|n5-base-2|"  konvergent=ja  n5-base-1 vorhanden=NEIN
+4 Replikat(e) rechnen dieselbe Ersetzung -> "n5-base-0|n5-basebasebasebase-1|n5-base-2|"  konvergent=ja  n5-base-1 vorhanden=NEIN
+--- modus=zeile+tor
+VOR   = "n5-base-0|n5-D3-9|n5-base-1|n5-D3-1|n5-base-2|"
+NACH  = "n5-base-0|n5-base-1|n5-base-2|"   (das Ziel jedes einzelnen Replikats)
+1 Replikat(e) rechnen dieselbe Ersetzung -> "n5-base-0|n5-base-1|n5-base-2|"  konvergent=ja  n5-base-1 vorhanden=ja
+2 Replikat(e) rechnen dieselbe Ersetzung -> "n5-base-0|n5-base-1|n5-base-2|"  konvergent=ja  n5-base-1 vorhanden=ja
+3 Replikat(e) rechnen dieselbe Ersetzung -> "n5-base-0|n5-base-1|n5-base-2|"  konvergent=ja  n5-base-1 vorhanden=ja
+4 Replikat(e) rechnen dieselbe Ersetzung -> "n5-base-0|n5-base-1|n5-base-2|"  konvergent=ja  n5-base-1 vorhanden=ja

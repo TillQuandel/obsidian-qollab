@@ -13,27 +13,15 @@ const R = require(process.env.SPIKE_BUNDLE ?? './real-neu.cjs');
 const NL = String.fromCharCode(10);
 const z = (s) => JSON.stringify(s).split('\\n').join('|');
 
-// Gegenprobe: dieselbe Ersetzung, aber die Op-Folge an Zeilengrenzen ausgerichtet.
-if (process.argv[2] === 'zeile') {
-  const DMP = new (require('diff-match-patch').diff_match_patch)();
-  R.CrdtManager.prototype.setContent = function (filePath, content) {
-    const doc = this.getOrCreate(filePath);
-    const text = doc.getText('content');
-    const current = text.toString();
-    if (current === content) return;
-    const a = DMP.diff_linesToChars_(current, content);
-    const diffs = DMP.diff_main(a.chars1, a.chars2, false);
-    DMP.diff_charsToLines_(diffs, a.lineArray);
-    doc.transact(() => {
-      let pos = 0;
-      for (const [op, data] of diffs) {
-        if (op === 0) pos += data.length;
-        else if (op === 1) { text.insert(pos, data); pos += data.length; }
-        else text.delete(pos, data.length);
-      }
-    });
-  };
-}
+// Die Hebel (aus `hebel.mjs`, damit hier und in `mehrfach.mjs` derselbe Code
+// laeuft). 'zeile' = Hebel A. 'tor' = Hebel B — er sitzt am Herkunftstor und ist
+// auf diesem Pfad per Konstruktion unsichtbar: die Probe ruft weder
+// `istEigen` noch einen `SyncHandler`. Dass er hier NICHTS aendert, ist deshalb
+// kein Nullbefund, sondern der Beleg fuer die Arbeitsteilung der beiden Hebel.
+const H = await import('./hebel.mjs');
+const MODUS = new Set((process.argv[2] ?? 'zeichen').split('+'));
+if (MODUS.has('zeile')) H.installiereA(R, new (require('diff-match-patch').diff_match_patch)());
+if (MODUS.has('tor')) H.installiereB(R);
 
 // Der Doc-Stand, den alle Replikate gemeinsam haben (zwei fremde Zeilen um eine
 // Grundtextzeile herum) — und der Text, auf den jedes Replikat unabhaengig
