@@ -244,13 +244,62 @@ vollständig sauber**: 40/40 Seeds ohne jeden Befund, Verdopplung 0.
 Edit = 300 Tastendrücke; `torEigen` = 302, `applyLocalContent` = 303 (= 302 + 1 Nachtrag aus
 `tickParked`), und am Ende jedes Laufs ist nichts mehr geparkt.
 
-### Was ab vier Geräten übrig bleibt
+### Was ab vier Geräten übrig bleibt: eine nicht-idempotente Ersetzung
 
-Eine **dritte** Untervariante, die mit den beiden bisher beschriebenen nichts zu tun hat: Die Zeile
-wird nicht gelöscht, sondern **zerschnitten** — `n5-base-1` wird zu `n5-basebasebase-1`, durch
-nebenläufige Zeichen-**Einfügungen**, ohne jede DELETE-Op. Der Satz der Schadensklasse („die Notiz
-wird zeilenweise gedacht, aber zeichenweise bearbeitet") hält also; seine beiden gemessenen
-Untervarianten (verschobener Fuzzy-Hunk, Delete-Op über die Zeilengrenze) verschwinden mit dem Tor.
+Eine **dritte** Untervariante, zerlegt am 2026-08-09. Sie entsteht aus zwei Ereignissen, die
+**einzeln harmlos** sind:
+
+1. **Tor-Kollision.** `WriteProvenance.istEigen` (`src/write-provenance.ts:141-155`) prüft reine
+   **Inhaltsgleichheit**. Eine per Sync gelieferte `.md`, die byte-identisch mit dem eigenen
+   letzten Schreibstand ist, passiert das Herkunftstor als „eigen". Ist der Doc inzwischen über den
+   `.yjs`-Kanal vorausgelaufen — ohne dass ein `.md`-Write die Schreibspur nachzieht, denn
+   `resolveParked` schreibt nicht zurück —, wird die veraltete `.md` als **lokale Rücknahme**
+   gedeutet.
+2. **Zeilenkreuzende Ersetzung.** `CrdtManager.setContent` (`src/crdt-manager.ts:264`, Op-Folge aus
+   `diffOps` `:291`) rechnet daraus eine Zeichen-Ersetzung:
+
+       ="n5-base-0|n5-"  -"D3-9|n5-base-1|n5-D3"  +"base"  ="-1|n5-base-2|"
+
+   Die DELETE-Op verschluckt die unbeteiligte Grundtextzeile, die INSERT-Op schreibt ihre Mitte als
+   **neues Item** zurück.
+
+Für sich ist das textneutral. Der Schaden entsteht, weil es **nicht idempotent** ist: Rechnen
+mehrere Geräte dieselbe Ersetzung unabhängig, verschmelzen die DELETE-Hälften, und die
+INSERT-Hälften **stapeln sich**. **Ohne jeden Harness reproduzierbar** (`probe-idempotenz.mjs`,
+nur `CrdtManager`):
+
+| Replikate, die dieselbe Ersetzung rechnen | Ergebnis | Zeile da? |
+| --- | --- | --- |
+| 1 | `n5-base-0 \| n5-base-1 \| n5-base-2` | ja |
+| 2 | `n5-base-0 \| n5-**basebase**-1 \| n5-base-2` | **nein** |
+| 3 | `n5-base-0 \| n5-**basebasebase**-1 \| n5-base-2` | **nein** |
+
+Die Konvergenz bleibt dabei durchgehend intakt — genau der Fall, vor dem dieses Dokument warnt.
+
+**Warum erst ab vier Geräten:** Nicht die Gerätezahl ist die Bedingung, sondern die **Konjunktion**.
+Über je 200 Seeds (16.000 Grundtextzeilen), DET = 42:
+
+| N | Mehrfach gerechnete Ersetzungen | zeilenkreuzende | **beides zugleich** | **Verlust** |
+| --- | --- | --- | --- | --- |
+| 2 | 0 | 0 | 0 | 0 |
+| 3 | 19 | 1 | 0 | 0 |
+| 4 | 60 | 9 | **2** | **2** |
+
+`Verlust = beides zugleich` in jeder Zelle. Bei N = 2 ist die Klasse **strukturell aus** (ein
+einziger Peer, keine unabhängige Mehrfachrechnung). **Bei N = 3 ist sie latent, nicht
+ausgeschlossen** — beide Zutaten kommen einzeln vor, in 200 Seeds nur nie am selben Tripel.
+Strukturell sind drei Geräte das Minimum: eines läuft voraus, zwei rechnen dieselbe Rücknahme.
+
+**Zwei Hebel, beide ungemessen und keiner implementiert:** die Umrechnung Text → Ops an
+Zeilengrenzen ausrichten (macht die Ersetzung idempotent, weil DELETE-Ops auf ganzen Zeilen bei
+allen Geräten dieselben Items treffen); oder `istEigen` zusätzlich daran binden, dass der Doc seit
+dem gemerkten Stand nicht über einen anderen Kanal vorausgelaufen ist (dann fiele die Kollision am
+Tor weg).
+
+Die beiden früher gemessenen Untervarianten (verschobener Fuzzy-Hunk in `patch_apply`; DELETE-Op
+über die Zeilengrenze) verschwinden mit dem Herkunftstor und sind an dieser dritten **nicht**
+beteiligt: `mergeForLocalDiff` liefert hier exakt den `.md`-Text zurück, es gibt keinen verschobenen
+Hunk.
 
 Der Verlust **wandert nicht** nach `tickParked`, wie vermutet: Von 191 `tickParked`-Läufen bei
 N = 3 enden nur 4 im `unionMerge`-Nachtrag, und davon **0** mit toter Grundtextzeile. Die 24
