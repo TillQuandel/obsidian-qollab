@@ -164,86 +164,21 @@ export function makeS0real(transport, scenario, { layout = 'sidecar', rollTicks 
     // `onDiscardedIncarnation`, wenn eine getrennt entstandene Fassung NICHT
     // uebernommen wurde. Zusammen sind das genau die Erstkontakt-Ereignisse.
     const zaehler = { vereinigt: 0, verworfen: 0 };
-    const crdt = new R.CrdtManager();
     const handler = new R.SyncHandler(
-      vault, crdt, clientId, undefined, undefined, undefined, undefined,
+      vault, new R.CrdtManager(), clientId, undefined, undefined, undefined, undefined,
       () => zaehler.vereinigt++,
       () => zaehler.verworfen++
     );
     const pendingHistory = new Set();
-    // Zaehlwerk der nachgebildeten Produktivzweige. Ein Zweig, der 0 meldet, ist
-    // damit als „im Szenario unerreichbar" ausgewiesen statt stillschweigend zu
-    // fehlen — genau der Unterschied, an dem die Fidelitaetsluecke haftete.
-    const pfad = {
-      wbAngeboten: 0, wbGeschrieben: 0, wbAbgelehnt: 0,
-      lamRuf: 0, lamOhneMd: 0, lamNull: 0, lamAbbruch: 0, lamLeerguard: 0,
-      lamGeschrieben: 0, lamSchonAktuell: 0, lamPending: 0, lamPending2: 0,
-      basisNachWb: 0, basisNachLam: 0, basisNachPending: 0,
-    };
 
     const schreibeMd = (path, text) => {
       vault._textFiles.set(path, text);
       transport.write(clientId, path, text);
     };
 
-    // --- main.ts:938-1003 `writeBackMerged` -----------------------------------
-    // Zwei Eigenschaften des Produktivpfads, die hier vorher fehlten:
-    //   1. Geschrieben wird NUR, wenn die `.md` noch genau den Text traegt, den
-    //      wir gemergt haben (`data !== expected` -> Callback laesst `data` stehen).
-    //   2. NACH bestaetigtem Write zieht die Diff-Basis auf den geschriebenen Text
-    //      nach (main.ts:995). Ohne das bleibt sie auf dem Stand VOR dem
-    //      Write-Back stehen, den `applyLocalContent` (sync-handler.ts:1718)
-    //      gesetzt hat — und `chooseLocalDiffBase` rechnet gegen einen Text, der
-    //      so nie in der Datei stand.
-    const schreibeZurueck = (path, erwartet, merged) => {
-      if (merged === undefined || merged === erwartet) return;
-      pfad.wbAngeboten++;
-      if ((vault._textFiles.get(path) ?? '') !== erwartet) { pfad.wbAbgelehnt++; return; }
-      schreibeMd(path, merged);
-      pfad.wbGeschrieben++;
-      handler.noteLocalDiffBase(path, merged);
-      pfad.basisNachWb++;
-    };
-
     const verarbeiteLokal = async (path, text) => {
       const merged = await handler.applyLocalContent(path, text);
-      schreibeZurueck(path, text, merged);
-    };
-
-    // --- main.ts:1390-1547 `onRemoteYjsUpdate` --------------------------------
-    // Die Fremdzustellung Schritt fuer Schritt wie im Plugin: `.md`-Stand VOR dem
-    // Merge festhalten, Nachhol-Lauf fuer einen unerfassten lokalen Edit, die drei
-    // Guards, der bedingte Write-Back, die Diff-Basis (main.ts:1488, dort
-    // BEDINGUNGSLOS — auch ohne Write) und der pending-Zweig mit seinem zweiten
-    // Write-Back (main.ts:1531).
-    const fremdZustellung = async (note) => {
-      pfad.lamRuf++;
-      const preMerge = vault._textFiles.has(note) ? vault._textFiles.get(note) : null;
-      if (preMerge === null) { pfad.lamOhneMd++; return; } // Guard 1 (main.ts:1420)
-      const uncaptured = handler.pendingLocalContent(note);
-      if (uncaptured !== undefined) await handler.applyLocalContent(note, uncaptured);
-      const merged = await handler.loadAndMerge(note);
-      if (merged === null) { pfad.lamNull++; return; }
-      if (handler.hasAbortedRead(note)) { pfad.lamAbbruch++; return; }
-      if (merged === '' && !crdt.hasOps(note)) { pfad.lamLeerguard++; return; } // Guard 2
-      let pending = null;
-      const data = vault._textFiles.get(note) ?? '';
-      if (data === merged) pfad.lamSchonAktuell++;
-      else if (data === preMerge) { schreibeMd(note, merged); pfad.lamGeschrieben++; }
-      else pending = data;
-      handler.noteLocalDiffBase(note, merged);
-      pfad.basisNachLam++;
-      if (pending === null) return;
-      pfad.lamPending++;
-      const threeWay = R.threeWayMerge(preMerge, pending, merged);
-      await handler.applyLocalContent(note, threeWay);
-      if (handler.hasAbortedRead(note)) return;
-      const merged2 = crdt.getContent(note);
-      const data2 = vault._textFiles.get(note) ?? '';
-      let written = data2;
-      if (data2 !== merged2 && data2 === pending) { schreibeMd(note, merged2); written = merged2; pfad.lamPending2++; }
-      handler.noteLocalDiffBase(note, written);
-      pfad.basisNachPending++;
+      if (merged !== undefined && merged !== text) schreibeMd(path, merged);
     };
 
     return {
@@ -293,7 +228,8 @@ export function makeS0real(transport, scenario, { layout = 'sidecar', rollTicks 
         await this.onTick(transport.tick);
         for (const note of [...pendingHistory]) {
           pendingHistory.delete(note);
-          await fremdZustellung(note);
+          const merged = await handler.loadAndMerge(note);
+          if (merged !== null && merged !== vault._textFiles.get(note)) schreibeMd(note, merged);
         }
       },
       currentText: (path) => vault._textFiles.get(path) ?? '',
@@ -302,7 +238,6 @@ export function makeS0real(transport, scenario, { layout = 'sidecar', rollTicks 
         erstkontakt: zaehler.vereinigt + zaehler.verworfen,
         vereinigt: zaehler.vereinigt,
         verworfen: zaehler.verworfen,
-        pfad,
       }),
     };
   });

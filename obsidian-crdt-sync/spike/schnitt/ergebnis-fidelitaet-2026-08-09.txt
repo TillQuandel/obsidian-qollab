@@ -1,0 +1,54 @@
+--- VORHER  DET=42 N=2 ---
+S0real N=2 konvergent Seeds=40/40  Verlust=   0 GRUNDTEXT-WEG=   0 Verdopp=   62 diverg=  0 sauber=10/40 unverw=  0 erstk= 184  | Uebertragungen=   69 kB=    9 Dateien=  35 maxLen=  119 (je Seed)
+S0real N=2 gekappt    Seeds= 0/40
+--- NACHHER DET=42 N=2 ---
+S0real N=2 konvergent Seeds=40/40  Verlust=   0 GRUNDTEXT-WEG=   0 Verdopp=   62 diverg=  0 sauber=10/40 unverw=  0 erstk= 184  | Uebertragungen=   69 kB=    9 Dateien=  35 maxLen=  119 (je Seed)
+S0real N=2 gekappt    Seeds= 0/40
+--- VORHER  DET=42 N=3 ---
+S0real N=3 konvergent Seeds=40/40  Verlust=  40 GRUNDTEXT-WEG=   5 Verdopp=  491 diverg=  0 sauber=0/40 unverw=  0 erstk= 726  | Uebertragungen=  184 kB=   30 Dateien=  86 maxLen=  152 (je Seed)
+S0real N=3 gekappt    Seeds= 0/40
+--- NACHHER DET=42 N=3 ---
+S0real N=3 konvergent Seeds=40/40  Verlust=  35 GRUNDTEXT-WEG=   0 Verdopp=  405 diverg=  0 sauber=0/40 unverw=  0 erstk= 739  | Uebertragungen=  181 kB=   28 Dateien=  86 maxLen=  146 (je Seed)
+S0real N=3 gekappt    Seeds= 0/40
+--- VORHER  DET=42 N=4 ---
+S0real N=4 konvergent Seeds=40/40  Verlust=  98 GRUNDTEXT-WEG=  12 Verdopp= 3850 diverg=  0 sauber=0/40 unverw=  0 erstk=1372  | Uebertragungen=  326 kB=   73 Dateien= 157 maxLen=  741 (je Seed)
+S0real N=4 gekappt    Seeds= 0/40
+--- NACHHER DET=42 N=4 ---
+S0real N=4 konvergent Seeds=40/40  Verlust= 102 GRUNDTEXT-WEG=   9 Verdopp=15698 diverg=  0 sauber=0/40 unverw=  0 erstk=1405  | Uebertragungen=  322 kB=  125 Dateien= 157 maxLen= 3140 (je Seed)
+S0real N=4 gekappt    Seeds= 0/40
+--- VORHER  DET=7 N=2 ---
+S0real N=2 konvergent Seeds=40/40  Verlust=   0 GRUNDTEXT-WEG=   0 Verdopp=   62 diverg=  0 sauber=11/40 unverw=  0 erstk= 192  | Uebertragungen=   68 kB=    9 Dateien=  35 maxLen=  120 (je Seed)
+S0real N=2 gekappt    Seeds= 0/40
+--- NACHHER DET=7 N=2 ---
+S0real N=2 konvergent Seeds=40/40  Verlust=   0 GRUNDTEXT-WEG=   0 Verdopp=   59 diverg=  0 sauber=12/40 unverw=  0 erstk= 192  | Uebertragungen=   68 kB=    9 Dateien=  35 maxLen=  119 (je Seed)
+S0real N=2 gekappt    Seeds= 0/40
+--- VORHER  DET=7 N=3 ---
+S0real N=3 konvergent Seeds=40/40  Verlust=  41 GRUNDTEXT-WEG=   0 Verdopp=  520 diverg=  0 sauber=0/40 unverw=  0 erstk= 765  | Uebertragungen=  189 kB=   31 Dateien=  86 maxLen=  159 (je Seed)
+S0real N=3 gekappt    Seeds= 0/40
+--- NACHHER DET=7 N=3 ---
+S0real N=3 konvergent Seeds=40/40  Verlust=  44 GRUNDTEXT-WEG=   1 Verdopp=  438 diverg=  0 sauber=0/40 unverw=  0 erstk= 742  | Uebertragungen=  193 kB=   31 Dateien=  86 maxLen=  147 (je Seed)
+S0real N=3 gekappt    Seeds= 0/40
+--- VORHER  DET=7 N=4 ---
+S0real N=4 konvergent Seeds=40/40  Verlust=  91 GRUNDTEXT-WEG=  13 Verdopp= 1576 diverg=  0 sauber=0/40 unverw=  0 erstk=1418  | Uebertragungen=  308 kB=   60 Dateien= 157 maxLen=  307 (je Seed)
+S0real N=4 gekappt    Seeds= 0/40
+--- NACHHER DET=7 N=4 ---
+S0real N=4 konvergent Seeds=40/40  Verlust=  88 GRUNDTEXT-WEG=   6 Verdopp= 1461 diverg=  0 sauber=0/40 unverw=  0 erstk=1404  | Uebertragungen=  327 kB=   66 Dateien= 157 maxLen=  290 (je Seed)
+S0real N=4 gekappt    Seeds= 0/40
+--- VORHER  DET=1234 N=2 ---
+S0real N=2 konvergent Seeds=40/40  Verlust=   0 GRUNDTEXT-WEG=   0 Verdopp=   60 diverg=  0 sauber=11/40 unverw=  0 erstk= 188  | Uebertragungen=   68 kB=    9 Dateien=  35 maxLen=  119 (je Seed)
+S0real N=2 gekappt    Seeds= 0/40
+--- NACHHER DET=1234 N=2 ---
+S0real N=2 konvergent Seeds=40/40  Verlust=   0 GRUNDTEXT-WEG=   0 Verdopp=   60 diverg=  0 sauber=11/40 unverw=  0 erstk= 188  | Uebertragungen=   68 kB=    9 Dateien=  35 maxLen=  119 (je Seed)
+S0real N=2 gekappt    Seeds= 0/40
+--- VORHER  DET=1234 N=3 ---
+S0real N=3 konvergent Seeds=40/40  Verlust=  37 GRUNDTEXT-WEG=   1 Verdopp=  482 diverg=  0 sauber=0/40 unverw=  0 erstk= 729  | Uebertragungen=  183 kB=   29 Dateien=  86 maxLen=  150 (je Seed)
+S0real N=3 gekappt    Seeds= 0/40
+--- NACHHER DET=1234 N=3 ---
+S0real N=3 konvergent Seeds=40/40  Verlust=  59 GRUNDTEXT-WEG=   3 Verdopp=  437 diverg=  0 sauber=0/40 unverw=  0 erstk= 731  | Uebertragungen=  185 kB=   30 Dateien=  86 maxLen=  147 (je Seed)
+S0real N=3 gekappt    Seeds= 0/40
+--- VORHER  DET=1234 N=4 ---
+S0real N=4 konvergent Seeds=40/40  Verlust=  87 GRUNDTEXT-WEG=  16 Verdopp= 8140 diverg=  0 sauber=0/40 unverw=  0 erstk=1435  | Uebertragungen=  336 kB=  126 Dateien= 157 maxLen= 1611 (je Seed)
+S0real N=4 gekappt    Seeds= 0/40
+--- NACHHER DET=1234 N=4 ---
+S0real N=4 konvergent Seeds=40/40  Verlust=  89 GRUNDTEXT-WEG=   9 Verdopp= 5772 diverg=  0 sauber=0/40 unverw=  0 erstk=1381  | Uebertragungen=  321 kB=   82 Dateien= 157 maxLen= 1150 (je Seed)
+S0real N=4 gekappt    Seeds= 0/40

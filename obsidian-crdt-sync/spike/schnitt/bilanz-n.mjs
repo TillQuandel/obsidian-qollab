@@ -14,9 +14,14 @@
 // bewertet wird und seine Verdopplungszahl damit eine Untergrenze ist.
 import { createRequire } from 'node:module';
 import { buildScenario, Transport, rng, score } from './harness.mjs';
-import * as S from './schnitte.mjs';
 
 const require = createRequire(import.meta.url);
+// Welche Fassung der Schnitte gefahren wird. Standard ist `schnitte.mjs`; der
+// Schalter existiert, damit der Stand VOR dem Fidelitaets-Nachbau
+// (`schnitte-vor-fidelitaet.mjs`, aus git HEAD) mit DEMSELBEN Treiber gemessen
+// werden kann — ein Vorher/Nachher ueber zwei verschiedene Treiber waere kein
+// Vergleich.
+const S = await import(process.env.SPIKE_SCHNITTE ?? './schnitte.mjs');
 
 // ---------------------------------------------------------------------------
 // SPIKE_DET=<seed> — wahlweise reproduzierbar.
@@ -121,6 +126,13 @@ for (let seed = 1; seed <= SEEDS; seed++) {
   for (const n of sc.notes) {
     const da = new Set(devs[0].currentText(n.path).split('\n'));
     for (const z of n.baseline.trim().split('\n')) if (!da.has(z)) grundWeg++;
+  }
+  // SPIKE_PROSEED=1 — je Seed eine Zeile auf STDERR (stdout bleibt die eine
+  // Messzeile). Noetig, um einen Ausreisser von einer flaechigen Verschiebung zu
+  // unterscheiden: ein einziger davongelaufener Seed kann die Verdopplungssumme
+  // einer ganzen Zelle bestimmen.
+  if (process.env.SPIKE_PROSEED) {
+    console.error(`    seed=${String(seed).padStart(2)} grund=${String(grundWeg).padStart(2)} verlust=${String(rr.verlust).padStart(3)} verdopp=${String(rr.verdopplung).padStart(5)} div=${rr.divergent}`);
   }
   const k = gekappt ? klasse.kapp : klasse.konv;
   k.n++;

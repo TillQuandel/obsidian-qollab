@@ -1,0 +1,774 @@
+### VORHER DET=42 N=2
+    seed= 1 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed= 2 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed= 3 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed= 4 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed= 5 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed= 6 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed= 7 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed= 8 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed= 9 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=10 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=11 grund= 0 verlust=  0 verdopp=    4 div=0
+    seed=12 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=13 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=14 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=15 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=16 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=17 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=18 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=19 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=20 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=21 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=22 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=23 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=24 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=25 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=26 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=27 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=28 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=29 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed=30 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=31 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=32 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=33 grund= 0 verlust=  0 verdopp=    4 div=0
+    seed=34 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed=35 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed=36 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=37 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=38 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=39 grund= 0 verlust=  0 verdopp=    4 div=0
+    seed=40 grund= 0 verlust=  0 verdopp=    0 div=0
+S0real N=2 konvergent Seeds=40/40  Verlust=   0 GRUNDTEXT-WEG=   0 Verdopp=   60 diverg=  0 sauber=10/40 unverw=  0 erstk= 189  | Uebertragungen=   68 kB=    9 Dateien=  35 maxLen=  119 (je Seed)
+S0real N=2 gekappt    Seeds= 0/40
+### NACHHER DET=42 N=2
+    seed= 1 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed= 2 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed= 3 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed= 4 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed= 5 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed= 6 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed= 7 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed= 8 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed= 9 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=10 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=11 grund= 0 verlust=  0 verdopp=    4 div=0
+    seed=12 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=13 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=14 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=15 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=16 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=17 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=18 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=19 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=20 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=21 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=22 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=23 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=24 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=25 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=26 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=27 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=28 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=29 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed=30 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=31 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=32 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=33 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=34 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed=35 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed=36 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=37 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=38 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=39 grund= 0 verlust=  0 verdopp=    4 div=0
+    seed=40 grund= 0 verlust=  0 verdopp=    0 div=0
+S0real N=2 konvergent Seeds=40/40  Verlust=   0 GRUNDTEXT-WEG=   0 Verdopp=   57 diverg=  0 sauber=10/40 unverw=  0 erstk= 189  | Uebertragungen=   68 kB=    9 Dateien=  35 maxLen=  119 (je Seed)
+S0real N=2 gekappt    Seeds= 0/40
+### VORHER DET=42 N=3
+    seed= 1 grund= 0 verlust=  1 verdopp=    7 div=0
+    seed= 2 grund= 0 verlust=  0 verdopp=   12 div=0
+    seed= 3 grund= 0 verlust=  1 verdopp=    7 div=0
+    seed= 4 grund= 0 verlust=  0 verdopp=    9 div=0
+    seed= 5 grund= 0 verlust=  0 verdopp=   11 div=0
+    seed= 6 grund= 0 verlust=  1 verdopp=   11 div=0
+    seed= 7 grund= 0 verlust=  1 verdopp=   11 div=0
+    seed= 8 grund= 0 verlust=  1 verdopp=    9 div=0
+    seed= 9 grund= 0 verlust=  1 verdopp=   16 div=0
+    seed=10 grund= 0 verlust=  2 verdopp=   13 div=0
+    seed=11 grund= 0 verlust=  2 verdopp=   11 div=0
+    seed=12 grund= 0 verlust=  1 verdopp=   19 div=0
+    seed=13 grund= 0 verlust=  1 verdopp=    5 div=0
+    seed=14 grund= 0 verlust=  3 verdopp=   20 div=0
+    seed=15 grund= 0 verlust=  2 verdopp=   20 div=0
+    seed=16 grund= 0 verlust=  1 verdopp=   12 div=0
+    seed=17 grund= 0 verlust=  0 verdopp=   16 div=0
+    seed=18 grund= 0 verlust=  1 verdopp=   10 div=0
+    seed=19 grund= 0 verlust=  1 verdopp=   14 div=0
+    seed=20 grund= 0 verlust=  1 verdopp=   16 div=0
+    seed=21 grund= 0 verlust=  1 verdopp=   25 div=0
+    seed=22 grund= 0 verlust=  3 verdopp=   14 div=0
+    seed=23 grund= 0 verlust=  1 verdopp=    9 div=0
+    seed=24 grund= 0 verlust=  0 verdopp=   10 div=0
+    seed=25 grund= 0 verlust=  0 verdopp=   18 div=0
+    seed=26 grund= 0 verlust=  3 verdopp=   11 div=0
+    seed=27 grund= 0 verlust=  0 verdopp=   10 div=0
+    seed=28 grund= 0 verlust=  0 verdopp=   19 div=0
+    seed=29 grund= 0 verlust=  1 verdopp=    7 div=0
+    seed=30 grund= 0 verlust=  0 verdopp=    8 div=0
+    seed=31 grund= 0 verlust=  0 verdopp=   20 div=0
+    seed=32 grund= 0 verlust=  1 verdopp=    9 div=0
+    seed=33 grund= 0 verlust=  2 verdopp=    7 div=0
+    seed=34 grund= 0 verlust=  0 verdopp=   18 div=0
+    seed=35 grund= 0 verlust=  0 verdopp=    7 div=0
+    seed=36 grund= 0 verlust=  3 verdopp=    7 div=0
+    seed=37 grund= 1 verlust=  5 verdopp=   17 div=0
+    seed=38 grund= 0 verlust=  0 verdopp=    6 div=0
+    seed=39 grund= 0 verlust=  1 verdopp=   12 div=0
+    seed=40 grund= 0 verlust=  1 verdopp=    6 div=0
+S0real N=3 konvergent Seeds=40/40  Verlust=  43 GRUNDTEXT-WEG=   1 Verdopp=  489 diverg=  0 sauber=0/40 unverw=  0 erstk= 726  | Uebertragungen=  181 kB=   29 Dateien=  86 maxLen=  156 (je Seed)
+S0real N=3 gekappt    Seeds= 0/40
+### NACHHER DET=42 N=3
+    seed= 1 grund= 0 verlust=  1 verdopp=    7 div=0
+    seed= 2 grund= 0 verlust=  0 verdopp=   10 div=0
+    seed= 3 grund= 0 verlust=  1 verdopp=    7 div=0
+    seed= 4 grund= 0 verlust=  0 verdopp=    9 div=0
+    seed= 5 grund= 0 verlust=  0 verdopp=   11 div=0
+    seed= 6 grund= 0 verlust=  0 verdopp=   14 div=0
+    seed= 7 grund= 0 verlust=  1 verdopp=   11 div=0
+    seed= 8 grund= 0 verlust=  1 verdopp=    9 div=0
+    seed= 9 grund= 0 verlust=  1 verdopp=    9 div=0
+    seed=10 grund= 0 verlust=  2 verdopp=   13 div=0
+    seed=11 grund= 0 verlust=  1 verdopp=    9 div=0
+    seed=12 grund= 0 verlust=  0 verdopp=   14 div=0
+    seed=13 grund= 0 verlust=  1 verdopp=    5 div=0
+    seed=14 grund= 0 verlust=  3 verdopp=   17 div=0
+    seed=15 grund= 0 verlust=  2 verdopp=   15 div=0
+    seed=16 grund= 0 verlust=  1 verdopp=   13 div=0
+    seed=17 grund= 0 verlust=  0 verdopp=   11 div=0
+    seed=18 grund= 0 verlust=  1 verdopp=   10 div=0
+    seed=19 grund= 0 verlust=  1 verdopp=   14 div=0
+    seed=20 grund= 0 verlust=  1 verdopp=   14 div=0
+    seed=21 grund= 0 verlust=  1 verdopp=    8 div=0
+    seed=22 grund= 0 verlust=  4 verdopp=   10 div=0
+    seed=23 grund= 0 verlust=  1 verdopp=   13 div=0
+    seed=24 grund= 0 verlust=  0 verdopp=   10 div=0
+    seed=25 grund= 0 verlust=  0 verdopp=   19 div=0
+    seed=26 grund= 0 verlust=  3 verdopp=   10 div=0
+    seed=27 grund= 0 verlust=  0 verdopp=   10 div=0
+    seed=28 grund= 0 verlust=  0 verdopp=   16 div=0
+    seed=29 grund= 0 verlust=  1 verdopp=    5 div=0
+    seed=30 grund= 0 verlust=  0 verdopp=   10 div=0
+    seed=31 grund= 0 verlust=  0 verdopp=   18 div=0
+    seed=32 grund= 0 verlust=  1 verdopp=    7 div=0
+    seed=33 grund= 0 verlust=  2 verdopp=    9 div=0
+    seed=34 grund= 0 verlust=  0 verdopp=    6 div=0
+    seed=35 grund= 0 verlust=  0 verdopp=    5 div=0
+    seed=36 grund= 0 verlust=  3 verdopp=    6 div=0
+    seed=37 grund= 0 verlust=  4 verdopp=   16 div=0
+    seed=38 grund= 0 verlust=  0 verdopp=    6 div=0
+    seed=39 grund= 0 verlust=  1 verdopp=   12 div=0
+    seed=40 grund= 0 verlust=  1 verdopp=    6 div=0
+S0real N=3 konvergent Seeds=40/40  Verlust=  40 GRUNDTEXT-WEG=   0 Verdopp=  424 diverg=  0 sauber=0/40 unverw=  0 erstk= 726  | Uebertragungen=  188 kB=   31 Dateien=  86 maxLen=  146 (je Seed)
+S0real N=3 gekappt    Seeds= 0/40
+### VORHER DET=42 N=4
+    seed= 1 grund= 1 verlust=  4 verdopp=   29 div=0
+    seed= 2 grund= 1 verlust=  3 verdopp=   37 div=0
+    seed= 3 grund= 1 verlust=  2 verdopp=   55 div=0
+    seed= 4 grund= 0 verlust=  1 verdopp=   52 div=0
+    seed= 5 grund= 0 verlust=  0 verdopp=   17 div=0
+    seed= 6 grund= 4 verlust=  6 verdopp=   81 div=0
+    seed= 7 grund= 1 verlust=  3 verdopp=   16 div=0
+    seed= 8 grund= 1 verlust=  1 verdopp=   23 div=0
+    seed= 9 grund= 1 verlust=  3 verdopp=   20 div=0
+    seed=10 grund= 0 verlust=  0 verdopp=   52 div=0
+    seed=11 grund= 0 verlust=  5 verdopp=   11 div=0
+    seed=12 grund= 0 verlust=  1 verdopp=   16 div=0
+    seed=13 grund= 0 verlust=  1 verdopp=   29 div=0
+    seed=14 grund= 1 verlust=  1 verdopp=   17 div=0
+    seed=15 grund= 0 verlust=  2 verdopp=   18 div=0
+    seed=16 grund= 0 verlust=  3 verdopp= 1642 div=0
+    seed=17 grund= 0 verlust=  4 verdopp=   30 div=0
+    seed=18 grund= 1 verlust=  4 verdopp=   18 div=0
+    seed=19 grund= 0 verlust=  1 verdopp=   28 div=0
+    seed=20 grund= 0 verlust=  1 verdopp=   36 div=0
+    seed=21 grund= 0 verlust=  1 verdopp=   33 div=0
+    seed=22 grund= 0 verlust=  0 verdopp=   27 div=0
+    seed=23 grund= 3 verlust=  7 verdopp=   23 div=0
+    seed=24 grund= 0 verlust=  0 verdopp=   22 div=0
+    seed=25 grund= 1 verlust=  6 verdopp=   35 div=0
+    seed=26 grund= 2 verlust=  7 verdopp=   41 div=0
+    seed=27 grund= 0 verlust=  2 verdopp=   26 div=0
+    seed=28 grund= 0 verlust=  0 verdopp=   35 div=0
+    seed=29 grund= 0 verlust=  1 verdopp=   24 div=0
+    seed=30 grund= 0 verlust=  4 verdopp=   24 div=0
+    seed=31 grund= 0 verlust=  4 verdopp=   26 div=0
+    seed=32 grund= 1 verlust=  2 verdopp=   18 div=0
+    seed=33 grund= 1 verlust=  5 verdopp=   23 div=0
+    seed=34 grund= 0 verlust=  0 verdopp=   15 div=0
+    seed=35 grund= 2 verlust=  4 verdopp=   22 div=0
+    seed=36 grund= 0 verlust=  0 verdopp=   24 div=0
+    seed=37 grund= 0 verlust=  0 verdopp=   21 div=0
+    seed=38 grund= 0 verlust=  1 verdopp=   33 div=0
+    seed=39 grund= 2 verlust=  6 verdopp=   25 div=0
+    seed=40 grund= 0 verlust=  3 verdopp=   24 div=0
+S0real N=4 konvergent Seeds=40/40  Verlust=  99 GRUNDTEXT-WEG=  24 Verdopp= 2748 diverg=  0 sauber=0/40 unverw=  0 erstk=1402  | Uebertragungen=  311 kB=   72 Dateien= 157 maxLen=  535 (je Seed)
+S0real N=4 gekappt    Seeds= 0/40
+### NACHHER DET=42 N=4
+    seed= 1 grund= 1 verlust=  4 verdopp=   29 div=0
+    seed= 2 grund= 1 verlust=  4 verdopp=   26 div=0
+    seed= 3 grund= 1 verlust=  4 verdopp=   21 div=0
+    seed= 4 grund= 1 verlust=  5 verdopp=   33 div=0
+    seed= 5 grund= 0 verlust=  0 verdopp=   17 div=0
+    seed= 6 grund= 0 verlust=  1 verdopp=  498 div=0
+    seed= 7 grund= 1 verlust=  2 verdopp=   16 div=0
+    seed= 8 grund= 1 verlust=  1 verdopp=   23 div=0
+    seed= 9 grund= 1 verlust=  3 verdopp=   20 div=0
+    seed=10 grund= 0 verlust=  2 verdopp=   33 div=0
+    seed=11 grund= 0 verlust=  5 verdopp=   11 div=0
+    seed=12 grund= 1 verlust=  4 verdopp=   15 div=0
+    seed=13 grund= 0 verlust=  1 verdopp=   29 div=0
+    seed=14 grund= 1 verlust=  4 verdopp=   16 div=0
+    seed=15 grund= 1 verlust=  2 verdopp=   19 div=0
+    seed=16 grund= 0 verlust=  3 verdopp=   19 div=0
+    seed=17 grund= 2 verlust=  5 verdopp=   11 div=0
+    seed=18 grund= 2 verlust=  7 verdopp=   26 div=0
+    seed=19 grund= 0 verlust=  5 verdopp=   21 div=0
+    seed=20 grund= 2 verlust=  4 verdopp=   14 div=0
+    seed=21 grund= 4 verlust=  6 verdopp=   16 div=0
+    seed=22 grund= 0 verlust=  3 verdopp=   26 div=0
+    seed=23 grund= 2 verlust=  2 verdopp=   18 div=0
+    seed=24 grund= 0 verlust=  3 verdopp=   33 div=0
+    seed=25 grund= 1 verlust=  5 verdopp=   44 div=0
+    seed=26 grund= 2 verlust=  3 verdopp=   30 div=0
+    seed=27 grund= 0 verlust=  0 verdopp=   17 div=0
+    seed=28 grund= 0 verlust=  6 verdopp=   18 div=0
+    seed=29 grund= 0 verlust=  2 verdopp=   14 div=0
+    seed=30 grund= 0 verlust=  2 verdopp=   22 div=0
+    seed=31 grund= 0 verlust=  0 verdopp=    9 div=0
+    seed=32 grund= 0 verlust=  0 verdopp=   13 div=0
+    seed=33 grund= 1 verlust=  4 verdopp=   16 div=0
+    seed=34 grund= 1 verlust=  5 verdopp=   13 div=0
+    seed=35 grund= 2 verlust=  4 verdopp=   21 div=0
+    seed=36 grund= 0 verlust=  3 verdopp=   18 div=0
+    seed=37 grund= 1 verlust=  3 verdopp=   12 div=0
+    seed=38 grund= 0 verlust=  1 verdopp=   26 div=0
+    seed=39 grund= 1 verlust=  8 verdopp=   13 div=0
+    seed=40 grund= 2 verlust=  8 verdopp=   17 div=0
+S0real N=4 konvergent Seeds=40/40  Verlust= 134 GRUNDTEXT-WEG=  33 Verdopp= 1293 diverg=  0 sauber=0/40 unverw=  0 erstk=1429  | Uebertragungen=  308 kB=   61 Dateien= 157 maxLen=  272 (je Seed)
+S0real N=4 gekappt    Seeds= 0/40
+### VORHER DET=7 N=2
+    seed= 1 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed= 2 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed= 3 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed= 4 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed= 5 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed= 6 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed= 7 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed= 8 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed= 9 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=10 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=11 grund= 0 verlust=  0 verdopp=    4 div=0
+    seed=12 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=13 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed=14 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=15 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=16 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=17 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=18 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=19 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=20 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=21 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=22 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=23 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed=24 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=25 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=26 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=27 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=28 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=29 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed=30 grund= 0 verlust=  0 verdopp=    5 div=0
+    seed=31 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=32 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=33 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=34 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed=35 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=36 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=37 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=38 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=39 grund= 0 verlust=  0 verdopp=    4 div=0
+    seed=40 grund= 0 verlust=  0 verdopp=    0 div=0
+S0real N=2 konvergent Seeds=40/40  Verlust=   0 GRUNDTEXT-WEG=   0 Verdopp=   62 diverg=  0 sauber=12/40 unverw=  0 erstk= 190  | Uebertragungen=   68 kB=    9 Dateien=  35 maxLen=  120 (je Seed)
+S0real N=2 gekappt    Seeds= 0/40
+### NACHHER DET=7 N=2
+    seed= 1 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed= 2 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed= 3 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed= 4 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed= 5 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed= 6 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed= 7 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed= 8 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed= 9 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=10 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=11 grund= 0 verlust=  0 verdopp=    4 div=0
+    seed=12 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=13 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed=14 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=15 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=16 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=17 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=18 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=19 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=20 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=21 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=22 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=23 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed=24 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=25 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=26 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=27 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=28 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=29 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed=30 grund= 0 verlust=  0 verdopp=    5 div=0
+    seed=31 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=32 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=33 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=34 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed=35 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=36 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=37 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=38 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=39 grund= 0 verlust=  0 verdopp=    4 div=0
+    seed=40 grund= 0 verlust=  0 verdopp=    0 div=0
+S0real N=2 konvergent Seeds=40/40  Verlust=   0 GRUNDTEXT-WEG=   0 Verdopp=   62 diverg=  0 sauber=12/40 unverw=  0 erstk= 190  | Uebertragungen=   68 kB=    9 Dateien=  35 maxLen=  120 (je Seed)
+S0real N=2 gekappt    Seeds= 0/40
+### VORHER DET=7 N=3
+    seed= 1 grund= 0 verlust=  2 verdopp=    6 div=0
+    seed= 2 grund= 0 verlust=  1 verdopp=   13 div=0
+    seed= 3 grund= 0 verlust=  0 verdopp=   13 div=0
+    seed= 4 grund= 0 verlust=  1 verdopp=   12 div=0
+    seed= 5 grund= 0 verlust=  2 verdopp=   10 div=0
+    seed= 6 grund= 0 verlust=  1 verdopp=   14 div=0
+    seed= 7 grund= 1 verlust=  2 verdopp=   13 div=0
+    seed= 8 grund= 0 verlust=  6 verdopp=   22 div=0
+    seed= 9 grund= 0 verlust=  1 verdopp=   16 div=0
+    seed=10 grund= 0 verlust=  2 verdopp=   10 div=0
+    seed=11 grund= 0 verlust=  1 verdopp=   27 div=0
+    seed=12 grund= 0 verlust=  1 verdopp=   16 div=0
+    seed=13 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=14 grund= 0 verlust=  2 verdopp=   20 div=0
+    seed=15 grund= 0 verlust=  0 verdopp=   14 div=0
+    seed=16 grund= 0 verlust=  2 verdopp=    5 div=0
+    seed=17 grund= 0 verlust=  0 verdopp=   16 div=0
+    seed=18 grund= 1 verlust=  2 verdopp=   19 div=0
+    seed=19 grund= 0 verlust=  1 verdopp=   13 div=0
+    seed=20 grund= 1 verlust=  2 verdopp=   23 div=0
+    seed=21 grund= 0 verlust=  2 verdopp=    9 div=0
+    seed=22 grund= 0 verlust=  1 verdopp=   17 div=0
+    seed=23 grund= 0 verlust=  1 verdopp=   12 div=0
+    seed=24 grund= 0 verlust=  2 verdopp=   12 div=0
+    seed=25 grund= 0 verlust=  0 verdopp=    8 div=0
+    seed=26 grund= 0 verlust=  1 verdopp=    9 div=0
+    seed=27 grund= 0 verlust=  0 verdopp=   11 div=0
+    seed=28 grund= 0 verlust=  0 verdopp=   15 div=0
+    seed=29 grund= 0 verlust=  2 verdopp=   12 div=0
+    seed=30 grund= 0 verlust=  0 verdopp=   21 div=0
+    seed=31 grund= 0 verlust=  1 verdopp=   19 div=0
+    seed=32 grund= 0 verlust=  1 verdopp=   12 div=0
+    seed=33 grund= 0 verlust=  1 verdopp=   14 div=0
+    seed=34 grund= 0 verlust=  1 verdopp=    7 div=0
+    seed=35 grund= 0 verlust=  0 verdopp=    5 div=0
+    seed=36 grund= 0 verlust=  1 verdopp=   10 div=0
+    seed=37 grund= 0 verlust=  1 verdopp=   22 div=0
+    seed=38 grund= 0 verlust=  2 verdopp=   12 div=0
+    seed=39 grund= 0 verlust=  1 verdopp=   15 div=0
+    seed=40 grund= 0 verlust=  2 verdopp=    6 div=0
+S0real N=3 konvergent Seeds=40/40  Verlust=  49 GRUNDTEXT-WEG=   3 Verdopp=  532 diverg=  0 sauber=0/40 unverw=  0 erstk= 747  | Uebertragungen=  188 kB=   31 Dateien=  86 maxLen=  155 (je Seed)
+S0real N=3 gekappt    Seeds= 0/40
+### NACHHER DET=7 N=3
+    seed= 1 grund= 0 verlust=  2 verdopp=    6 div=0
+    seed= 2 grund= 0 verlust=  1 verdopp=   12 div=0
+    seed= 3 grund= 0 verlust=  0 verdopp=   11 div=0
+    seed= 4 grund= 0 verlust=  1 verdopp=   10 div=0
+    seed= 5 grund= 1 verlust=  3 verdopp=    8 div=0
+    seed= 6 grund= 0 verlust=  1 verdopp=   14 div=0
+    seed= 7 grund= 1 verlust=  2 verdopp=   13 div=0
+    seed= 8 grund= 0 verlust=  3 verdopp=   17 div=0
+    seed= 9 grund= 0 verlust=  2 verdopp=    8 div=0
+    seed=10 grund= 0 verlust=  2 verdopp=   10 div=0
+    seed=11 grund= 0 verlust=  2 verdopp=   12 div=0
+    seed=12 grund= 0 verlust=  3 verdopp=   24 div=0
+    seed=13 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=14 grund= 0 verlust=  2 verdopp=   16 div=0
+    seed=15 grund= 0 verlust=  0 verdopp=   14 div=0
+    seed=16 grund= 0 verlust=  2 verdopp=    5 div=0
+    seed=17 grund= 0 verlust=  0 verdopp=    9 div=0
+    seed=18 grund= 0 verlust=  1 verdopp=   16 div=0
+    seed=19 grund= 0 verlust=  0 verdopp=   13 div=0
+    seed=20 grund= 1 verlust=  2 verdopp=   14 div=0
+    seed=21 grund= 0 verlust=  2 verdopp=    9 div=0
+    seed=22 grund= 0 verlust=  1 verdopp=   10 div=0
+    seed=23 grund= 0 verlust=  1 verdopp=   11 div=0
+    seed=24 grund= 0 verlust=  2 verdopp=   12 div=0
+    seed=25 grund= 0 verlust=  0 verdopp=    8 div=0
+    seed=26 grund= 0 verlust=  1 verdopp=    9 div=0
+    seed=27 grund= 0 verlust=  0 verdopp=   10 div=0
+    seed=28 grund= 0 verlust=  0 verdopp=   14 div=0
+    seed=29 grund= 0 verlust=  2 verdopp=   12 div=0
+    seed=30 grund= 0 verlust=  0 verdopp=   14 div=0
+    seed=31 grund= 1 verlust=  2 verdopp=   10 div=0
+    seed=32 grund= 0 verlust=  1 verdopp=   12 div=0
+    seed=33 grund= 0 verlust=  1 verdopp=    8 div=0
+    seed=34 grund= 0 verlust=  1 verdopp=    7 div=0
+    seed=35 grund= 0 verlust=  0 verdopp=    5 div=0
+    seed=36 grund= 0 verlust=  1 verdopp=    9 div=0
+    seed=37 grund= 0 verlust=  1 verdopp=   20 div=0
+    seed=38 grund= 0 verlust=  5 verdopp=   10 div=0
+    seed=39 grund= 0 verlust=  2 verdopp=   13 div=0
+    seed=40 grund= 0 verlust=  2 verdopp=    5 div=0
+S0real N=3 konvergent Seeds=40/40  Verlust=  54 GRUNDTEXT-WEG=   4 Verdopp=  442 diverg=  0 sauber=0/40 unverw=  0 erstk= 747  | Uebertragungen=  193 kB=   32 Dateien=  86 maxLen=  145 (je Seed)
+S0real N=3 gekappt    Seeds= 0/40
+### VORHER DET=7 N=4
+    seed= 1 grund= 2 verlust=  5 verdopp=   59 div=0
+    seed= 2 grund= 2 verlust=  5 verdopp=   55 div=0
+    seed= 3 grund= 1 verlust=  3 verdopp=   40 div=0
+    seed= 4 grund= 1 verlust=  2 verdopp=   37 div=0
+    seed= 5 grund= 0 verlust=  3 verdopp=   29 div=0
+    seed= 6 grund= 0 verlust=  1 verdopp=   23 div=0
+    seed= 7 grund= 0 verlust=  6 verdopp=   35 div=0
+    seed= 8 grund= 0 verlust=  3 verdopp=   32 div=0
+    seed= 9 grund= 1 verlust=  5 verdopp=   34 div=0
+    seed=10 grund= 2 verlust=  4 verdopp=   29 div=0
+    seed=11 grund= 2 verlust=  4 verdopp=   27 div=0
+    seed=12 grund= 0 verlust=  3 verdopp=   14 div=0
+    seed=13 grund= 0 verlust=  3 verdopp=   36 div=0
+    seed=14 grund= 2 verlust=  5 verdopp=   63 div=0
+    seed=15 grund= 1 verlust=  1 verdopp=   36 div=0
+    seed=16 grund= 1 verlust=  2 verdopp=   25 div=0
+    seed=17 grund= 1 verlust=  6 verdopp=   24 div=0
+    seed=18 grund= 1 verlust=  4 verdopp=   36 div=0
+    seed=19 grund= 0 verlust=  3 verdopp=   25 div=0
+    seed=20 grund= 0 verlust=  1 verdopp=   23 div=0
+    seed=21 grund= 5 verlust=  5 verdopp=   51 div=0
+    seed=22 grund= 1 verlust=  2 verdopp=   27 div=0
+    seed=23 grund= 2 verlust=  5 verdopp=   26 div=0
+    seed=24 grund= 0 verlust=  1 verdopp=   16 div=0
+    seed=25 grund= 1 verlust=  2 verdopp=   23 div=0
+    seed=26 grund= 0 verlust=  1 verdopp=   23 div=0
+    seed=27 grund= 0 verlust=  5 verdopp=   23 div=0
+    seed=28 grund= 1 verlust=  1 verdopp=   20 div=0
+    seed=29 grund= 1 verlust=  4 verdopp=   29 div=0
+    seed=30 grund= 0 verlust=  2 verdopp=   33 div=0
+    seed=31 grund= 0 verlust=  3 verdopp=   22 div=0
+    seed=32 grund= 3 verlust=  6 verdopp=   56 div=0
+    seed=33 grund= 0 verlust=  3 verdopp=   29 div=0
+    seed=34 grund= 0 verlust=  1 verdopp=   17 div=0
+    seed=35 grund= 1 verlust=  2 verdopp=   46 div=0
+    seed=36 grund= 1 verlust=  3 verdopp=   19 div=0
+    seed=37 grund= 0 verlust=  0 verdopp=   15 div=0
+    seed=38 grund= 1 verlust=  4 verdopp=   31 div=0
+    seed=39 grund= 1 verlust=  3 verdopp=   21 div=0
+    seed=40 grund= 0 verlust=  1 verdopp=   21 div=0
+S0real N=4 konvergent Seeds=40/40  Verlust= 123 GRUNDTEXT-WEG=  35 Verdopp= 1230 diverg=  0 sauber=0/40 unverw=  0 erstk=1404  | Uebertragungen=  323 kB=   65 Dateien= 157 maxLen=  235 (je Seed)
+S0real N=4 gekappt    Seeds= 0/40
+### NACHHER DET=7 N=4
+    seed= 1 grund= 1 verlust=  2 verdopp=   34 div=0
+    seed= 2 grund= 1 verlust=  4 verdopp=   19 div=0
+    seed= 3 grund= 0 verlust=  2 verdopp=   40 div=0
+    seed= 4 grund= 0 verlust=  3 verdopp=   34 div=0
+    seed= 5 grund= 1 verlust=  3 verdopp=   16 div=0
+    seed= 6 grund= 0 verlust=  1 verdopp=  875 div=0
+    seed= 7 grund= 3 verlust=  8 verdopp=   26 div=0
+    seed= 8 grund= 0 verlust=  1 verdopp=   24 div=0
+    seed= 9 grund= 0 verlust=  4 verdopp=   19 div=0
+    seed=10 grund= 1 verlust=  4 verdopp=   22 div=0
+    seed=11 grund= 1 verlust=  3 verdopp=   10 div=0
+    seed=12 grund= 1 verlust=  8 verdopp=   15 div=0
+    seed=13 grund= 0 verlust=  3 verdopp=   22 div=0
+    seed=14 grund= 2 verlust=  3 verdopp=   27 div=0
+    seed=15 grund= 0 verlust=  2 verdopp=   14 div=0
+    seed=16 grund= 0 verlust=  0 verdopp=   25 div=0
+    seed=17 grund= 0 verlust=  4 verdopp=   14 div=0
+    seed=18 grund= 0 verlust=  2 verdopp=   29 div=0
+    seed=19 grund= 0 verlust=  5 verdopp=   19 div=0
+    seed=20 grund= 0 verlust=  4 verdopp=   20 div=0
+    seed=21 grund= 0 verlust=  1 verdopp=   29 div=0
+    seed=22 grund= 1 verlust=  2 verdopp=   22 div=0
+    seed=23 grund= 1 verlust=  4 verdopp=   28 div=0
+    seed=24 grund= 0 verlust=  1 verdopp=   33 div=0
+    seed=25 grund= 1 verlust=  3 verdopp=   25 div=0
+    seed=26 grund= 0 verlust=  2 verdopp=   17 div=0
+    seed=27 grund= 0 verlust=  2 verdopp=   23 div=0
+    seed=28 grund= 0 verlust=  2 verdopp=   20 div=0
+    seed=29 grund= 2 verlust=  3 verdopp=   19 div=0
+    seed=30 grund= 0 verlust=  2 verdopp=   20 div=0
+    seed=31 grund= 0 verlust=  3 verdopp=   14 div=0
+    seed=32 grund= 0 verlust=  3 verdopp=   24 div=0
+    seed=33 grund= 1 verlust=  5 verdopp=   32 div=0
+    seed=34 grund= 1 verlust=  3 verdopp=   22 div=0
+    seed=35 grund= 0 verlust=  1 verdopp=   24 div=0
+    seed=36 grund= 0 verlust=  0 verdopp=   17 div=0
+    seed=37 grund= 1 verlust=  4 verdopp=   17 div=0
+    seed=38 grund= 0 verlust=  4 verdopp=   22 div=0
+    seed=39 grund= 0 verlust=  2 verdopp=   17 div=0
+    seed=40 grund= 0 verlust=  1 verdopp=   28 div=0
+S0real N=4 konvergent Seeds=40/40  Verlust= 114 GRUNDTEXT-WEG=  19 Verdopp= 1757 diverg=  0 sauber=0/40 unverw=  0 erstk=1395  | Uebertragungen=  327 kB=  104 Dateien= 157 maxLen=  346 (je Seed)
+S0real N=4 gekappt    Seeds= 0/40
+### VORHER DET=1234 N=2
+    seed= 1 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed= 2 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed= 3 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed= 4 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed= 5 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed= 6 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed= 7 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed= 8 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed= 9 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=10 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=11 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed=12 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=13 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=14 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=15 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=16 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=17 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=18 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=19 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=20 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=21 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=22 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=23 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=24 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=25 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=26 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=27 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=28 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=29 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed=30 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=31 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=32 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=33 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed=34 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed=35 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=36 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=37 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=38 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=39 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed=40 grund= 0 verlust=  0 verdopp=    1 div=0
+S0real N=2 konvergent Seeds=40/40  Verlust=   0 GRUNDTEXT-WEG=   0 Verdopp=   52 diverg=  0 sauber=11/40 unverw=  0 erstk= 185  | Uebertragungen=   68 kB=    9 Dateien=  35 maxLen=  120 (je Seed)
+S0real N=2 gekappt    Seeds= 0/40
+### NACHHER DET=1234 N=2
+    seed= 1 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed= 2 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed= 3 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed= 4 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed= 5 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed= 6 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed= 7 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed= 8 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed= 9 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=10 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=11 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed=12 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=13 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=14 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=15 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=16 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=17 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=18 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=19 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=20 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=21 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=22 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=23 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=24 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=25 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=26 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=27 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=28 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=29 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed=30 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=31 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=32 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=33 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=34 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed=35 grund= 0 verlust=  0 verdopp=    2 div=0
+    seed=36 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=37 grund= 0 verlust=  0 verdopp=    0 div=0
+    seed=38 grund= 0 verlust=  0 verdopp=    1 div=0
+    seed=39 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed=40 grund= 0 verlust=  0 verdopp=    1 div=0
+S0real N=2 konvergent Seeds=40/40  Verlust=   0 GRUNDTEXT-WEG=   0 Verdopp=   49 diverg=  0 sauber=12/40 unverw=  0 erstk= 185  | Uebertragungen=   68 kB=    9 Dateien=  35 maxLen=  119 (je Seed)
+S0real N=2 gekappt    Seeds= 0/40
+### VORHER DET=1234 N=3
+    seed= 1 grund= 0 verlust=  1 verdopp=    7 div=0
+    seed= 2 grund= 0 verlust=  1 verdopp=    7 div=0
+    seed= 3 grund= 0 verlust=  0 verdopp=   16 div=0
+    seed= 4 grund= 0 verlust=  0 verdopp=   25 div=0
+    seed= 5 grund= 0 verlust=  1 verdopp=   14 div=0
+    seed= 6 grund= 0 verlust=  1 verdopp=   13 div=0
+    seed= 7 grund= 0 verlust=  1 verdopp=   11 div=0
+    seed= 8 grund= 0 verlust=  5 verdopp=   17 div=0
+    seed= 9 grund= 2 verlust=  5 verdopp=    7 div=0
+    seed=10 grund= 0 verlust=  1 verdopp=   13 div=0
+    seed=11 grund= 0 verlust=  3 verdopp=    8 div=0
+    seed=12 grund= 0 verlust=  1 verdopp=   11 div=0
+    seed=13 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed=14 grund= 0 verlust=  2 verdopp=   21 div=0
+    seed=15 grund= 0 verlust=  1 verdopp=   17 div=0
+    seed=16 grund= 1 verlust=  1 verdopp=    4 div=0
+    seed=17 grund= 0 verlust=  0 verdopp=   14 div=0
+    seed=18 grund= 0 verlust=  3 verdopp=   17 div=0
+    seed=19 grund= 0 verlust=  0 verdopp=    8 div=0
+    seed=20 grund= 1 verlust=  2 verdopp=   17 div=0
+    seed=21 grund= 0 verlust=  3 verdopp=   16 div=0
+    seed=22 grund= 1 verlust=  3 verdopp=   12 div=0
+    seed=23 grund= 0 verlust=  1 verdopp=   18 div=0
+    seed=24 grund= 0 verlust=  1 verdopp=    7 div=0
+    seed=25 grund= 0 verlust=  1 verdopp=   22 div=0
+    seed=26 grund= 0 verlust=  2 verdopp=   13 div=0
+    seed=27 grund= 0 verlust=  0 verdopp=    4 div=0
+    seed=28 grund= 0 verlust=  0 verdopp=   17 div=0
+    seed=29 grund= 0 verlust=  0 verdopp=    7 div=0
+    seed=30 grund= 0 verlust=  0 verdopp=   14 div=0
+    seed=31 grund= 0 verlust=  0 verdopp=   27 div=0
+    seed=32 grund= 0 verlust=  1 verdopp=    7 div=0
+    seed=33 grund= 0 verlust=  1 verdopp=   16 div=0
+    seed=34 grund= 0 verlust=  0 verdopp=   10 div=0
+    seed=35 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed=36 grund= 0 verlust=  2 verdopp=    6 div=0
+    seed=37 grund= 0 verlust=  1 verdopp=   14 div=0
+    seed=38 grund= 0 verlust=  1 verdopp=   11 div=0
+    seed=39 grund= 0 verlust=  4 verdopp=   14 div=0
+    seed=40 grund= 1 verlust=  3 verdopp=   11 div=0
+S0real N=3 konvergent Seeds=40/40  Verlust=  53 GRUNDTEXT-WEG=   6 Verdopp=  499 diverg=  0 sauber=0/40 unverw=  0 erstk= 734  | Uebertragungen=  183 kB=   29 Dateien=  86 maxLen=  153 (je Seed)
+S0real N=3 gekappt    Seeds= 0/40
+### NACHHER DET=1234 N=3
+    seed= 1 grund= 0 verlust=  1 verdopp=    9 div=0
+    seed= 2 grund= 0 verlust=  1 verdopp=    7 div=0
+    seed= 3 grund= 0 verlust=  0 verdopp=    7 div=0
+    seed= 4 grund= 0 verlust=  0 verdopp=   25 div=0
+    seed= 5 grund= 0 verlust=  1 verdopp=    9 div=0
+    seed= 6 grund= 0 verlust=  1 verdopp=    7 div=0
+    seed= 7 grund= 0 verlust=  1 verdopp=   11 div=0
+    seed= 8 grund= 0 verlust=  3 verdopp=   10 div=0
+    seed= 9 grund= 2 verlust=  5 verdopp=    7 div=0
+    seed=10 grund= 0 verlust=  1 verdopp=   13 div=0
+    seed=11 grund= 0 verlust=  3 verdopp=    8 div=0
+    seed=12 grund= 0 verlust=  1 verdopp=   11 div=0
+    seed=13 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed=14 grund= 0 verlust=  2 verdopp=   22 div=0
+    seed=15 grund= 0 verlust=  2 verdopp=   14 div=0
+    seed=16 grund= 1 verlust=  1 verdopp=    4 div=0
+    seed=17 grund= 0 verlust=  0 verdopp=   13 div=0
+    seed=18 grund= 0 verlust=  3 verdopp=   14 div=0
+    seed=19 grund= 0 verlust=  0 verdopp=    6 div=0
+    seed=20 grund= 1 verlust=  2 verdopp=   13 div=0
+    seed=21 grund= 0 verlust=  3 verdopp=   12 div=0
+    seed=22 grund= 1 verlust=  3 verdopp=   12 div=0
+    seed=23 grund= 0 verlust=  1 verdopp=    9 div=0
+    seed=24 grund= 0 verlust=  1 verdopp=    6 div=0
+    seed=25 grund= 0 verlust=  1 verdopp=   18 div=0
+    seed=26 grund= 0 verlust=  2 verdopp=   11 div=0
+    seed=27 grund= 0 verlust=  0 verdopp=    4 div=0
+    seed=28 grund= 0 verlust=  0 verdopp=   14 div=0
+    seed=29 grund= 0 verlust=  0 verdopp=    5 div=0
+    seed=30 grund= 0 verlust=  0 verdopp=   16 div=0
+    seed=31 grund= 0 verlust=  0 verdopp=   10 div=0
+    seed=32 grund= 0 verlust=  1 verdopp=    7 div=0
+    seed=33 grund= 0 verlust=  2 verdopp=   14 div=0
+    seed=34 grund= 0 verlust=  0 verdopp=    8 div=0
+    seed=35 grund= 0 verlust=  0 verdopp=    3 div=0
+    seed=36 grund= 0 verlust=  2 verdopp=    5 div=0
+    seed=37 grund= 0 verlust=  1 verdopp=   11 div=0
+    seed=38 grund= 0 verlust=  2 verdopp=   10 div=0
+    seed=39 grund= 0 verlust=  4 verdopp=   13 div=0
+    seed=40 grund= 0 verlust=  4 verdopp=   10 div=0
+S0real N=3 konvergent Seeds=40/40  Verlust=  55 GRUNDTEXT-WEG=   5 Verdopp=  411 diverg=  0 sauber=0/40 unverw=  0 erstk= 734  | Uebertragungen=  185 kB=   29 Dateien=  86 maxLen=  143 (je Seed)
+S0real N=3 gekappt    Seeds= 0/40
+### VORHER DET=1234 N=4
+    seed= 1 grund= 1 verlust=  5 verdopp=   28 div=0
+    seed= 2 grund= 0 verlust=  4 verdopp=   19 div=0
+    seed= 3 grund= 0 verlust=  3 verdopp=   15 div=0
+    seed= 4 grund= 0 verlust=  3 verdopp=   25 div=0
+    seed= 5 grund= 0 verlust=  0 verdopp=   46 div=0
+    seed= 6 grund= 0 verlust=  1 verdopp=   17 div=0
+    seed= 7 grund= 0 verlust=  2 verdopp= 1574 div=0
+    seed= 8 grund= 0 verlust=  1 verdopp=   46 div=0
+    seed= 9 grund= 4 verlust=  6 verdopp=   47 div=0
+    seed=10 grund= 1 verlust=  2 verdopp=   41 div=0
+    seed=11 grund= 0 verlust=  3 verdopp=   25 div=0
+    seed=12 grund= 0 verlust=  5 verdopp=   16 div=0
+    seed=13 grund= 1 verlust=  4 verdopp=   69 div=0
+    seed=14 grund= 1 verlust=  1 verdopp=   26 div=0
+    seed=15 grund= 0 verlust=  0 verdopp=   14 div=0
+    seed=16 grund= 0 verlust=  6 verdopp=   49 div=0
+    seed=17 grund= 2 verlust=  7 verdopp=   26 div=0
+    seed=18 grund= 0 verlust=  2 verdopp=   27 div=0
+    seed=19 grund= 0 verlust=  2 verdopp=   43 div=0
+    seed=20 grund= 1 verlust=  3 verdopp=   14 div=0
+    seed=21 grund= 1 verlust=  2 verdopp=   30 div=0
+    seed=22 grund= 0 verlust=  3 verdopp=    9 div=0
+    seed=23 grund= 2 verlust=  6 verdopp=   41 div=0
+    seed=24 grund= 0 verlust=  0 verdopp=   36 div=0
+    seed=25 grund= 1 verlust=  3 verdopp=   28 div=0
+    seed=26 grund= 2 verlust=  7 verdopp=   28 div=0
+    seed=27 grund= 0 verlust=  1 verdopp=  124 div=0
+    seed=28 grund= 0 verlust=  0 verdopp=   26 div=0
+    seed=29 grund= 0 verlust=  1 verdopp=   18 div=0
+    seed=30 grund= 0 verlust=  2 verdopp=   23 div=0
+    seed=31 grund= 0 verlust=  1 verdopp=   17 div=0
+    seed=32 grund= 1 verlust=  5 verdopp=   35 div=0
+    seed=33 grund= 1 verlust=  4 verdopp= 1157 div=0
+    seed=34 grund= 1 verlust=  2 verdopp=   61 div=0
+    seed=35 grund= 0 verlust=  0 verdopp=   26 div=0
+    seed=36 grund= 3 verlust=  5 verdopp=   14 div=0
+    seed=37 grund= 1 verlust=  4 verdopp=   24 div=0
+    seed=38 grund= 0 verlust=  1 verdopp=   71 div=0
+    seed=39 grund= 0 verlust=  0 verdopp=   20 div=0
+    seed=40 grund= 0 verlust=  3 verdopp=  207 div=0
+S0real N=4 konvergent Seeds=40/40  Verlust= 110 GRUNDTEXT-WEG=  24 Verdopp= 4162 diverg=  0 sauber=0/40 unverw=  0 erstk=1448  | Uebertragungen=  327 kB=   78 Dateien= 157 maxLen=  800 (je Seed)
+S0real N=4 gekappt    Seeds= 0/40
+### NACHHER DET=1234 N=4
+    seed= 1 grund= 1 verlust=  5 verdopp=   28 div=0
+    seed= 2 grund= 0 verlust=  4 verdopp=   19 div=0
+    seed= 3 grund= 0 verlust=  4 verdopp=   15 div=0
+    seed= 4 grund= 1 verlust=  5 verdopp=   24 div=0
+    seed= 5 grund= 0 verlust=  3 verdopp=   13 div=0
+    seed= 6 grund= 0 verlust=  1 verdopp=   17 div=0
+    seed= 7 grund= 0 verlust=  4 verdopp=   31 div=0
+    seed= 8 grund= 0 verlust=  1 verdopp=   19 div=0
+    seed= 9 grund= 3 verlust=  5 verdopp=   25 div=0
+    seed=10 grund= 1 verlust=  2 verdopp=   33 div=0
+    seed=11 grund= 0 verlust=  2 verdopp=   14 div=0
+    seed=12 grund= 0 verlust=  6 verdopp=   17 div=0
+    seed=13 grund= 0 verlust=  4 verdopp=   27 div=0
+    seed=14 grund= 3 verlust=  4 verdopp=   39 div=0
+    seed=15 grund= 0 verlust=  1 verdopp=   16 div=0
+    seed=16 grund= 0 verlust=  0 verdopp=   17 div=0
+    seed=17 grund= 2 verlust=  6 verdopp=   15 div=0
+    seed=18 grund= 1 verlust=  3 verdopp=   34 div=0
+    seed=19 grund= 0 verlust=  1 verdopp=   34 div=0
+    seed=20 grund= 0 verlust=  3 verdopp=   21 div=0
+    seed=21 grund= 1 verlust=  2 verdopp=   23 div=0
+    seed=22 grund= 2 verlust=  5 verdopp=   22 div=0
+    seed=23 grund= 2 verlust=  4 verdopp=   18 div=0
+    seed=24 grund= 0 verlust=  0 verdopp=   21 div=0
+    seed=25 grund= 0 verlust=  4 verdopp=   33 div=0
+    seed=26 grund= 3 verlust=  5 verdopp=   14 div=0
+    seed=27 grund= 1 verlust=  3 verdopp=   21 div=0
+    seed=28 grund= 2 verlust=  5 verdopp=   17 div=0
+    seed=29 grund= 0 verlust=  1 verdopp=   16 div=0
+    seed=30 grund= 0 verlust=  1 verdopp=   24 div=0
+    seed=31 grund= 0 verlust=  6 verdopp=   16 div=0
+    seed=32 grund= 0 verlust=  0 verdopp=   20 div=0
+    seed=33 grund= 1 verlust=  4 verdopp=   23 div=0
+    seed=34 grund= 0 verlust=  2 verdopp=   18 div=0
+    seed=35 grund= 2 verlust=  3 verdopp=   41 div=0
+    seed=36 grund= 1 verlust=  3 verdopp=   17 div=0
+    seed=37 grund= 1 verlust=  3 verdopp=   12 div=0
+    seed=38 grund= 0 verlust=  3 verdopp=   18 div=0
+    seed=39 grund= 3 verlust=  7 verdopp=   20 div=0
+    seed=40 grund= 0 verlust=  2 verdopp=   12 div=0
+S0real N=4 konvergent Seeds=40/40  Verlust= 127 GRUNDTEXT-WEG=  31 Verdopp=  864 diverg=  0 sauber=0/40 unverw=  0 erstk=1418  | Uebertragungen=  311 kB=   60 Dateien= 157 maxLen=  179 (je Seed)
+S0real N=4 gekappt    Seeds= 0/40
