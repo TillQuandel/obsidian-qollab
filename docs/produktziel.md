@@ -220,12 +220,32 @@ Strenger Grundtext-Verlust (eine Zeile des Ausgangstextes fehlt am Ende), Zellba
 | | N = 2 | N = 3 | N = 4 |
 | --- | --- | --- | --- |
 | Bestand (Bundle vor dem 05.08., n = 15) | 0 (0–0) | 7,1 (3–16) | 27,7 (11–37) |
-| **Heutiger Stand** (n = 13) | 0 (0–0) | **4,6 (2–9)** | **19,7 (9–30)** |
+| Heutiger Stand, **untreuer** Apparat (n = 13) | 0 (0–0) | 4,6 (2–9) | 19,7 (9–30) |
+| **Heutiger Stand, treuer Apparat** (n = 3/6/5) | 0 (0–0) | **2,0 (1–3)** | **8,0 (3–11)** |
 
-Der Rückgang ist signifikant (Permutationstest zweiseitig: p = 0,0175 bzw. p = 0,0040), **aber in
-keinem einzigen der 13 Läufe ist der Verlust bei N ≥ 3 null**. Bei N = 2 ist er in allen 28 Läufen
-beider Arme exakt null — die Zwei-Geräte-Zusage hält. Das Zielszenario lautet ausdrücklich „zwei
-**oder mehr**", der Befund bleibt damit vorrangig vor jedem weiteren Feature.
+**Die maßgebliche Zeile ist die dritte.** Die zweite ist mit einem Apparat gemessen, der nach
+seinen Write-Backs kein `noteLocalDiffBase` rief und dadurch mit einer veralteten Diff-Basis
+arbeitete — anders als `main.ts:995`/`:1488`. Nach der Korrektur halbieren sich die Zahlen
+(gepaart nachgemessen: N = 3 von 5,2 auf 2,0, N = 4 von 17,0 auf 8,0), und die Verdopplung sinkt
+mit (N = 4, Median je Lauf: 7.216 → 1.038). Der treuere Apparat rettet Grundtext also nicht auf
+Kosten einer anderen Spalte.
+
+Bei N = 2 ist der Verlust in **jedem** Lauf jeder Variante exakt null — die Zwei-Geräte-Zusage
+hält. Bei N ≥ 3 ist er in 13 von 14 Läufen des treuen Apparats größer als null. **Der frühere
+Satz „in keinem einzigen Lauf null" ist damit zurückgenommen**; ein Lauf bei N = 3 erreichte null.
+Das Zielszenario lautet ausdrücklich „zwei **oder mehr**", der Befund bleibt damit vorrangig vor
+jedem weiteren Feature.
+
+**Was dieser Apparat NICHT misst — für jede Zahl daraus mitzulesen:**
+
+- **`QOLLAB_SWEEP_SCHRANKE` ist wirkungslos.** Nachgemessen (N = 3, DET = 42): `basis-signatur`
+  und `aus` liefern **byteidentische** Zeilen, während `QOLLAB_DIFF_MODUS=roh` sehr wohl wirkt
+  (0 → 5). Der Apparat modelliert keinen Neustart, also gibt es keinen Sweep
+  (`mergeForLocalDiff(imSweep=true)` = 0). **Von den beiden am 2026-08-07 umgestellten Standards
+  ist nur `diffModus = 'semantisch'` je gemessen worden.**
+- **Das Herkunftstor fehlt** (`main.ts:329-335`): `parkForeign` = 0. Der Apparat verarbeitet eine
+  per Sync gelieferte `.md` als **eigenen Edit**. Deshalb läuft auch `tickParked` nie — und
+  deshalb sind die 24 bekannten Fälle dort von keiner dieser Messungen berührt.
 
 **Zum Instrument, für jede künftige Zahl daraus:** `bilanz-n.mjs` ist **nicht reproduzierbar** —
 derselbe Aufruf gibt bei jedem Start eine andere Zahl (dreimal hintereinander, Bestand, N = 3:
