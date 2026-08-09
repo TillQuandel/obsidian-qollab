@@ -209,32 +209,60 @@ zu übernehmen.**
    entfernen. Qollab würde einen Git-Konflikt also nicht auflösen, sondern **verteilen**.
    Erkennung, Test und Doku dazu: null Treffer im gesamten Repo.
 
-## Offen und vorrangig: Grundtext-Verlust ab drei Geräten
+## Grundtext-Verlust ab vier Geräten — der Drei-Geräte-Befund ist gefallen
 
-**Am heutigen Stand nachgemessen (2026-08-09, `grundtext-n-2026-08-09.md`): Der Befund hält.
-K.o.-Kriterium 1 wird ab drei Geräten weiterhin verletzt.**
+**Revidiert am 2026-08-09 (`grundtext-n-2026-08-09.md`). Der frühere Satz „K.o.-Kriterium 1 wird ab
+drei Geräten verletzt" war zum großen Teil ein Artefakt des Messapparats und ist zurückgenommen.
+Ab vier Geräten hält der Befund — in schwächerer Form.**
 
 Strenger Grundtext-Verlust (eine Zeile des Ausgangstextes fehlt am Ende), Zellbasis je Lauf
 40 Seeds × 10 Notizen × 8 Basiszeilen = 3.200 Zeilen, Mittelwert (Spanne):
 
-| | N = 2 | N = 3 | N = 4 |
+| Apparat-Stand | N = 2 | N = 3 | N = 4 |
 | --- | --- | --- | --- |
-| Bestand (Bundle vor dem 05.08., n = 15) | 0 (0–0) | 7,1 (3–16) | 27,7 (11–37) |
-| Heutiger Stand, **untreuer** Apparat (n = 13) | 0 (0–0) | 4,6 (2–9) | 19,7 (9–30) |
-| **Heutiger Stand, treuer Apparat** (n = 3/6/5) | 0 (0–0) | **2,0 (1–3)** | **8,0 (3–11)** |
+| Bundle vor dem 05.08. (n = 15) | 0 (0–0) | 7,1 (3–16) | 27,7 (11–37) |
+| heute, ohne `noteLocalDiffBase` (n = 13) | 0 (0–0) | 4,6 (2–9) | 19,7 (9–30) |
+| heute, mit `noteLocalDiffBase` (n = 3/6/5) | 0 (0–0) | 2,0 (1–3) | 8,0 (3–11) |
+| **heute, mit Herkunftstor** (n = 3/5/5) | **0 (0–0)** | **0 (0–0)** | **1,2 (1–2)** |
 
-**Die maßgebliche Zeile ist die dritte.** Die zweite ist mit einem Apparat gemessen, der nach
-seinen Write-Backs kein `noteLocalDiffBase` rief und dadurch mit einer veralteten Diff-Basis
-arbeitete — anders als `main.ts:995`/`:1488`. Nach der Korrektur halbieren sich die Zahlen
-(gepaart nachgemessen: N = 3 von 5,2 auf 2,0, N = 4 von 17,0 auf 8,0), und die Verdopplung sinkt
-mit (N = 4, Median je Lauf: 7.216 → 1.038). Der treuere Apparat rettet Grundtext also nicht auf
-Kosten einer anderen Spalte.
+**Maßgeblich ist die letzte Zeile.** Jede darüber ist mit einem Apparat gemessen, der etwas tat,
+was das Plugin nicht tut:
 
-Bei N = 2 ist der Verlust in **jedem** Lauf jeder Variante exakt null — die Zwei-Geräte-Zusage
-hält. Bei N ≥ 3 ist er in 13 von 14 Läufen des treuen Apparats größer als null. **Der frühere
-Satz „in keinem einzigen Lauf null" ist damit zurückgenommen**; ein Lauf bei N = 3 erreichte null.
-Das Zielszenario lautet ausdrücklich „zwei **oder mehr**", der Befund bleibt damit vorrangig vor
-jedem weiteren Feature.
+1. Er rief nach seinen Write-Backs kein `noteLocalDiffBase` (`main.ts:995`/`:1488`) und arbeitete
+   deshalb mit veralteter Diff-Basis.
+2. **Gravierender:** Er hatte kein Herkunftstor (`main.ts:329-335`) und verarbeitete eine per Sync
+   gelieferte `.md` als **eigenen Edit**. Genau dieser Pfad — `applyLocalContent` → `setContent`
+   (`sync-handler.ts:1703`) — war der, auf dem die Schadensklasse nachgewiesen wurde. Das echte
+   Plugin **parkt** eine Fremddatei dort, statt sie zu diffen.
+
+Mit geschlossenem Tor fällt der Verlust bei N = 3 auf **null in fünf von fünf Läufen**, bei N = 4
+auf 1,2 von 3.200 Zeilen. Verlust, Verdopplung und Konfliktkopien fallen in **jeder** Spalte mit
+(N = 3: Verdopplung 440 → 58) — der Gewinn ist nirgends erkauft. Bei **N = 2 ist der Lauf jetzt
+vollständig sauber**: 40/40 Seeds ohne jeden Befund, Verdopplung 0.
+
+**Dass das Tor nicht einfach alles wegparkt, ist belegt:** 10 Seeds × 3 Geräte × 10 Notizen × 1
+Edit = 300 Tastendrücke; `torEigen` = 302, `applyLocalContent` = 303 (= 302 + 1 Nachtrag aus
+`tickParked`), und am Ende jedes Laufs ist nichts mehr geparkt.
+
+### Was ab vier Geräten übrig bleibt
+
+Eine **dritte** Untervariante, die mit den beiden bisher beschriebenen nichts zu tun hat: Die Zeile
+wird nicht gelöscht, sondern **zerschnitten** — `n5-base-1` wird zu `n5-basebasebase-1`, durch
+nebenläufige Zeichen-**Einfügungen**, ohne jede DELETE-Op. Der Satz der Schadensklasse („die Notiz
+wird zeilenweise gedacht, aber zeichenweise bearbeitet") hält also; seine beiden gemessenen
+Untervarianten (verschobener Fuzzy-Hunk, Delete-Op über die Zeilengrenze) verschwinden mit dem Tor.
+
+Der Verlust **wandert nicht** nach `tickParked`, wie vermutet: Von 191 `tickParked`-Läufen bei
+N = 3 enden nur 4 im `unionMerge`-Nachtrag, und davon **0** mit toter Grundtextzeile. Die 24
+Fälle aus der Aktenlage sind damit erstmals messbar — und dabei nicht aufgetreten. Weder bestätigt
+noch für alle Lagen entkräftet.
+
+### Ein Produktivcode-Befund am Rand
+
+`flushParked` (`src/sync-handler.ts:424`) hat **repoweit keinen Aufrufer** — nachgeprüft, es gibt
+nur die Definition. Sein eigener Kommentar verspricht, beim Abschalten des Plugins jeden geparkten
+Stand nachzutragen; `onunload` (`main.ts:1623-1631`) ruft ihn nicht. Wer das Plugin abschaltet,
+während etwas geparkt ist, hat einen unbelegten Pfad vor sich.
 
 **Was dieser Apparat NICHT misst — für jede Zahl daraus mitzulesen:**
 
@@ -243,9 +271,13 @@ jedem weiteren Feature.
   (0 → 5). Der Apparat modelliert keinen Neustart, also gibt es keinen Sweep
   (`mergeForLocalDiff(imSweep=true)` = 0). **Von den beiden am 2026-08-07 umgestellten Standards
   ist nur `diffModus = 'semantisch'` je gemessen worden.**
-- **Das Herkunftstor fehlt** (`main.ts:329-335`): `parkForeign` = 0. Der Apparat verarbeitet eine
-  per Sync gelieferte `.md` als **eigenen Edit**. Deshalb läuft auch `tickParked` nie — und
-  deshalb sind die 24 bekannten Fälle dort von keiner dieser Messungen berührt.
+- ~~Das Herkunftstor fehlt.~~ **Geschlossen am 2026-08-09** — mit der echten `WriteProvenance`,
+  nicht mit einem Nachbau. Die Folgen stehen oben; sie sind der Grund für die Revision.
+- **Die Sicherungskopie wird nicht verteilt.** `onSaveCopy` schreibt sie, aber der Transport gibt
+  sie nicht an die Peers — im Plugin käme sie dort als fremde `.md` an und würde selbst geparkt.
+  Eigenes Szenario, ungemessen (1 Vorkommnis je 10 Seeds bei N = 3).
+- **Nur `mdModus: 'kopie'`.** Der härtere `'ueberschreiben'`-Modus ist ungemessen — dort wäre das
+  Tor mutmaßlich noch entscheidender.
 
 **Zum Instrument, für jede künftige Zahl daraus:** `bilanz-n.mjs` ist **nicht reproduzierbar** —
 derselbe Aufruf gibt bei jedem Start eine andere Zahl (dreimal hintereinander, Bestand, N = 3:
@@ -256,6 +288,14 @@ innerhalb der oben gemessenen Bestandsspanne, tragen als Messwerte aber nicht. Z
 Instrument brauchen Wiederholungen und eine Spanne.
 
 ### Die Schadensklasse, benannt (2026-08-09)
+
+> **Nachtrag desselben Tages:** Der *Satz* dieser Schadensklasse hält, die beiden unten belegten
+> **Untervarianten A und B verschwinden aber, sobald das Herkunftstor geschlossen ist** (siehe
+> oben). Beide setzen voraus, dass eine fremde `.md` als eigener Edit gedifft wird — und das tut
+> das Plugin nicht. Was ab vier Geräten übrig bleibt, ist eine dritte Variante ohne DELETE-Op.
+> Der folgende Abschnitt bleibt stehen, weil der Mechanismus korrekt beschrieben und der
+> `threeWayMerge`-Fehler **ohne Harness** reproduzierbar ist — er ist ein echter Fehler in
+> `text-merge.ts`, unabhängig davon, wie oft er im Betrieb ausgelöst wird.
 
 **Die Notiz wird zeilenweise gedacht, aber zeichenweise bearbeitet.** Beide Stellen, an denen
 Qollab Text in Operationen umrechnet, arbeiten auf Zeichenebene und richten sich nicht an
