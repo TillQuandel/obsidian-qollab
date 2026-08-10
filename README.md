@@ -4,7 +4,7 @@
 
 ## The problem, in one morning
 
-You and your partner share a vault. Sunday evening, you both open `Shopping list.md` — you at the kitchen table, they on the train, no signal.
+You and your partner share a vault. Sunday evening you both open `Shopping list.md` — you at the kitchen table, they on the train with no signal.
 
 You add:
 
@@ -27,9 +27,9 @@ Shopping list.md
 Shopping list (DESKTOP-A1B2C3's conflicted copy 2026-05-18).md
 ```
 
-Your sync provider could not decide which version was right, so it kept both. Now **you** decide: open two files side by side, spot the four differences, copy two lines over, delete the second file. Every single time.
+Your sync provider had two versions of the same file and no way to tell which one was right. So it kept both and left the rest to you: open them side by side, find the two lines that are only in the copy, paste them into the original, delete the copy. Every time it happens.
 
-And that is the *good* outcome. If conflict-copy protection is off, one version is simply gone — no file, no warning, no way to tell it ever existed.
+And that is the *good* outcome. With conflict-copy protection switched off, one of the two versions is simply gone — no second file, no warning, nothing that tells you it ever existed.
 
 **With Qollab installed on both devices**, Monday morning looks like this:
 
@@ -40,26 +40,36 @@ And that is the *good* outcome. If conflict-copy protection is off, one version 
 - lightbulbs
 ```
 
-No second file, no diffing, nothing to click. Both of you keep typing where you left off.
+No second file, nothing to compare, nothing to click. Both of you carry on where you left off.
 
-That is the normal case, and it is measured: **98.6 % of runs fully clean** when both of you only *added* text. The exceptions are real and they are listed below — the big one is that **deleting** is not solved. Read [Who this is for](#who-this-is-for) before you install.
+## Why a plugin, and not just a better sync service
 
-## Why a plugin, and not just "use a better sync service"
+Dropbox and OneDrive sync *files*. To them a note is a blob of bytes: two versions arrive, both changed since the last common state, and nothing in the file says what was added or removed. Keeping both is the only safe thing they can do.
 
-Dropbox and OneDrive sync *files*. They see two versions of `Shopping list.md` with the same timestamp and no way to compare them — a file is a blob to them. Keeping both is the only safe thing they can do.
+Qollab syncs *edits*. Next to each note it keeps a small **helper file** that records **what changed** — "two lines added after line 3" — rather than just the end result. Two lists of edits can be combined. Two blobs cannot.
 
-Qollab syncs *edits*. Alongside each note it keeps a small **helper file** recording **what you changed**, not just how the file ended up. Two edit histories can be combined; two blobs cannot. That is the whole idea.
+That is the whole idea, and it needs no server: no account, no subscription, no backend. Qollab rides on the file sync you already use. Git and GitHub work as a transport too.
 
-And it needs no server for it. No account, no subscription, no backend — it rides on the file sync you already pay for. Git and GitHub work as a transport too.
+## What to expect day to day
+
+| Situation | What you get |
+|---|---|
+| You both **add** text while offline, Obsidian open on both sides | Both versions merge. Nothing to do — this is the normal case |
+| One of you **deletes** a line, the other edits the note at the same time | **The deleted line comes back.** You delete it again. This is the plugin's weak spot and it is not solved |
+| You edit on your laptop and **close Obsidian** before the sync finishes | Usually fine. Occasionally your edit travels to the other device as a *deletion* — which is why you keep conflict-copy protection on |
+| One of you is on a **phone** | Qollab does not run there at all. Those edits sync as plain files, so a conflict copy can still appear |
+| You edit the **same line** on both devices | Both versions survive, but the resulting order can look odd |
+
+Exact rates for every row are in [The measurements](#the-measurements).
 
 ## Who this is for
 
 **A good fit:**
 
 - Two people sharing a vault — a couple, a small project, two colleagues.
-- One person, several machines — laptop, desktop, work computer.
+- One person with several machines — laptop, desktop, work computer.
 - Vaults under a few hundred notes.
-- People who **add** text: notes, lists, minutes, journals.
+- People who mostly **add** text: notes, lists, minutes, journals.
 
 **A bad fit, honestly:**
 
@@ -71,7 +81,52 @@ And it needs no server for it. No account, no subscription, no backend — it ri
 > [!WARNING]
 > **Experimental. Do not trust it with data you cannot lose.**
 > Keep your sync provider's conflict-copy protection **on** — Qollab is not yet good enough to be your only safety net.
-> Every number in this README is measured, not estimated. Read the next section before you install.
+> Every number in this README is measured, not estimated.
+
+## Install
+
+1. [Download the latest release](https://github.com/TillQuandel/obsidian-qollab/releases/latest) — `main.js` + `manifest.json`
+2. Create the folder `.obsidian/plugins/qollab/` in your vault
+3. Copy both files into it
+4. Obsidian: Settings → Community Plugins → enable **Qollab**
+
+Works with OneDrive, Dropbox, Google Drive, iCloud, Syncthing — any service that syncs files.
+
+**Git and GitHub** are an intended transport too, and the helper file names were designed for it: each device writes only `<note>.md.<deviceId>.yjs`, so two people never touch the same file and Git never reports a conflict on them. Note the honest gap: the merge behaviour below was measured against file syncs, **not** against a commit-and-push workflow, and Qollab does not commit or push for you.
+
+**Requires Obsidian 1.8.7 or newer.** Qollab stores its device ID in the vault-specific profile store, which only exists from that version on.
+
+**Update all your devices together.** The helper file format changed in this version, and a device still on v0.4.0 cannot read the new one. It does not simply ignore those files: at first it treats them as damaged and starts a competing history of its own, and on a later run it **deletes them without a word** — after which your file sync carries that deletion to every other device. A half-updated vault therefore loses helper files, and with them the edit history behind the affected notes. The notes themselves stay; the merging does not. So update every device before you edit again, or stay on the old version everywhere until you can.
+
+**Desktop only.** Qollab is marked desktop-only, so it does not load on Obsidian Mobile (iOS, Android). Mobile is still the goal, but it is not built, and the reason is not a missing checkbox. Obsidian's own view of the `.qollab/` folder lags behind the disk — in a desktop test a foreign helper file that had lain there from the start stayed invisible to that view for about 50 seconds — and a merge on a stale view treats an existing foreign edit as absent, re-invents it from the note text as *your* edit, and duplicates the text for good. Qollab avoids this by reading its helper files straight from the file system, and the call it needs for that (`getBasePath`) exists only on the desktop adapter. On mobile the code falls back to precisely the lagging view. The fallback is deliberate, so it would not crash — it would quietly stop protecting you, and none of the numbers below were measured there. Shipping that as "mobile support" would be a promise this plugin does not keep.
+
+**If you have it on a phone today, this version stops running there.** Obsidian does not load plugins marked desktop-only, so after the update Qollab is simply inactive on that device; its files stay under `.obsidian/plugins/qollab/` until you remove them. Nothing else changes — your notes and the `.qollab/` helper files are untouched, and your desktop devices go on using them. Losing it on the phone is the correct outcome: it was not protecting anything there.
+
+**Device ID, sync toggle and deletion markers live outside the vault.** Each installation gets its own random device ID on first start (visible in the plugin settings). It lives in that device's Obsidian profile, not in the synced `data.json`. Up to v0.4.0 the ID lived in `data.json`: if that file got synced, both devices used the same ID, wrote the same helper file, and the automatic merge **never** happened.
+
+The cost: a reset profile (reinstall, new machine, cleared `localStorage`) loses the toggle state and all deletion markers of that device, and Qollab starts with sync **enabled** again. **Check the toggle after every reinstall.**
+
+**Sync only part of `.obsidian/`.** Exclude these — most providers can exclude subfolders selectively:
+
+| File | Why |
+|---|---|
+| `workspace*.json` | window layout and open notes, rewritten constantly, device-specific |
+| `vault-stats.json` | written continuously while typing |
+| `graph.json`, `appearance.json`, `hotkeys.json` | personal view and input preferences |
+
+## How it works
+
+Qollab keeps a small helper file under `.qollab/<vault-path>/<note>.md.<deviceId>.yjs`. It holds the edit history as a Yjs CRDT. When a note changes, Qollab records the change there; when a foreign helper file arrives, it merges both histories and writes the result back into the note.
+
+**A note gets its helper file only once it is edited** — or once another device's helper file for it arrives. An untouched note deliberately gets none: creating one blindly on every device would give the same note a separate history per device, and one of them would have to be abandoned on first contact. What that means for you: **until a note has been edited in Obsidian once, Qollab does not protect it.** Edit it on two devices inside that window and you get your sync provider's conflict copy, exactly as before.
+
+Files arrive in **any order** over a file sync — the note may show up long before its history, or the other way round. Qollab handles that by *parking* a foreign file it cannot yet attribute, and merging it once the matching history arrives.
+
+**Qollab scans every 30 seconds, not the moment a file lands.** A foreign helper file is picked up on the next scan — up to half a minute later. Opening a note triggers a scan for that note right away; nothing else does. So don't sit in front of an open note waiting for something to happen, and above all don't retype the missing text yourself: an edit made inside that 30-second window falls under the merge limits below.
+
+---
+
+*Everything from here on is detail: what was measured, what is still broken, and what the plugin is aiming at. You do not need it to use Qollab — you need it to judge whether to trust it.*
 
 ## What it is aiming at
 
@@ -84,13 +139,11 @@ Stated separately from what it currently does, because the two are not the same:
 - **The transport is interchangeable**: a file sync (OneDrive, SharePoint, Dropbox, iCloud, Syncthing) or **Git/GitHub**. The per-device helper file names exist precisely so that Git never sees a conflict — each person only ever writes their own file.
 - Yjs CRDTs are the *current* mechanism, not the goal. If they cannot carry it, the search continues.
 
-Everything below describes what is **measured today**, which is a good deal less than that.
+What follows is what is **measured today**, which is a good deal less than that.
 
-## What is clean and what is not
+## The measurements
 
-**The short version.** With Obsidian open on both devices, Qollab reliably prevents *loss* in the two-device case, and it removes conflict copies. Its helper files carry a checksum, so a corrupted one is caught and skipped instead of silently rewriting your text. An edit overwritten on disk while Obsidian was shut is now protected wherever the matching helper file has already arrived — in the other half of cases it is not. The one thing it still does **not** do: it does not reliably preserve *deletions*. If your workflow involves deleting a lot, expect deleted lines to reappear.
-
-The tables below give the measured detail behind each of those sentences.
+**The short version.** With Obsidian open on both devices, Qollab reliably prevents *loss* in the two-device case, and it removes conflict copies. Its helper files carry a checksum, so a corrupted one is caught and skipped instead of silently rewriting your text. An edit overwritten on disk while Obsidian was shut is now protected wherever the matching helper file has already arrived — in the other half of cases it is not. The one thing it still does **not** do: it does not reliably preserve *deletions*.
 
 Most figures come from a deterministic simulation of two or more devices exchanging files in every possible delivery order. "Runs" are complete scenarios, not test cases. **One exception, marked where it occurs:** the three-and-four-device figures come from a driver that leaves the two random sources of the real code in place — the incarnation id and Yjs's per-document `clientID`. Repeating the same call gives a different number each time, so those figures are given as a mean over repeated runs with the range, never as a single value.
 
@@ -128,58 +181,6 @@ The startup scan therefore asks a different question: **does one of the helper f
 That closes it wherever the evidence has arrived. **It does not close it everywhere:** the helper file travels separately from the note and in any order, so in roughly half of all delivery orders it is not there yet when the scan runs. In those cases the old behaviour remains — the scan reads the difference as a deletion *you* made, writes it into your own helper file, and your file sync carries that deletion to the other device. It is removed exactly where it last existed. **That is why the warning above still asks you to keep conflict-copy protection on.**
 
 *Measured over 720 delivery orders, one device restarted: 240 runs lost text before, 60 after. The evidence is present in 360 of the 720 orders, which accounts for the remainder exactly. Skipping the startup scan removes the loss completely (0 of 720) but also discards every genuine offline edit, so that is not a fix. The devices still agree with each other in every run; "we both have the same text" is not the same as "nothing is missing".*
-
-### What that means at the kitchen table
-
-Back to Sunday evening. Four cases, all measured above:
-
-| What happens | What you see |
-|---|---|
-| You both **add** items while offline, Obsidian open on both sides | Both lists merge. Nothing to do — the normal case, 98.6 % clean |
-| One of you **deletes** "dish soap", the other edits the list at the same time | **"dish soap" comes back.** You delete it again. This is the 47 % row, and it is the plugin's weak spot |
-| You edit on your laptop, then **close Obsidian** before the sync finishes | Usually fine. In 8.3 % of orders your edit is written as a *deletion* and travels to the other device — that is why conflict-copy protection stays on |
-| Your partner is on a phone | Qollab is not running there at all. Their edits sync as plain files, so a conflict copy can still appear |
-
-## Install
-
-1. [Download the latest release](https://github.com/TillQuandel/obsidian-qollab/releases/latest) — `main.js` + `manifest.json`
-2. Create the folder `.obsidian/plugins/qollab/` in your vault
-3. Copy both files into it
-4. Obsidian: Settings → Community Plugins → enable **Qollab**
-
-Works with OneDrive, Dropbox, Google Drive, iCloud, Syncthing — any service that syncs files.
-
-**Git and GitHub** are an intended transport too, and the helper file names were designed for it: each device writes only `<note>.md.<deviceId>.yjs`, so two people never touch the same file and Git never reports a conflict on them. Note the honest gap: the merge behaviour above was measured against file syncs, **not** against a commit-and-push workflow, and Qollab does not commit or push for you.
-
-**Requires Obsidian 1.8.7 or newer.** Qollab stores its device ID in the vault-specific profile store, which only exists from that version on.
-
-**Desktop only.** Qollab is marked desktop-only, so it does not load on Obsidian Mobile (iOS, Android). Mobile is still the goal, but it is not built, and the reason is not a missing checkbox. Obsidian's own view of the `.qollab/` folder lags behind the disk — in a desktop test a foreign helper file that had lain there from the start stayed invisible to that view for about 50 seconds — and a merge on a stale view treats an existing foreign edit as absent, re-invents it from the note text as *your* edit, and duplicates the text for good. Qollab avoids this by reading its helper files straight from the file system, and the call it needs for that (`getBasePath`) exists only on the desktop adapter. On mobile the code falls back to precisely the lagging view. The fallback is deliberate, so it would not crash — it would quietly stop protecting you, and none of the numbers above were measured there. Shipping that as "mobile support" would be a promise this plugin does not keep.
-
-**If you have it on a phone today, this version stops running there.** Obsidian does not load plugins marked desktop-only, so after the update Qollab is simply inactive on that device; its files stay under `.obsidian/plugins/qollab/` until you remove them. Nothing else changes — your notes and the `.qollab/` helper files are untouched, and your desktop devices go on using them. Losing it on the phone is the correct outcome: it was not protecting anything there.
-
-**Update all your devices together.** The helper file format changed in this version, and a device still on v0.4.0 cannot read the new one. It does not simply ignore those files: at first it treats them as damaged and starts a competing history of its own, and on a later run it **deletes them without a word** — after which your file sync carries that deletion to every other device. A half-updated vault therefore loses helper files, and with them the edit history behind the affected notes. The notes themselves stay; the merging does not. So update every device before you edit again, or stay on the old version everywhere until you can.
-
-**Device ID, sync toggle and deletion markers live outside the vault.** Each installation gets its own random device ID on first start (visible in the plugin settings). It lives in that device's Obsidian profile, not in the synced `data.json`. Up to v0.4.0 the ID lived in `data.json`: if that file got synced, both devices used the same ID, wrote the same helper file, and the automatic merge **never** happened.
-
-The cost: a reset profile (reinstall, new machine, cleared `localStorage`) loses the toggle state and all deletion markers of that device, and Qollab starts with sync **enabled** again. **Check the toggle after every reinstall.**
-
-**Sync only part of `.obsidian/`.** Exclude these — most providers can exclude subfolders selectively:
-
-| File | Why |
-|---|---|
-| `workspace*.json` | window layout and open notes, rewritten constantly, device-specific |
-| `vault-stats.json` | written continuously while typing |
-| `graph.json`, `appearance.json`, `hotkeys.json` | personal view and input preferences |
-
-## What happens under the hood
-
-Qollab keeps a small helper file under `.qollab/<vault-path>/<note>.md.<deviceId>.yjs`. It holds the edit history as a Yjs CRDT. When a note changes, Qollab records the change there; when a foreign helper file arrives, it merges both histories and writes the result back into the note.
-
-**A note gets its helper file only once it is edited** — or once another device's helper file for it arrives. An untouched note deliberately gets none: creating one blindly on every device would give the same note a separate history per device, and one of them would have to be abandoned on first contact. What that means for you: **until a note has been edited in Obsidian once, Qollab does not protect it.** Edit it on two devices inside that window and you get your sync provider's conflict copy, exactly as before.
-
-Files arrive in **any order** over a file sync — the note may show up long before its history, or the other way round. Qollab handles that by *parking* a foreign file it cannot yet attribute, and merging it once the matching history arrives.
-
-**Qollab scans every 30 seconds, not the moment a file lands.** A foreign helper file is picked up on the next scan — up to half a minute later. Opening a note triggers a scan for that note right away; nothing else does. So don't sit in front of an open note waiting for something to happen, and above all don't retype the missing text yourself: an edit made inside that 30-second window falls under the merge limits below.
 
 ## Limits in detail
 
