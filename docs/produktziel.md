@@ -477,6 +477,30 @@ derselben Stelle ab (`H-WAIT`-Timeout beim ersten Warten auf die Sidecar). Nur `
 > misst man den *Nachtrag nach Frist*, nicht den lokalen Edit, und die Folge-Waits bei 90–120 s
 > fallen als nächstes), oder den Schreibweg auf den Prozess umstellen (`H-CDP type` /
 > `app.vault.modify`), was `H-START-CDP` statt `H-START` verlangt und damit einen echten Umbau.
+>
+> **DISKRIMINATOR GEFAHREN, 2026-08-12 — die Diagnose ist jetzt gemessen, nicht mehr abgeleitet.**
+> Die Kette oben war rechnerisch zwingend, aber es gab nach dem 2026-08-04 keinen Lauf mit einer
+> Wartezeit über 120 s. Deshalb `runners/r01-discriminator.ps1`: Kopie von `r01.ps1`, **einzige
+> Änderung sind zwei Timeout-Zahlen** (Zeile 54: `90` → `240`, Zeile 68: `120` → `240`).
+>
+> | | `r01` (Timeout 90 s) | `r01-discriminator` (Timeout 240 s) |
+> | --- | --- | --- |
+> | Lauf | `r01-20260810-080441` | `r01-20260810-211029` |
+> | Verdict | **FAIL** | **PASS** |
+> | erreichte Asserts | **0** (`"asserts": []`) | **6**, alle grün |
+>
+> Gemessene Wartezeit an der ersten Sidecar: `H-EDIT` 21:10:47,25 → `H-WAIT` erfüllt 21:12:45,87 =
+> **118,6 s**. Das liegt über den 90 s des Timeouts und knapp unter den 120 s der Frist — genau das
+> vorhergesagte Fenster. Damit ist belegt: **Der Ausfall war ein zu kurzer Timeout, kein Defekt.**
+> Die sechs Asserts (`ruhe-erreicht`, je einmal A/B in beiden Vaults, `sha-gleich`) sind grün — es
+> lag also **kein** Regressionssignal unter dem Timeout begraben.
+>
+> Was der Diskriminator **nicht** zeigt: ob die so gefahrenen Runner noch dasselbe messen wie vor
+> dem 2026-08-04. Bei 118,6 s kommt der Text als **Nachtrag nach Fristablauf** in die Historie,
+> nicht als sofort erfasster lokaler Edit. Für `r01` (Konvergenz, Zählung je Beitrag) trägt das
+> sichtbar; für Runner mit Zusagen über den Erfassungs*zeitpunkt* ist es zu prüfen. Nebenbefund
+> desselben Laufs: `guidA ≠ guidB` (Split-Brain, zwei Inkarnationen) — und trotzdem konvergent, mit
+> jedem Beitrag genau einmal. `r01` führt das als Befund, nicht als Assert.
 
 **Bis die Wächter-Ursache gefunden oder die Timeouts der sieben alten Runner angehoben sind, sagt
 die Batterie über Regressionen nichts.**
