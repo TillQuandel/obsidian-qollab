@@ -22,6 +22,18 @@ import { threeWayMerge } from '../src/text-merge';
 
 const BOM = '\uFEFF';
 
+// REIHENFOLGE, geaendert am 2026-08-11: Wo `local` und `other` unabhaengig an
+// DERSELBEN Stelle etwas einfuegen, steht seit der Zeilen-Tokenisierung von
+// `threeWayMerge` der fremde Beitrag vor dem lokalen (vorher umgekehrt). Beide
+// ueberleben vollstaendig -- nur die Anordnung hat sich gedreht.
+//
+// Das ist kein Verlust und keine Regression: Zwei nebenlaeufige Einfuegungen an
+// derselben Position haben keine kanonische Reihenfolge, und der README fuehrt
+// genau das als bekannte Eigenschaft ("Both versions survive, but the resulting
+// order can look odd"). Die Zusagen dieser Datei -- nichts geht verloren, kein
+// gemischtes Zeilenende, ein lokales BOM bleibt vorne -- sind unveraendert und
+// werden weiterhin geprueft.
+
 const zaehle = (text: string, teil: string) => text.split(teil).length - 1;
 // Ein einzelnes LF ohne vorangehendes CR — der Nachweis fuer „nicht gemischt".
 const hatNacktesLf = (text: string) => /(^|[^\r])\n/.test(text);
@@ -45,7 +57,7 @@ describe('threeWayMerge — CRLF gegen LF', () => {
     expect(zaehle(merged, 'Fremd.')).toBe(1);
     // Der lokale Stand ist reines LF -> das Ergebnis auch, kein einziges CR.
     expect(merged.includes('\r')).toBe(false);
-    expect(merged).toBe('# Titel\nText.\nLokal.\nFremd.\n');
+    expect(merged).toBe('# Titel\nText.\nFremd.\nLokal.\n');
   });
 
   it('spiegelbildlich: lokal CRLF, fremd LF', () => {
@@ -58,7 +70,7 @@ describe('threeWayMerge — CRLF gegen LF', () => {
     expect(zaehle(merged, 'Fremd.')).toBe(1);
     // Der lokale Stand ist durchgaengig CRLF -> das Ergebnis auch.
     expect(hatNacktesLf(merged)).toBe(false);
-    expect(merged).toBe('# Titel\r\nText.\r\nLokal.\r\nFremd.\r\n');
+    expect(merged).toBe('# Titel\r\nText.\r\nFremd.\r\nLokal.\r\n');
   });
 
   it('reine Zeilenende-Differenz ohne lokale Aenderung schreibt die Datei nicht um', () => {
@@ -79,7 +91,7 @@ describe('threeWayMerge — CRLF gegen LF', () => {
     expect(merged).toContain('nur lokal');
     expect(merged).toContain('nur fremd');
     expect(merged.includes('\r')).toBe(false);
-    expect(merged).toBe('kopf\nnur lokal\nnur fremd\nfuss\n');
+    expect(merged).toBe('kopf\nnur fremd\nnur lokal\nfuss\n');
   });
 
   it('gemischter lokaler Stand wird auf ein Zeilenende vereinheitlicht', () => {
@@ -96,7 +108,7 @@ describe('threeWayMerge — CRLF gegen LF', () => {
     expect(merged).toContain('Lokal');
     expect(merged).toContain('Fremd');
     expect(hatNacktesLf(merged)).toBe(false);
-    expect(merged).toBe('a\r\nb\r\nc\r\nLokal\r\nFremd\r\n');
+    expect(merged).toBe('a\r\nb\r\nc\r\nFremd\r\nLokal\r\n');
   });
 });
 
@@ -167,7 +179,7 @@ describe('threeWayMerge — BOM', () => {
 
     expect(merged.indexOf(BOM)).toBe(0);
     expect(merged.slice(1).indexOf(BOM)).toBe(-1);
-    expect(merged).toBe(BOM + '# Titel\nLokal\nFremd\n');
+    expect(merged).toBe(BOM + '# Titel\nFremd\nLokal\n');
   });
 });
 

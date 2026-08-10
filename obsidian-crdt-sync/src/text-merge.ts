@@ -76,6 +76,197 @@ export function vergleichsfassung(text: string): string {
 // Diese Funktion bildet keine Diff-Indizes auf Zeilen zurück.
 const dmp = new diff_match_patch();
 
+// Der Fuzz sitzt NICHT im Finden, sondern im Anwenden (diff-match-patch 1.0.5,
+// index.js:1864-1899, selbst gelesen). Trifft `match_main` eine Stelle, deren
+// Kontext zeichengleich ist, wird der Ersatztext schlicht eingesetzt — dort kann
+// nichts wandern, auch wenn der Hunk verschoben wurde. Weicht der Kontext ab
+// (`text1 != text2`), rechnet `patch_apply` einen Diff zwischen erwartetem und
+// tatsächlichem Kontext und übersetzt die Op-Indizes per `diff_xIndex`. Genau
+// dann landet eine Op an verschobener Stelle und löscht aus einer Zeile, die
+// niemand angefasst hat.
+//
+// Gemessen (`spike/schnitt/`, 8 Zellen à 200 Seeds, Bericht
+// `.superpowers/sdd/patch-apply-2026-08-11.md`): Über alle Zellen zerstörte der
+// Fuzz 23 Grundtextzeilen; der Verwurf, den er dabei vermeidet, ist NULL — über
+// 4283 Hunks war `results[i] === false` kein einziges Mal wahr. Der Fuzz erkauft
+// also nichts, er kostet nur.
+//
+// Deshalb eine eigene Instanz, die wie bisher sucht, aber nur an einer Stelle
+// mit ZEICHENGLEICHEM Kontext anwendet. `patch_splitMax` deckelt `text1` bei
+// `Match_MaxBits` = 32 Zeichen; die Prüfung deckt damit denselben Vergleich ab,
+// den `patch_apply` intern anstellt. Instanz statt Prototyp, damit keine andere
+// Nutzung der Bibliothek im selben Prozess mitverstellt wird.
+const dmpExakt = new diff_match_patch();
+dmpExakt.match_main = function (text: string, pattern: string, loc: number): number {
+  const p = dmp.match_main(text, pattern, loc);
+  if (p === -1) return -1;
+  return text.substr(p, pattern.length) === pattern ? p : -1;
+};
+
+// Die Marke über einem gemeldeten Block. Sichtbar und nicht als HTML-Kommentar:
+// Obsidian blendet Kommentare in der Vorschau aus, und ein Hinweis, den niemand
+// sieht, ist wieder stiller Verlust.
+export const MELDE_MARKE = '**Qollab — local change that could not be placed:**';
+
+// Das Null-Padding von `patch_addPadding` (index.js:1916-1930) sind die
+// Steuerzeichen U+0001..U+0004. Zur Laufzeit gebaut, damit keine Escape-Sequenz
+// im Quelltext steht, die ein Werkzeug still in echte Steuerzeichen wandelt.
+const PADDING = new RegExp('[' + String.fromCharCode(1, 2, 3, 4) + ']', 'g');
+
+// Was `patch_apply` NICHT einsortieren konnte, als anhängbarer Block.
+//
+// Ohne diesen Nachtrag verschwände jeder nicht platzierbare Hunk wortlos — die
+// Zusage aus `docs/produktziel.md` Gruppe 5 („Sichtbarkeit statt Stille") wäre
+// verletzt, und die exakte Suche wäre nur ein Tausch der Schadensart:
+// gemessen +35,4 % Gesamt-Textverlust gegenüber dem Fuzz, unter
+// `mdModus: 'ueberschreiben'` +73 %.
+//
+// Die Dedup-Prüfung ist NICHT kosmetisch: Ohne sie hängt ein zweites Gerät, das
+// denselben Merge auf dem Ergebnis des ersten rechnet, denselben Block erneut an
+// — gemessen 121 → 186 → 251 Zeichen über drei Runden. Das ist dieselbe Bauart
+// wie die nicht-idempotente Ersetzung in `crdt-manager.ts`.
+function nichtEinsortiert(
+  patches: ReturnType<typeof dmpExakt.patch_make>,
+  gemergt: string,
+  angewandt: boolean[],
+  zurueck: (chars: string) => string,
+  zerlegen: boolean
+): string {
+  if (angewandt.every(Boolean)) return '';
+
+  // Im Token-Zweig wird Hunk für Hunk angewandt; dort zeigen die Flags schon auf
+  // die übergebenen Patches. Nur im Rückfallzweig läuft `patch_apply` über alle
+  // auf einmal und zerlegt dabei intern (index.js:1815-1820: deepCopy →
+  // addPadding → splitMax) — dann muss dieselbe Vorverarbeitung wiederholt
+  // werden, damit die Indizes passen. Sie ist deterministisch.
+  let zerlegt = patches;
+  if (zerlegen) {
+    zerlegt = dmp.patch_deepCopy(patches);
+    dmp.patch_addPadding(zerlegt);
+    dmp.patch_splitMax(zerlegt);
+  }
+
+  const bloecke: string[] = [];
+  for (let i = 0; i < angewandt.length; i++) {
+    if (angewandt[i] || !zerlegt[i]) continue;
+    // Der Zieltext des Hunks OHNE seine Löschungen — also das, was der lokale
+    // Stand an dieser Stelle hätte. Der umgebende Kontext bleibt drin, sonst
+    // stünden nur Zeichenfragmente im Block (gemessen: `D0-3` statt `n0-D0-3`).
+    const roh = (zerlegt[i] as unknown as { diffs: [number, string][] }).diffs
+      .filter(([op]) => op !== diff_match_patch.DIFF_DELETE)
+      .map(([, text]) => text)
+      .join('')
+      .replace(PADDING, '');
+    const stueck = zurueck(roh);
+    if (stueck.trim() === '') continue;
+    if (gemergt.includes(stueck) || bloecke.includes(stueck)) continue;
+    bloecke.push(stueck);
+  }
+
+  if (bloecke.length === 0) return '';
+  const zeilen = bloecke.map((b) => (b.endsWith('\n') ? b : b + '\n')).join('');
+  return `\n${MELDE_MARKE}\n${zeilen}`;
+}
+
+// Zeilen-Tokenisierung über DREI Texte zugleich.
+//
+// `diff_linesToChars_` der Bibliothek kann nur zwei Texte; hier müssen base,
+// local und other DIESELBE Zuordnung Zeile → Zeichen bekommen, sonst stünde
+// dasselbe Zeichen in zwei Fassungen für verschiedene Zeilen.
+//
+// Der Grund für die Tokenisierung: Ein Zeichen-Patch legt seine Ops über
+// Zeilengrenzen. Sobald zwei Zeilen ein gemeinsames Präfix teilen — jede
+// Aufzählung, jede Überschriftenfolge, jede Checkbox-Liste —, kann eine
+// verschobene Op mitten in eine unbeteiligte Zeile greifen und sie verändern.
+// Gemessen (`probe-fuzz.mjs`, Seed 3): Die lokale Ergänzung `|n0-D0-9` gehörte
+// an `n0-base-6` und landete an `n0-base-4`; damit war `n0-base-4` als Zeile
+// zerstört, ohne dass eine einzige DELETE-Op im Spiel war.
+//
+// Auf Token-Ebene ist das ausgeschlossen: Eine Op deckt ganze Zeilen, eine
+// Einfügung kann eine bestehende Zeile nicht mehr aufbrechen. Das ist dieselbe
+// Richtung, die `CrdtManager.diffOps` seit `diffModus = 'zeile'` geht.
+//
+// Die Grenze: Ein Token ist ein UTF-16-Code-Unit. Oberhalb von U+D7FF beginnen
+// die Surrogat-Hälften; ab dort wäre ein Token kein eigenständiges Zeichen mehr.
+// Deshalb der Rückfall auf den Zeichen-Patch bei sehr vielen VERSCHIEDENEN
+// Zeilen — dieselbe Bauart wie `zeilenModusSchwelle` in `crdt-manager.ts`.
+const ZEILEN_GRENZE = 55000;
+
+// Die ersten Codepoints bleiben FREI: `patch_addPadding` (index.js:1916-1930)
+// setzt U+0001..U+0004 als Null-Padding an die Ränder. Vergäbe die
+// Tokenisierung dieselben Werte, wäre Token Nr. 1 vom Padding nicht zu
+// unterscheiden — gemessen führte das dazu, dass eine echte Zeile beim
+// Zurückwandeln verschwand.
+const TOKEN_BASIS = 8;
+
+function tokenisiere(texte: string[]): { chars: string[]; zeilen: string[] } | null {
+  const index = new Map<string, number>();
+  const zeilen: string[] = [];
+  const chars: string[] = [];
+  for (const text of texte) {
+    let aus = '';
+    for (const zeile of splitLines(text)) {
+      let i = index.get(zeile);
+      if (i === undefined) {
+        if (zeilen.length >= ZEILEN_GRENZE) return null;
+        i = zeilen.length;
+        zeilen.push(zeile);
+        index.set(zeile, i);
+      }
+      aus += String.fromCharCode(i + TOKEN_BASIS);
+    }
+    chars.push(aus);
+  }
+  return { chars, zeilen };
+}
+
+function zaehleTokens(chars: string): Map<string, number> {
+  const anzahl = new Map<string, number>();
+  for (const c of chars) anzahl.set(c, (anzahl.get(c) ?? 0) + 1);
+  return anzahl;
+}
+
+// Hat der Merge eine Zeile verloren, die `other` trägt und die der lokale Stand
+// gar nicht löschen wollte?
+//
+// Legitime Verluste gibt es: Was zwischen `base` und `local` verschwunden ist,
+// hat der Nutzer selbst gelöscht — das darf der Patch nachvollziehen. Alles
+// darüber hinaus hat niemand angefasst, und es zu verlieren ist K.o.-Kriterium 1.
+//
+// Verglichen wird auf Vielfachheiten, nicht auf Mengen: Eine Zeile, die zweimal
+// dastand und nur noch einmal dasteht, ist zur Hälfte verloren.
+// Die Prüfung sitzt bewusst PRO HUNK, nicht pro Merge.
+//
+// Ein Rückfall über den ganzen Merge ist zu grob, und das ist gemessen: Er
+// verwirft mit dem schädlichen Hunk auch alle harmlosen — darunter die
+// LÖSCHUNGEN. Der Test „Offline-Loeschung: die geloeschte Zeile kehrt nicht
+// zurueck" fiel genau daran, weil die gelöschte Zeile mit dem verworfenen
+// Lösch-Hunk zurückkam. Gruppe 1 verlangt beides: gelöschter Text bleibt
+// gelöscht, unberührter Text bleibt stehen.
+//
+// Erlaubt ist einem Hunk exakt, was seine eigenen DELETE-Ops sagen. Verschwindet
+// darüber hinaus eine Zeile, hat er sie mitgerissen.
+function reisstMit(
+  hunk: { diffs: [number, string][] },
+  vorherC: string,
+  nachherC: string
+): boolean {
+  const darfWeg = zaehleTokens(
+    hunk.diffs
+      .filter(([op]) => op === diff_match_patch.DIFF_DELETE)
+      .map(([, t]) => t)
+      .join('')
+  );
+  const vorher = zaehleTokens(vorherC);
+  const nachher = zaehleTokens(nachherC);
+  for (const [token, hatte] of vorher) {
+    const blieb = nachher.get(token) ?? 0;
+    if (blieb >= hatte) continue;
+    if (hatte - blieb > (darfWeg.get(token) ?? 0)) return true;
+  }
+  return false;
+}
+
 export function threeWayMerge(base: string, local: string, other: string): string {
   const localBom = local.startsWith(BOM);
   const localBody = ohneBom(local);
@@ -84,11 +275,56 @@ export function threeWayMerge(base: string, local: string, other: string): strin
   const localLf = aufLf(localBody);
   const otherLf = aufLf(ohneBom(other));
 
-  const patches = dmp.patch_make(baseLf, localLf);
-  const [merged] = dmp.patch_apply(patches, otherLf);
+  const tok = tokenisiere([baseLf, localLf, otherLf]);
+  // Identität als Rückabbildung, wenn zeichenweise gepatcht wird.
+  const zurueck = tok
+    ? (chars: string) =>
+        Array.from(chars, (c) => tok.zeilen[c.charCodeAt(0) - TOKEN_BASIS] ?? '').join('')
+    : (chars: string) => chars;
+  const [a, b, c] = tok ? tok.chars : [baseLf, localLf, otherLf];
+
+  // Der Fuzz bleibt — und er SOLL bleiben. Gemessen ist er in der Mehrzahl der
+  // Fälle im Recht: Er platziert einen Hunk, dessen Kontext sich verschoben hat,
+  // an der sachlich richtigen Stelle. Die exakte Suche verwirft genau diese
+  // Fälle mit; sie kostet dadurch +35,4 % Gesamt-Textverlust, und selbst der
+  // Alltagsfall `threeWayMerge('a\n', 'a\nLokal\n', 'a\nFremd\n')` landete damit
+  // im Meldeblock statt im Text.
+  //
+  // Gefährlich war nicht der Fuzz, sondern die ZEICHENebene: Dort konnte eine
+  // verschobene Op mitten in eine unbeteiligte Zeile greifen. Über Tokens deckt
+  // jede Op ganze Zeilen. Aber auch dort kann ein verschobener Hunk eine fremde
+  // Zeile ERSETZEN — gemessen: zwei fremde Zeilen fielen einer zu. Deshalb wird
+  // jeder Hunk einzeln angewandt und einzeln geprüft.
+  //
+  // Wer mitreißt, fliegt raus und wird gemeldet; wer sauber greift, bleibt. Die
+  // Prüfung pro Hunk statt pro Merge ist nicht Feinschliff: Ein Rückfall über
+  // den ganzen Merge verwarf auch die LÖSCH-Hunks, und die offline gelöschte
+  // Zeile kam zurück.
+  //
+  // Im Rückfallzweig (sehr viele verschiedene Zeilen) gibt es keine
+  // Zeilenidentität; dort bleibt es beim einen Durchlauf mit exakter Suche.
+  const patches = tok ? dmp.patch_make(a, b) : dmpExakt.patch_make(a, b);
+  let roh: string;
+  let angewandt: boolean[];
+  if (tok) {
+    roh = c;
+    angewandt = [];
+    for (const hunk of patches) {
+      const [neu, ok] = dmp.patch_apply([hunk], roh);
+      const traegt =
+        ok[0] === true &&
+        !reisstMit(hunk as unknown as { diffs: [number, string][] }, roh, neu);
+      angewandt.push(traegt);
+      if (traegt) roh = neu;
+    }
+  } else {
+    [roh, angewandt] = dmpExakt.patch_apply(patches, c);
+  }
+  const merged = zurueck(roh);
+  const gemeldet = merged + nichtEinsortiert(patches, merged, angewandt, zurueck, !tok);
 
   const eol = localBody.includes('\r\n') ? '\r\n' : '\n';
-  const out = eol === '\n' ? merged : merged.replace(/\n/g, eol);
+  const out = eol === '\n' ? gemeldet : gemeldet.replace(/\n/g, eol);
   return localBom ? BOM + out : out;
 }
 
