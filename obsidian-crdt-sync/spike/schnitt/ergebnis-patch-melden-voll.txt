@@ -1,0 +1,31 @@
+# patch_apply-Variante: melden-voll   (je Zelle 200 Seeds x 10 Notizen)
+seed=30 WEG=0 mehrfachKreuz=1 mehrfach=2 kreuzend=3 ersetzung=5 torKoll=6
+seed=141 WEG=0 mehrfachKreuz=1 mehrfach=2 kreuzend=2 ersetzung=2 torKoll=4
+== N=4 DET=42 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=kopie diff=STANDARD patch=melden-voll s=45.4]: WEG=0 mehrfachKreuz=2 mehrfach=59 kreuzend=7 ersetzung=55 torKollision=158 zustellungen=12284 | verlust=104 verdopp=977 div=0 | torProbe=12284 davonEigen=453 parkOffen=0 torFremd=11831 torEigen=8453 | yjsKB=7359.4 yjsDateien=31456 yjsItems=51276 | paRuf=4179 paHunk=4273 paWeg=162 paGemeldet=162 mmRuf=4291 mmNix=162 mmKrumm=0 mmVers=287
+== N=5 DET=42 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=kopie diff=STANDARD patch=melden-voll s=74.5]: WEG=0 mehrfachKreuz=0 mehrfach=76 kreuzend=11 ersetzung=118 torKollision=255 zustellungen=21052 | verlust=171 verdopp=1884 div=1 | torProbe=21052 davonEigen=903 parkOffen=0 torFremd=20149 torEigen=10903 | yjsKB=13750.9 yjsDateien=49850 yjsItems=82895 | paRuf=5639 paHunk=5886 paWeg=381 paGemeldet=381 mmRuf=5922 mmNix=381 mmKrumm=0 mmVers=575
+== N=5 DET=7 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=kopie diff=STANDARD patch=melden-voll s=78.1]: WEG=0 mehrfachKreuz=0 mehrfach=85 kreuzend=12 ersetzung=110 torKollision=277 zustellungen=20904 | verlust=153 verdopp=1816 div=0 | torProbe=20904 davonEigen=878 parkOffen=0 torFremd=20026 torEigen=10878 | yjsKB=13718.8 yjsDateien=49850 yjsItems=82230 | paRuf=5673 paHunk=5894 paWeg=393 paGemeldet=393 mmRuf=5928 mmNix=393 mmKrumm=0 mmVers=562
+seed=46 WEG=0 mehrfachKreuz=1 mehrfach=4 kreuzend=4 ersetzung=8 torKoll=14
+== N=6 DET=42 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=kopie diff=STANDARD patch=melden-voll s=116.7]: WEG=0 mehrfachKreuz=1 mehrfach=126 kreuzend=28 ersetzung=241 torKollision=474 zustellungen=32142 | verlust=220 verdopp=2935 div=2 | torProbe=32142 davonEigen=1778 parkOffen=4 torFremd=30364 torEigen=13778 | yjsKB=23244.8 yjsDateien=71964 yjsItems=122034 | paRuf=7257 paHunk=7718 paWeg=677 paGemeldet=677 mmRuf=7759 mmNix=677 mmKrumm=0 mmVers=879
+== N=4 DET=42 Seeds 1..200 modus=zeichen [notizen=10 basis=200 edits=1 md=kopie diff=STANDARD patch=melden-voll s=63.5]: WEG=0 mehrfachKreuz=0 mehrfach=60 kreuzend=1 ersetzung=24 torKollision=158 zustellungen=12291 | verlust=96 verdopp=813 div=0 | torProbe=12291 davonEigen=459 parkOffen=0 torFremd=11832 torEigen=8459 | yjsKB=75801.4 yjsDateien=31456 yjsItems=58848 | paRuf=4105 paHunk=4203 paWeg=30 paGemeldet=30 mmRuf=4206 mmNix=30 mmKrumm=0 mmVers=378
+== N=4 DET=42 Seeds 1..200 modus=zeichen [notizen=10 basis=1000 edits=1 md=kopie diff=STANDARD patch=melden-voll s=193.0]: WEG=0 mehrfachKreuz=0 mehrfach=59 kreuzend=0 ersetzung=21 torKollision=158 zustellungen=12295 | verlust=96 verdopp=806 div=0 | torProbe=12295 davonEigen=458 parkOffen=0 torFremd=11837 torEigen=8458 | yjsKB=370747.3 yjsDateien=31456 yjsItems=59164 | paRuf=4101 paHunk=4201 paWeg=27 paGemeldet=27 mmRuf=4204 mmNix=27 mmKrumm=0 mmVers=380
+seed=30 WEG=0 mehrfachKreuz=1 mehrfach=3 kreuzend=3 ersetzung=6 torKoll=6
+seed=36 WEG=0 mehrfachKreuz=1 mehrfach=1 kreuzend=2 ersetzung=3 torKoll=4
+seed=58 WEG=0 mehrfachKreuz=1 mehrfach=2 kreuzend=2 ersetzung=4 torKoll=4
+seed=70 WEG=0 mehrfachKreuz=1 mehrfach=2 kreuzend=3 ersetzung=3 torKoll=6
+seed=139 WEG=0 mehrfachKreuz=1 mehrfach=3 kreuzend=3 ersetzung=4 torKoll=8
+seed=141 WEG=0 mehrfachKreuz=1 mehrfach=3 kreuzend=3 ersetzung=3 torKoll=8
+seed=172 WEG=0 mehrfachKreuz=1 mehrfach=3 kreuzend=3 ersetzung=9 torKoll=3
+seed=188 WEG=0 mehrfachKreuz=1 mehrfach=4 kreuzend=2 ersetzung=3 torKoll=11
+seed=194 WEG=0 mehrfachKreuz=1 mehrfach=3 kreuzend=3 ersetzung=7 torKoll=7
+== N=4 DET=42 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=ueberschreiben diff=STANDARD patch=melden-voll s=68.6]: WEG=0 mehrfachKreuz=9 mehrfach=177 kreuzend=51 ersetzung=288 torKollision=515 zustellungen=55323 | verlust=330 verdopp=1382 div=1 | torProbe=55323 davonEigen=21435 parkOffen=0 torFremd=33888 torEigen=29435 | yjsKB=7775.0 yjsDateien=31456 yjsItems=52908 | paRuf=4595 paHunk=5169 paWeg=519 paGemeldet=519 mmRuf=5300 mmNix=518 mmKrumm=0 mmVers=561
+seed=30 WEG=0 mehrfachKreuz=1 mehrfach=3 kreuzend=3 ersetzung=9 torKoll=4
+seed=36 WEG=0 mehrfachKreuz=1 mehrfach=2 kreuzend=3 ersetzung=4 torKoll=6
+seed=41 WEG=0 mehrfachKreuz=1 mehrfach=2 kreuzend=3 ersetzung=9 torKoll=3
+seed=59 WEG=0 mehrfachKreuz=1 mehrfach=1 kreuzend=4 ersetzung=8 torKoll=6
+seed=75 WEG=0 mehrfachKreuz=1 mehrfach=2 kreuzend=2 ersetzung=4 torKoll=2
+seed=129 WEG=0 mehrfachKreuz=1 mehrfach=2 kreuzend=3 ersetzung=3 torKoll=5
+seed=139 WEG=0 mehrfachKreuz=1 mehrfach=2 kreuzend=3 ersetzung=4 torKoll=10
+seed=147 WEG=0 mehrfachKreuz=1 mehrfach=4 kreuzend=3 ersetzung=8 torKoll=13
+seed=168 WEG=0 mehrfachKreuz=1 mehrfach=2 kreuzend=2 ersetzung=3 torKoll=7
+== N=4 DET=7 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=ueberschreiben diff=STANDARD patch=melden-voll s=54.3]: WEG=0 mehrfachKreuz=9 mehrfach=179 kreuzend=56 ersetzung=288 torKollision=491 zustellungen=55218 | verlust=329 verdopp=1379 div=0 | torProbe=55218 davonEigen=21484 parkOffen=0 torFremd=33734 torEigen=29484 | yjsKB=7737.7 yjsDateien=31456 yjsItems=52916 | paRuf=4612 paHunk=5174 paWeg=489 paGemeldet=489 mmRuf=5333 mmNix=489 mmKrumm=0 mmVers=525
+# fertig: melden-voll

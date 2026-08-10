@@ -35,6 +35,12 @@ globalThis.crypto.getRandomValues = (arr) => webcrypto.getRandomValues(arr);
 const R = require(process.env.SPIKE_BUNDLE ?? './real.cjs');
 const DMP = new (require('diff-match-patch').diff_match_patch)();
 const H = await import('./hebel.mjs');
+// Die patch_apply-Sonde. Ohne SPIKE_PATCH zaehlt sie nur mit und aendert nichts
+// — belegt durch den Kalibrierungslauf gegen `ergebnis-achsen-2026-08-10.txt`.
+// Die apparat-eigene DMP-Instanz oben bleibt unberuehrt: sie ruft `diff_main`,
+// nie `match_main` oder `patch_apply`.
+const PS = await import('./patchsonde.mjs');
+PS.sondeInstalliere(process.env.SPIKE_PATCH ?? 'bestand');
 
 const N = Number(process.argv[2] ?? 4);
 const DET = Number(process.argv[3] ?? 42);
@@ -232,11 +238,12 @@ for (let seed = VON; seed <= BIS; seed++) {
 }
 console.log(
   `== N=${N} DET=${DET} Seeds ${VON}..${BIS} modus=${MODUS}` +
-  ` [notizen=${NOTES} basis=${BASELINES} edits=${EDITS} md=${MDMODUS} diff=${process.env.QOLLAB_DIFF_MODUS ?? 'STANDARD'} s=${((Date.now() - t0) / 1000).toFixed(1)}]` +
+  ` [notizen=${NOTES} basis=${BASELINES} edits=${EDITS} md=${MDMODUS} diff=${process.env.QOLLAB_DIFF_MODUS ?? 'STANDARD'} patch=${process.env.SPIKE_PATCH ?? 'bestand'} s=${((Date.now() - t0) / 1000).toFixed(1)}]` +
   `: WEG=${gWeg} mehrfachKreuz=${gMehrK}` +
   ` mehrfach=${gMehr} kreuzend=${gKreuz} ersetzung=${gErs} torKollision=${gKoll} zustellungen=${gZu}` +
   ` | verlust=${gVerlust} verdopp=${gVerdopp} div=${gDiv} | torProbe=${gTP} davonEigen=${gTPE} parkOffen=${gPark} torFremd=${gFremd} torEigen=${gEigen}` +
   ` | yjsKB=${(gYB / 1024).toFixed(1)} yjsDateien=${gYD} yjsItems=${gYI}` +
+  ` | ${PS.sondeZeile()}` +
   (HEBEL.has('tor')
     ? ` | hebelB ${Object.entries(H.bZaehler).map(([k, v]) => `${k}=${v}`).join(' ')}`
     : '')
