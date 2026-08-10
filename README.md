@@ -1,29 +1,96 @@
 # Qollab
 
-You share an Obsidian vault with one or more other people. You edit the same note, and the next morning you find this:
+**Two people editing the same Obsidian note over Dropbox, OneDrive or iCloud lose one of the two versions. Qollab merges them instead.**
+
+## The problem, in one morning
+
+You and your partner share a vault. Sunday evening, you both open `Shopping list.md` — you at the kitchen table, they on the train, no signal.
+
+You add:
+
+```markdown
+- oat milk
+- coffee beans
+```
+
+They add:
+
+```markdown
+- dish soap
+- lightbulbs
+```
+
+Monday morning your vault looks like this:
 
 ```
-Meeting notes (DESKTOP-A1B2C3's conflicted copy 2026-05-18).md
+Shopping list.md
+Shopping list (DESKTOP-A1B2C3's conflicted copy 2026-05-18).md
 ```
 
-Now you diff two files by hand. **Qollab tries to merge them for you** using CRDTs: both texts *should* survive without that work. How far it actually gets is measured in the next section — it is not a guarantee.
+Your sync provider could not decide which version was right, so it kept both. Now **you** decide: open two files side by side, spot the four differences, copy two lines over, delete the second file. Every single time.
 
-**What it is aiming at** — stated separately from what it currently does, because the two are not the same:
+And that is the *good* outcome. If conflict-copy protection is off, one version is simply gone — no file, no warning, no way to tell it ever existed.
+
+**With Qollab installed on both devices**, Monday morning looks like this:
+
+```markdown
+- oat milk
+- coffee beans
+- dish soap
+- lightbulbs
+```
+
+No second file, no diffing, nothing to click. Both of you keep typing where you left off.
+
+That is the normal case, and it is measured: **98.6 % of runs fully clean** when both of you only *added* text. The exceptions are real and they are listed below — the big one is that **deleting** is not solved. Read [Who this is for](#who-this-is-for) before you install.
+
+## Why a plugin, and not just "use a better sync service"
+
+Dropbox and OneDrive sync *files*. They see two versions of `Shopping list.md` with the same timestamp and no way to compare them — a file is a blob to them. Keeping both is the only safe thing they can do.
+
+Qollab syncs *edits*. Alongside each note it keeps a small **helper file** recording **what you changed**, not just how the file ended up. Two edit histories can be combined; two blobs cannot. That is the whole idea.
+
+And it needs no server for it. No account, no subscription, no backend — it rides on the file sync you already pay for. Git and GitHub work as a transport too.
+
+## Who this is for
+
+**A good fit:**
+
+- Two people sharing a vault — a couple, a small project, two colleagues.
+- One person, several machines — laptop, desktop, work computer.
+- Vaults under a few hundred notes.
+- People who **add** text: notes, lists, minutes, journals.
+
+**A bad fit, honestly:**
+
+- **You delete a lot.** Cleaning up notes, ticking off finished tasks, pruning old sections — deleted lines come back in **47 %** of runs containing a deletion. This is the weakest part of the plugin and it is not fixed.
+- **Large vaults.** One helper file per note *and* per device: 10,000 notes across 5 devices means 50,000 files and 206 MB. See [Known architectural limit](#known-architectural-limit) — that advice has no expiry date.
+- **Phones.** Desktop only, and not by oversight — see [Install](#install).
+- **Anything you cannot afford to lose.** See the warning below. It is not boilerplate.
+
+> [!WARNING]
+> **Experimental. Do not trust it with data you cannot lose.**
+> Keep your sync provider's conflict-copy protection **on** — Qollab is not yet good enough to be your only safety net.
+> Every number in this README is measured, not estimated. Read the next section before you install.
+
+## What it is aiming at
+
+Stated separately from what it currently does, because the two are not the same:
 
 - **Nobody has to do anything** for a shared note to end up correctly merged. No manual diffing, no rules to follow, no waiting for each other.
 - **The conflict copy should never appear in the first place** — not "be resolved afterwards".
-- **Nobody runs a server.** No backend, no account, no subscription. Qollab rides on infrastructure you already have.
+- **Nobody runs a server.** No backend, no account, no subscription.
 - **Two or more people**, on any number of devices — not a two-device special case.
 - **The transport is interchangeable**: a file sync (OneDrive, SharePoint, Dropbox, iCloud, Syncthing) or **Git/GitHub**. The per-device helper file names exist precisely so that Git never sees a conflict — each person only ever writes their own file.
 - Yjs CRDTs are the *current* mechanism, not the goal. If they cannot carry it, the search continues.
 
 Everything below describes what is **measured today**, which is a good deal less than that.
 
-> [!WARNING]
-> **Experimental. Do not trust it with data you cannot lose.**
-> Keep your sync provider's conflict-copy protection **on**. The numbers below are measured, not estimated — read them before you install.
-
 ## What is clean and what is not
+
+**The short version.** With Obsidian open on both devices, Qollab reliably prevents *loss* in the two-device case, and it removes conflict copies. Its helper files carry a checksum, so a corrupted one is caught and skipped instead of silently rewriting your text. An edit overwritten on disk while Obsidian was shut is now protected wherever the matching helper file has already arrived — in the other half of cases it is not. The one thing it still does **not** do: it does not reliably preserve *deletions*. If your workflow involves deleting a lot, expect deleted lines to reappear.
+
+The tables below give the measured detail behind each of those sentences.
 
 Most figures come from a deterministic simulation of two or more devices exchanging files in every possible delivery order. "Runs" are complete scenarios, not test cases. **One exception, marked where it occurs:** the three-and-four-device figures come from a driver that leaves the two random sources of the real code in place — the incarnation id and Yjs's per-document `clientID`. Repeating the same call gives a different number each time, so those figures are given as a mean over repeated runs with the range, never as a single value.
 
@@ -62,7 +129,16 @@ That closes it wherever the evidence has arrived. **It does not close it everywh
 
 *Measured over 720 delivery orders, one device restarted: 240 runs lost text before, 60 after. The evidence is present in 360 of the 720 orders, which accounts for the remainder exactly. Skipping the startup scan removes the loss completely (0 of 720) but also discards every genuine offline edit, so that is not a fix. The devices still agree with each other in every run; "we both have the same text" is not the same as "nothing is missing".*
 
-**The honest summary:** with Obsidian open on both devices, Qollab reliably prevents *loss* in the two-device case, and it removes conflict copies. Its helper files carry a checksum, so a corrupted one is caught and skipped instead of silently rewriting your text. An edit overwritten on disk while Obsidian was shut is now protected wherever the matching helper file has already arrived — in the other half of cases it is not. The one thing it still does **not** do: it does not reliably preserve *deletions*. If your workflow involves deleting a lot — cleaning up notes, removing finished tasks — expect deleted lines to reappear.
+### What that means at the kitchen table
+
+Back to Sunday evening. Four cases, all measured above:
+
+| What happens | What you see |
+|---|---|
+| You both **add** items while offline, Obsidian open on both sides | Both lists merge. Nothing to do — the normal case, 98.6 % clean |
+| One of you **deletes** "dish soap", the other edits the list at the same time | **"dish soap" comes back.** You delete it again. This is the 47 % row, and it is the plugin's weak spot |
+| You edit on your laptop, then **close Obsidian** before the sync finishes | Usually fine. In 8.3 % of orders your edit is written as a *deletion* and travels to the other device — that is why conflict-copy protection stays on |
+| Your partner is on a phone | Qollab is not running there at all. Their edits sync as plain files, so a conflict copy can still appear |
 
 ## Install
 
