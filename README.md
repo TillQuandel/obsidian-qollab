@@ -1,6 +1,6 @@
 # Qollab
 
-**Two people editing the same Obsidian note over Dropbox, OneDrive or iCloud lose one of the two versions. Qollab merges them instead.**
+**When two or more people edit the same Obsidian note over Dropbox, OneDrive or iCloud, one of the versions is lost. Qollab merges them instead.**
 
 ## The problem, in one morning
 
@@ -64,19 +64,21 @@ Exact rates for every row are in [The measurements](#the-measurements).
 
 ## Who this is for
 
-**A good fit:**
+Qollab does what it says today if you are:
 
-- Two people sharing a vault — a couple, a small project, two colleagues.
+- Two or more people sharing a vault — a couple, a small team, a project group, **up to four devices**.
 - One person with several machines — laptop, desktop, work computer.
-- Vaults under a few hundred notes.
-- People who mostly **add** text: notes, lists, minutes, journals.
+- Working in a vault of a few hundred notes or fewer.
+- Mostly **adding** text: notes, lists, minutes, journals.
 
-**A bad fit, honestly:**
+Four things are **not solved yet**, and you should know them before you install — each links to what is missing and why:
 
-- **You delete a lot.** Cleaning up notes, ticking off finished tasks, pruning old sections — deleted lines come back in **47 %** of runs containing a deletion. This is the weakest part of the plugin and it is not fixed.
-- **Large vaults.** One helper file per note *and* per device: 10,000 notes across 5 devices means 50,000 files and 206 MB. See [Known architectural limit](#known-architectural-limit) — that advice has no expiry date.
-- **Phones.** Desktop only, and not by oversight — see [Install](#install).
-- **Anything you cannot afford to lose.** See the warning below. It is not boilerplate.
+| Not solved | What it means for you | Where it stands |
+|---|---|---|
+| **Deleting** | A line you delete can come back after a merge | The single biggest open problem. [Details](#limits-in-detail) |
+| **Five or more devices** | Nothing is measured there, and the last fix does not reach that far | [Details](#the-measurements) |
+| **Large vaults** | One helper file per note *and* device — 10,000 notes × 5 devices = 50,000 files, 206 MB | A different file format is being worked on, no date. [Details](#known-architectural-limit) |
+| **Phones** | The plugin does not run on Obsidian Mobile at all | Still the goal, blocked on a platform limit. [Details](#install) |
 
 > [!WARNING]
 > **Experimental. Do not trust it with data you cannot lose.**
@@ -144,6 +146,8 @@ What follows is what is **measured today**, which is a good deal less than that.
 ## The measurements
 
 **The short version.** With Obsidian open on both devices, Qollab reliably prevents *loss* in the two-device case, and it removes conflict copies. Its helper files carry a checksum, so a corrupted one is caught and skipped instead of silently rewriting your text. An edit overwritten on disk while Obsidian was shut is now protected wherever the matching helper file has already arrived — in the other half of cases it is not. The one thing it still does **not** do: it does not reliably preserve *deletions*.
+
+**How many devices these numbers cover.** The headline figures below are **two-device** figures. Three and four devices have their own row in the second table. **Five or more devices is unmeasured** — and not merely untested: a measurement on 2026-08-10 found that the fix which cleared the three-and-four-device case does **not** hold from five devices upward, nor for very large notes. The remaining loss there has a different cause, in a merge step that runs *before* the one that was fixed. If more than four of you share a vault, none of the numbers below describe your situation.
 
 Most figures come from a deterministic simulation of two or more devices exchanging files in every possible delivery order. "Runs" are complete scenarios, not test cases. **One exception, marked where it occurs:** the three-and-four-device figures come from a driver that leaves the two random sources of the real code in place — the incarnation id and Yjs's per-document `clientID`. Repeating the same call gives a different number each time, so those figures are given as a mean over repeated runs with the range, never as a single value.
 
