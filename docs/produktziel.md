@@ -228,10 +228,38 @@ Fehler** und ist mit `diffModus = 'zeile'` behoben (`src/crdt-manager.ts`, Commi
 **Der Preis, ausdrücklich:** Verdopplung +1,0 bis +1,7 %. Nach Gruppe 5 die richtige Richtung
 (sichtbar statt still) — für den Nutzer sieht eine doppelte Zeile aber wie ein Fehler aus.
 
+### An echten Obsidian-Instanzen belegt (2026-08-10)
+
+Erstmals nicht in Simulation: drei echte Obsidian-Instanzen (`vault-a`, `vault-c`, `vault-d`),
+drei Client-IDs, eine geteilte Inkarnation. Ein Gerät läuft über den `.yjs`-Kanal voraus, zwei
+rechnen unabhängig dieselbe Rücknahme. Schreibungen über `app.vault.modify`, also derselbe
+Herkunftsfall wie ein tippender Mensch — eine hineinkopierte `.md` würde am Herkunftstor geparkt
+und erreichte `setContent` nie.
+
+| Endstand in allen drei Vaults | Ergebnis |
+| --- | --- |
+| **alter Build** (`40A50951…`), zweimal reproduziert | `n5-base-0` / **`n5-basebase-1`** / `n5-base-2` |
+| **neuer Build** (`1F4EF2B1…`) | `n5-base-0` / **`n5-base-1`** / `n5-base-2` |
+
+Am alten Build ist `n5-base-1` in **allen drei** Vaults verschwunden, bei intakter Konvergenz — der
+stille Fall. Am neuen Build steht die Zeile genau einmal. Das ist die Vorhersage aus
+`crdt-manager.ts` und der erste Beleg dafür am echten Produkt.
+
+**Die Regressions-Batterie ist derzeit nicht aussagefähig.** Sieben von neun Runnern brechen an
+derselben Stelle ab (`H-WAIT`-Timeout beim ersten Warten auf die Sidecar). Ursache ist **nicht der
+Fix**, sondern die Umgebung: Obsidians nativer Dateiwächter reagiert dort nicht mehr, eine extern
+geschriebene `.md` löst `modify` erst nach **30,4 s** aus (Fallback-Poll), die Sidecar folgt nach
+dem nächsten 30-s-Scan. Discriminator auf derselben Maschine in derselben Minute: **alter Build
+120 s, neuer Build 119 s** — buildunabhängig. Und älter als der Fix: Logs vom 2026-08-06/07 zeigen
+94–103 s, die vom 2026-08-03 noch 2,1 s. Nur `r30` (nach dem Bruch geschrieben, passende Timeouts)
+läuft **PASS 9/9, deckungsgleich mit dem Vorlauf**; `r31` (31 min) wurde nicht gefahren.
+
+**Bis die Wächter-Ursache gefunden oder die Timeouts der sieben alten Runner angehoben sind, sagt
+die Batterie über Regressionen nichts.**
+
 **Was ungemessen bleibt:** N ≥ 5, große Notizen, `mdModus: 'ueberschreiben'`, der Sweep
-(`QOLLAB_SWEEP_SCHRANKE` ist im Apparat weiterhin wirkungslos), Laufzeit und `.yjs`-Dateigrößen
-unter dem neuen Diff. **Kein Realtest.** Der Fix liegt auf `fix/loeschungen-kausal` und ist nicht
-nach `master` gemergt.
+(`QOLLAB_SWEEP_SCHRANKE` ist im Apparat weiterhin wirkungslos), und die inhaltliche Regression der
+sieben blockierten Runner.
 
 ### Wie der Befund zustande kam (Zwischenstände)
 
