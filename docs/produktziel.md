@@ -209,11 +209,11 @@ zu übernehmen.**
    entfernen. Qollab würde einen Git-Konflikt also nicht auflösen, sondern **verteilen**.
    Erkennung, Test und Doku dazu: null Treffer im gesamten Repo.
 
-## Grundtext-Verlust ab drei und vier Geräten — behoben
+## Grundtext-Verlust ab drei und vier Geräten — behoben **in der gemessenen Lage**
 
-**Stand 2026-08-10: In allen gemessenen Zellen null.** Der Weg dorthin ging über zwei
-Apparat-Korrekturen und einen Fix am Produktivcode; die Zwischenstände stehen unten, weil sie
-zeigen, wie viel davon Messartefakt war.
+**Stand 2026-08-10: null bei N ≤ 4 und normalen Notizgrößen — darüber hinaus nicht.** Der Weg
+dorthin ging über zwei Apparat-Korrekturen und zwei Fixes am Produktivcode; die Zwischenstände
+stehen unten, weil sie zeigen, wie viel davon Messartefakt war.
 
 | Grundtext-Verlust je 3.200 Zeilen | N = 2 | N = 3 | N = 4 |
 | --- | --- | --- | --- |
@@ -227,6 +227,45 @@ Fehler** und ist mit `diffModus = 'zeile'` behoben (`src/crdt-manager.ts`, Commi
 
 **Der Preis, ausdrücklich:** Verdopplung +1,0 bis +1,7 %. Nach Gruppe 5 die richtige Richtung
 (sichtbar statt still) — für den Nutzer sieht eine doppelte Zeile aber wie ein Fehler aus.
+
+### Wo der Fix NICHT trägt (gemessen 2026-08-10)
+
+Die Tabelle oben gilt für die Lage, in der sie gemessen wurde: **bis vier Geräte, 8 Basiszeilen,
+`mdModus: 'kopie'`.** Über fünf Achsen nachgemessen (je 200 Läufe, mehrere Zufallsfamilien):
+
+| Achse | `WEG = 0`? | Anmerkung |
+| --- | --- | --- |
+| N = 5, 6, 8 | **nein** — Verlust in allen 8 Zellen | Verdopplung +1,9 bis +4,7 %, steigend mit N |
+| große Notizen (200/1.000 Zeilen) | **nein** — Fix dort **wirkungslos** | beide Arme byte-identisch |
+| `mdModus: 'ueberschreiben'` | **nein** bei N = 4 | Verdopplung *sinkt* dort (−3,8 %) |
+| Laufzeit | — | ab 16 Zeilen teurer, bei 5.000 Zeilen `setContent` 0,44 → 16 ms |
+| `.yjs`-Größen und Op-Zahlen | — | **kein** Aufschlag, sogar −0,3 bis −1,7 % |
+
+**Der Rest-Verlust über alle Achsen hat eine einzige Adresse — und es ist nicht die gefixte.** Er
+entsteht **vor** `setContent`, im Rückgabewert von `mergeForLocalDiff`: der Fuzzy-`patch_apply` in
+`threeWayMerge` (`src/text-merge.ts:88`, über `match_main`). Das ist Untervariante A, die weiter
+unten als „mit dem Herkunftstor verschwunden" beschrieben ist — **sie verschwindet nur bei N ≤ 4
+und 8 Basiszeilen.** Gegenprobe mit exakter statt unscharfer Suche, in vier Regimen: Verlust
+2/1/3/1 → **0/0/0/0**.
+
+`diffModus = 'zeile'` sitzt in `setContent` und damit **strukturell hinter** dieser Schadensstelle.
+Er kann sie nicht erreichen. **Das ist der nächste offene Punkt.**
+
+### Die Bibliotheksgrenze — gefunden und behoben (2026-08-10)
+
+`diff_linesToChars_` deckelt die Zahl **verschiedener** Zeilen des **ersten** Textes bei **40.000**
+(diff-match-patch `index.js:507`; die 65.535 gelten erst für den zweiten). Darüber kollabierte der
+Rest zu einer Zeile, und zwei nebenläufige Bearbeitungen im kollabierten Schwanz erzeugten
+**5.001 verdoppelte Grundtextzeilen** — K.o.-Kriterium 1 blieb gewahrt (nichts *fehlte*), Gruppe 1
+„Nichts wird verdoppelt" fiel.
+
+**Behoben** (Commit `04154d7`): `diffOps` fällt oberhalb einer gemessenen Schwelle (39.000
+verschiedene Zeilen über beide Texte, Abstand 999 zur Kante) auf `semantisch` zurück. Bei 45.000
+Zeilen jetzt **0** verdoppelt; `WEG = 0` bleibt bei byte-identischen Nebenzählern erhalten.
+
+Die Schwelle misst auf **verschiedenen** Zeilen, nicht auf der Gesamtzahl — belegt bei konstant
+45.000 Gesamtzeilen: 39.999 verschiedene → kein Kollaps, 40.000 verschiedene → Kollaps. Eine
+Schwelle auf `split('\n').length` hätte beide Male denselben Wert gelesen.
 
 ### An echten Obsidian-Instanzen belegt (2026-08-10)
 
