@@ -249,7 +249,46 @@ und 8 Basiszeilen.** Gegenprobe mit exakter statt unscharfer Suche, in vier Regi
 2/1/3/1 → **0/0/0/0**.
 
 `diffModus = 'zeile'` sitzt in `setContent` und damit **strukturell hinter** dieser Schadensstelle.
-Er kann sie nicht erreichen. **Das ist der nächste offene Punkt.**
+Er kann sie nicht erreichen.
+
+### Der Preis der exakten Suche — gemessen 2026-08-11
+
+**Die Gegenprobe oben führt nur die Grundtext-Spalte. Mit allen Spalten ist sie ein schlechter
+Tausch.** Acht Zellen à 200 Seeds × 10 Notizen, Summen
+(`.superpowers/sdd/patch-apply-2026-08-11.md`):
+
+| Variante | Grundtext `WEG` | `verlust` | `verdopp` | `div` |
+| --- | --- | --- | --- | --- |
+| Bestand | **23** | 1.679 | 10.672 | 2 |
+| exakte Suche (`kein-fuzz`) | 0 | **2.274** (+35,4 %) | 9.696 | 2 |
+| **Verwurf melden + dedup** | **0** | **1.501** (−10,6 %) | 11.761 (+10,2 %) | 2 |
+
+**Zwei Befunde, die die Aktenlage korrigieren:**
+
+1. **Der Fuzz verwirft im Bestand nichts.** Über 4.283 Hunks (N=4) ist `results[i] === false`
+   **null**mal eingetreten. Der stille Verwurf ist kein Risiko *der exakten Suche gegenüber dem
+   Bestand* — er ist ihr **einziger** Effekt. Der Schaden des Fuzz entsteht anderswo: 170 bis 385
+   Mal je Zelle findet er eine Stelle, deren Kontext nicht zeichengleich ist, und übersetzt die
+   Op-Indizes (`index.js:1869-1899`).
+2. **Der Preis hängt an der Notizgröße, gegenläufig zur Erwartung.** Bei 200 und 1.000 Basiszeilen
+   ist die exakte Suche in **jeder** Spalte besser als der Bestand (nur 27–30 verworfene Hunks);
+   bei 8 Zeilen kostet sie 12–73 % mehr Gesamtverlust. In langem Text ist der 32-Zeichen-Kontext
+   praktisch eindeutig.
+
+**Die Variante ohne diesen Preis ist gemessen, aber NICHT eingebaut:** exakte Suche, und der
+verworfene Hunk wird als sichtbarer Block angehängt statt geschluckt — mit Prüfung, ob er schon
+dasteht. Ohne diese Prüfung ist die Meldung **nicht idempotent** (Textlänge 121 → 186 → 251 über
+drei Merge-Runden, dieselbe Bauart wie die im August behobene Ersetzung).
+
+**Offen vor einem Einbau:** Der gemeldete Block wandert über den Sync zu allen Peers und wird dort
+gewöhnlicher Text — dieselbe Lage wie bei den Git-Konfliktmarkern unter „Offene Widersprüche"
+Punkt 5, und `unionMerge` kann ihn nicht entfernen. Ungemessen. Ebenso ungemessen: der Realtest
+(die Batterie ist weiterhin blockiert) und eine zeilentreue Fassung des Blocks, die die
+Verdopplung senken könnte.
+
+**Nebenbefund:** Auch der Bestand ist nicht idempotent — rechnet ein zweites Gerät den Merge auf
+dem Ergebnis des ersten, steht das lokale Token danach zweimal da (64 → 72 → 80 Zeichen). Das ist
+die WARNUNG aus `text-merge.ts:46` („patch_apply dedupliziert nicht"), erstmals belegt.
 
 ### Die Bibliotheksgrenze — gefunden und behoben (2026-08-10)
 

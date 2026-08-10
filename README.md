@@ -97,7 +97,7 @@ Four things are **not solved yet**, and you should know them before you install 
 | Not solved | What it means for you | Where it stands |
 |---|---|---|
 | **Deleting** | A line you delete can come back after a merge | The single biggest open problem. [Details](#limits-in-detail) |
-| **Five or more devices** | Nothing is measured there, and the last fix does not reach that far | [Details](#the-measurements) |
+| **Five or more devices** | Base text is still lost there — the last fix does not reach that far | Measured, and the cause is now located. [Details](#the-measurements) |
 | **Large vaults** | One helper file per note *and* device — 10,000 notes × 5 devices = 50,000 files, 206 MB | A different file format is being worked on, no date. [Details](#known-architectural-limit) |
 | **Phones** | The plugin does not run on Obsidian Mobile at all | Still the goal, blocked on a platform limit. [Details](#install) |
 
