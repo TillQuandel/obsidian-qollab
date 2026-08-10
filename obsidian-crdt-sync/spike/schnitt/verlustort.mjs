@@ -238,9 +238,14 @@ let grundWeg = 0;
 for (let seed = 1; seed <= SEEDS; seed++) {
   globalThis.__seed = seed;
   det.setzeZufallSeed((DET ^ (seed * 0x9e3779b1)) | 0);
-  const sc = buildScenario({ seed, nNotes: 10, devices: N, editsPerDevice: 1, imprintWindow: 120 });
+  // Szenario-Achsen wie in `mehrfach.mjs` parametrierbar; Standardwerte sind
+  // wortgleich die bisherigen, ein Lauf ohne Variablen misst unveraendert.
+  const sc = buildScenario({
+    seed, nNotes: Number(process.env.SPIKE_NOTES ?? 10), baseLines: Number(process.env.SPIKE_BASELINES ?? 8),
+    devices: N, editsPerDevice: Number(process.env.SPIKE_EDITS ?? 1), imprintWindow: 120,
+  });
   const r = rng(seed ^ 0x5bf03635);
-  const tr = new Transport({ settle: 10, delay: 20, jitter: 10, r, mdModus: 'kopie' });
+  const tr = new Transport({ settle: 10, delay: 20, jitter: 10, r, mdModus: process.env.SPIKE_MDMODUS ?? 'kopie' });
   const devs = S.makeS0real(tr, sc);
   for (const d of devs) for (const n of sc.notes) { d.seedFile(n.path, n.baseline); tr.letzterSyncStand.set(`${d.id}\0${n.path}`, n.baseline); }
   let ei = 0;

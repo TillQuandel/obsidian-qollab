@@ -388,6 +388,24 @@ export function makeS0real(transport, scenario, { layout = 'sidecar', rollTicks 
       stats: () => ({
         parkOffen: handler.parkedPaths().length,
         dateien: layout === 'segment' ? dateien + 1 : vault._files.size,
+        // ACHSE 5 (2026-08-10): was kostet der groebere Diff auf der Platte?
+        // `yjsBytes` ist die Summe der TATSAECHLICH liegenden Hilfsdateien
+        // (`vault._files` haelt ArrayBuffer), `yjsItems` die Zahl der Yjs-Structs
+        // ueber alle Docs dieses Geraets — `crdt.docs` ist zur Laufzeit eine
+        // gewoehnliche Map (TS-`private` ist keine Laufzeitsperre).
+        yjs: (() => {
+          let bytes = 0, n = 0;
+          for (const [p, buf] of vault._files) {
+            if (!p.endsWith('.yjs')) continue;
+            bytes += buf?.byteLength ?? 0;
+            n++;
+          }
+          let items = 0;
+          for (const doc of crdt.docs?.values() ?? []) {
+            for (const arr of doc.store.clients.values()) items += arr.length;
+          }
+          return { bytes, dateien: n, items };
+        })(),
         erstkontakt: zaehler.vereinigt + zaehler.verworfen,
         vereinigt: zaehler.vereinigt,
         verworfen: zaehler.verworfen,

@@ -41,6 +41,16 @@ const DET = Number(process.argv[3] ?? 42);
 const VON = Number(process.argv[4] ?? 1);
 const BIS = Number(process.argv[5] ?? 40);
 const MODUS = process.argv[6] ?? 'zeichen';
+// --- Szenario-Achsen, ab 2026-08-10 parametrierbar --------------------------
+// Bisher standen `nNotes`, `baseLines`, `editsPerDevice` und `mdModus` fest im
+// Treiber. Die Standardwerte sind WORTGLEICH die bisherigen — ein Lauf ohne
+// gesetzte Variablen misst also unveraendert die Lage aus `ergebnis-einbau-
+// 2026-08-10.txt`. Belegt durch Nachmessung derselben Zellen (siehe
+// `ergebnis-achsen-2026-08-10.txt`, Block „KALIBRIERUNG").
+const NOTES = Number(process.env.SPIKE_NOTES ?? 10);
+const BASELINES = Number(process.env.SPIKE_BASELINES ?? 8);
+const EDITS = Number(process.env.SPIKE_EDITS ?? 1);
+const MDMODUS = process.env.SPIKE_MDMODUS ?? 'kopie';
 const NL = String.fromCharCode(10);
 const SEP = String.fromCharCode(0);
 
@@ -124,9 +134,9 @@ P.mergeForLocalDiff = async function (notePath, content, imSweep) {
 async function laufe(seed, detSeed) {
   frisch();
   det.setzeZufallSeed((detSeed ^ (seed * 0x9e3779b1)) | 0);
-  const sc = buildScenario({ seed, nNotes: 10, devices: N, editsPerDevice: 1, imprintWindow: 120 });
+  const sc = buildScenario({ seed, nNotes: NOTES, baseLines: BASELINES, devices: N, editsPerDevice: EDITS, imprintWindow: 120 });
   const r = rng(seed ^ 0x5bf03635);
-  const tr = new Transport({ settle: 10, delay: 20, jitter: 10, r, mdModus: 'kopie' });
+  const tr = new Transport({ settle: 10, delay: 20, jitter: 10, r, mdModus: MDMODUS });
   BASIS.clear();
   for (const n of sc.notes) BASIS.set(n.path, new Set(n.baseline.trim().split(NL)));
   const devs = S.makeS0real(tr, sc);
@@ -167,11 +177,15 @@ async function laufe(seed, detSeed) {
   // Gegenprobe zum Tor-Hebel: parkt er am Ende alles weg? `parkOffen` > 0 hiesse,
   // ein Stand hat den Lauf nie erreicht; `torFremd` ist die Zahl der Parkvorgaenge.
   let parkOffen = 0, torFremd = 0, torEigen = 0;
+  let yjsBytes = 0, yjsDateien = 0, yjsItems = 0;
   for (const d of devs) {
     const s = d.stats();
     parkOffen += s.parkOffen;
     torFremd += s.pfad.torFremd;
     torEigen += s.pfad.torEigen;
+    yjsBytes += s.yjs?.bytes ?? 0;
+    yjsDateien += s.yjs?.dateien ?? 0;
+    yjsItems += s.yjs?.items ?? 0;
   }
   const fehlend = [];
   for (const n of sc.notes) {
@@ -191,12 +205,14 @@ async function laufe(seed, detSeed) {
       console.log(`    nach = ${JSON.stringify(nachT).split('\\n').join('|')}`);
     }
   }
-  return { fehlend, rr, mehrfach, mehrfachKreuz, z, parkOffen, torFremd, torEigen };
+  return { fehlend, rr, mehrfach, mehrfachKreuz, z, parkOffen, torFremd, torEigen, yjsBytes, yjsDateien, yjsItems };
 }
 
 let gWeg = 0, gMehr = 0, gMehrK = 0, gKreuz = 0, gErs = 0, gKoll = 0, gZu = 0;
 let gVerlust = 0, gVerdopp = 0, gDiv = 0, gTP = 0, gTPE = 0;
 let gPark = 0, gFremd = 0, gEigen = 0;
+let gYB = 0, gYD = 0, gYI = 0;
+const t0 = Date.now();
 for (let seed = VON; seed <= BIS; seed++) {
   const o = await laufe(seed, DET);
   gWeg += o.fehlend.length; gMehr += o.mehrfach; gMehrK += o.mehrfachKreuz;
@@ -204,6 +220,7 @@ for (let seed = VON; seed <= BIS; seed++) {
   gVerlust += o.rr.verlust; gVerdopp += o.rr.verdopplung; gDiv += o.rr.divergent;
   gTP += o.z.torProbe; gTPE += o.z.torProbeEigen;
   gPark += o.parkOffen; gFremd += o.torFremd; gEigen += o.torEigen;
+  gYB += o.yjsBytes; gYD += o.yjsDateien; gYI += o.yjsItems;
   if (o.z.kreuzend && process.env.ZEIGE_KREUZ)
     console.log(`  [kreuz] seed=${seed} kreuzend=${o.z.kreuzend} mehrfachKreuz=${o.mehrfachKreuz} WEG=${o.fehlend.length}`);
   if (o.fehlend.length || o.mehrfachKreuz)
@@ -214,9 +231,12 @@ for (let seed = VON; seed <= BIS; seed++) {
     );
 }
 console.log(
-  `== N=${N} DET=${DET} Seeds ${VON}..${BIS} modus=${MODUS}: WEG=${gWeg} mehrfachKreuz=${gMehrK}` +
+  `== N=${N} DET=${DET} Seeds ${VON}..${BIS} modus=${MODUS}` +
+  ` [notizen=${NOTES} basis=${BASELINES} edits=${EDITS} md=${MDMODUS} diff=${process.env.QOLLAB_DIFF_MODUS ?? 'STANDARD'} s=${((Date.now() - t0) / 1000).toFixed(1)}]` +
+  `: WEG=${gWeg} mehrfachKreuz=${gMehrK}` +
   ` mehrfach=${gMehr} kreuzend=${gKreuz} ersetzung=${gErs} torKollision=${gKoll} zustellungen=${gZu}` +
   ` | verlust=${gVerlust} verdopp=${gVerdopp} div=${gDiv} | torProbe=${gTP} davonEigen=${gTPE} parkOffen=${gPark} torFremd=${gFremd} torEigen=${gEigen}` +
+  ` | yjsKB=${(gYB / 1024).toFixed(1)} yjsDateien=${gYD} yjsItems=${gYI}` +
   (HEBEL.has('tor')
     ? ` | hebelB ${Object.entries(H.bZaehler).map(([k, v]) => `${k}=${v}`).join(' ')}`
     : '')

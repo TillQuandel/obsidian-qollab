@@ -1,0 +1,136 @@
+### KALIBRIERUNG — Standardwerte des parametrierten Treibers == bisheriger Treiber
+### Nachgemessen gegen ergebnis-einbau-2026-08-10.txt, N=4, alle drei Familien.
+### Jede Kennzahl byte-identisch zur Aufzeichnung vom 2026-08-10.
+== N=4 DET=42 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=kopie diff=semantisch s=35.2]: WEG=2 mehrfachKreuz=2 mehrfach=60 kreuzend=9 ersetzung=71 torKollision=167 zustellungen=12314 | verlust=124 verdopp=888 div=0 | torProbe=12314 davonEigen=465 parkOffen=0 torFremd=11849 torEigen=8465
+== N=4 DET=42 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=kopie diff=STANDARD s=33.0]: WEG=0 mehrfachKreuz=2 mehrfach=60 kreuzend=9 ersetzung=71 torKollision=167 zustellungen=12314 | verlust=112 verdopp=902 div=0 | torProbe=12314 davonEigen=465 parkOffen=0 torFremd=11849 torEigen=8465
+== N=4 DET=7 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=kopie diff=semantisch s=31.9]: WEG=1 mehrfachKreuz=1 mehrfach=45 kreuzend=8 ersetzung=48 torKollision=127 zustellungen=12221 | verlust=101 verdopp=904 div=0 | torProbe=12221 davonEigen=400 parkOffen=0 torFremd=11821 torEigen=8400
+== N=4 DET=7 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=kopie diff=STANDARD s=32.3]: WEG=0 mehrfachKreuz=1 mehrfach=45 kreuzend=8 ersetzung=48 torKollision=127 zustellungen=12222 | verlust=96 verdopp=913 div=0 | torProbe=12222 davonEigen=400 parkOffen=0 torFremd=11822 torEigen=8400
+== N=4 DET=99 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=kopie diff=semantisch s=33.8]: WEG=1 mehrfachKreuz=1 mehrfach=47 kreuzend=7 ersetzung=50 torKollision=125 zustellungen=12366 | verlust=105 verdopp=816 div=0 | torProbe=12366 davonEigen=414 parkOffen=0 torFremd=11952 torEigen=8414
+== N=4 DET=99 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=kopie diff=STANDARD s=36.6]: WEG=0 mehrfachKreuz=1 mehrfach=47 kreuzend=7 ersetzung=50 torKollision=125 zustellungen=12368 | verlust=101 verdopp=830 div=0 | torProbe=12368 davonEigen=414 parkOffen=0 torFremd=11954 torEigen=8414
+
+### ACHSE 1: mehr Geraete (N=5, 6, 8), je 200 Seeds x 10 Notizen x 8 Basiszeilen
+== N=5 DET=42 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=kopie diff=semantisch s=59.5]: WEG=6 mehrfachKreuz=2 mehrfach=79 kreuzend=14 ersetzung=150 torKollision=272 zustellungen=21186 | verlust=222 verdopp=1627 div=0 | torProbe=21186 davonEigen=930 parkOffen=0 torFremd=20256 torEigen=10930
+== N=5 DET=42 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=kopie diff=STANDARD s=58.2]: WEG=3 mehrfachKreuz=2 mehrfach=79 kreuzend=15 ersetzung=153 torKollision=272 zustellungen=21179 | verlust=205 verdopp=1662 div=0 | torProbe=21179 davonEigen=927 parkOffen=0 torFremd=20252 torEigen=10927
+== N=6 DET=42 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=kopie diff=semantisch s=91.5]: WEG=16 mehrfachKreuz=2 mehrfach=140 kreuzend=29 ersetzung=274 torKollision=523 zustellungen=32509 | verlust=350 verdopp=2537 div=0 | torProbe=32509 davonEigen=1870 parkOffen=0 torFremd=30639 torEigen=13870
+== N=6 DET=42 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=kopie diff=STANDARD s=103.2]: WEG=8 mehrfachKreuz=2 mehrfach=139 kreuzend=30 ersetzung=275 torKollision=522 zustellungen=32497 | verlust=300 verdopp=2614 div=0 | torProbe=32497 davonEigen=1895 parkOffen=0 torFremd=30602 torEigen=13895
+== N=5 DET=7 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=kopie diff=semantisch s=57.3]: WEG=4 mehrfachKreuz=2 mehrfach=82 kreuzend=13 ersetzung=137 torKollision=277 zustellungen=20965 | verlust=216 verdopp=1559 div=1 | torProbe=20965 davonEigen=909 parkOffen=0 torFremd=20056 torEigen=10909
+== N=5 DET=7 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=kopie diff=STANDARD s=56.7]: WEG=2 mehrfachKreuz=2 mehrfach=83 kreuzend=14 ersetzung=138 torKollision=280 zustellungen=20984 | verlust=193 verdopp=1589 div=1 | torProbe=20984 davonEigen=914 parkOffen=0 torFremd=20070 torEigen=10914
+== N=6 DET=7 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=kopie diff=semantisch s=89.6]: WEG=15 mehrfachKreuz=9 mehrfach=137 kreuzend=52 ersetzung=278 torKollision=494 zustellungen=32641 | verlust=346 verdopp=2440 div=0 | torProbe=32641 davonEigen=1969 parkOffen=0 torFremd=30672 torEigen=13969
+== N=6 DET=7 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=kopie diff=STANDARD s=95.3]: WEG=2 mehrfachKreuz=10 mehrfach=135 kreuzend=54 ersetzung=280 torKollision=494 zustellungen=32668 | verlust=302 verdopp=2510 div=0 | torProbe=32668 davonEigen=2001 parkOffen=0 torFremd=30667 torEigen=14001
+== N=5 DET=99 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=kopie diff=semantisch s=63.4]: WEG=6 mehrfachKreuz=2 mehrfach=77 kreuzend=16 ersetzung=141 torKollision=259 zustellungen=21034 | verlust=206 verdopp=1589 div=0 | torProbe=21034 davonEigen=944 parkOffen=0 torFremd=20090 torEigen=10944
+== N=5 DET=99 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=kopie diff=STANDARD s=65.0]: WEG=1 mehrfachKreuz=2 mehrfach=78 kreuzend=16 ersetzung=142 torKollision=260 zustellungen=21021 | verlust=184 verdopp=1632 div=0 | torProbe=21021 davonEigen=941 parkOffen=0 torFremd=20080 torEigen=10941
+== N=6 DET=99 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=kopie diff=semantisch s=106.0]: WEG=11 mehrfachKreuz=3 mehrfach=126 kreuzend=34 ersetzung=292 torKollision=466 zustellungen=32536 | verlust=337 verdopp=2496 div=1 | torProbe=32536 davonEigen=1905 parkOffen=3 torFremd=30631 torEigen=13905
+== N=6 DET=99 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=kopie diff=STANDARD s=102.2]: WEG=1 mehrfachKreuz=2 mehrfach=129 kreuzend=32 ersetzung=292 torKollision=477 zustellungen=32526 | verlust=285 verdopp=2614 div=1 | torProbe=32526 davonEigen=1928 parkOffen=3 torFremd=30598 torEigen=13928
+== N=8 DET=42 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=kopie diff=semantisch s=223.7]: WEG=23 mehrfachKreuz=12 mehrfach=218 kreuzend=100 ersetzung=642 torKollision=1020 zustellungen=61469 | verlust=700 verdopp=4880 div=0 | torProbe=61469 davonEigen=4072 parkOffen=0 torFremd=57397 torEigen=20072
+== N=8 DET=42 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=kopie diff=STANDARD s=224.6]: WEG=2 mehrfachKreuz=11 mehrfach=210 kreuzend=93 ersetzung=640 torKollision=983 zustellungen=61086 | verlust=579 verdopp=5085 div=0 | torProbe=61086 davonEigen=4013 parkOffen=0 torFremd=57073 torEigen=20013
+== N=8 DET=7 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=kopie diff=semantisch s=212.0]: WEG=19 mehrfachKreuz=11 mehrfach=211 kreuzend=73 ersetzung=562 torKollision=911 zustellungen=61792 | verlust=655 verdopp=4704 div=1 | torProbe=61792 davonEigen=4329 parkOffen=0 torFremd=57463 torEigen=20329
+== N=8 DET=7 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=kopie diff=STANDARD s=211.7]: WEG=2 mehrfachKreuz=8 mehrfach=203 kreuzend=66 ersetzung=551 torKollision=873 zustellungen=61580 | verlust=529 verdopp=4846 div=2 | torProbe=61580 davonEigen=4311 parkOffen=6 torFremd=57269 torEigen=20311
+### ACHSE 2: grosse Notizen
+== N=4 DET=42 Seeds 1..200 modus=zeichen [notizen=10 basis=200 edits=1 md=kopie diff=semantisch s=62.9]: WEG=3 mehrfachKreuz=1 mehrfach=59 kreuzend=4 ersetzung=29 torKollision=158 zustellungen=12305 | verlust=98 verdopp=807 div=0 | torProbe=12305 davonEigen=458 parkOffen=0 torFremd=11847 torEigen=8458
+== N=4 DET=42 Seeds 1..200 modus=zeichen [notizen=10 basis=200 edits=1 md=kopie diff=STANDARD s=69.1]: WEG=3 mehrfachKreuz=1 mehrfach=59 kreuzend=4 ersetzung=29 torKollision=158 zustellungen=12305 | verlust=98 verdopp=807 div=0 | torProbe=12305 davonEigen=458 parkOffen=0 torFremd=11847 torEigen=8458
+== N=4 DET=7 Seeds 1..200 modus=zeichen [notizen=10 basis=200 edits=1 md=kopie diff=semantisch s=66.8]: WEG=0 mehrfachKreuz=0 mehrfach=45 kreuzend=0 ersetzung=16 torKollision=127 zustellungen=12242 | verlust=82 verdopp=836 div=0 | torProbe=12242 davonEigen=398 parkOffen=0 torFremd=11844 torEigen=8398
+== N=4 DET=7 Seeds 1..200 modus=zeichen [notizen=10 basis=200 edits=1 md=kopie diff=STANDARD s=68.5]: WEG=0 mehrfachKreuz=0 mehrfach=45 kreuzend=0 ersetzung=16 torKollision=127 zustellungen=12242 | verlust=82 verdopp=836 div=0 | torProbe=12242 davonEigen=398 parkOffen=0 torFremd=11844 torEigen=8398
+== N=4 DET=42 Seeds 1..200 modus=zeichen [notizen=10 basis=1000 edits=1 md=kopie diff=semantisch s=141.7]: WEG=5 mehrfachKreuz=1 mehrfach=58 kreuzend=4 ersetzung=26 torKollision=159 zustellungen=12300 | verlust=100 verdopp=805 div=0 | torProbe=12300 davonEigen=453 parkOffen=0 torFremd=11847 torEigen=8453
+== N=4 DET=42 Seeds 1..200 modus=zeichen [notizen=10 basis=1000 edits=1 md=kopie diff=STANDARD s=154.5]: WEG=5 mehrfachKreuz=1 mehrfach=58 kreuzend=4 ersetzung=26 torKollision=159 zustellungen=12300 | verlust=100 verdopp=805 div=0 | torProbe=12300 davonEigen=453 parkOffen=0 torFremd=11847 torEigen=8453
+== N=4 DET=7 Seeds 1..200 modus=zeichen [notizen=10 basis=1000 edits=1 md=kopie diff=semantisch s=166.4]: WEG=1 mehrfachKreuz=0 mehrfach=43 kreuzend=2 ersetzung=13 torKollision=124 zustellungen=12241 | verlust=79 verdopp=835 div=0 | torProbe=12241 davonEigen=396 parkOffen=0 torFremd=11845 torEigen=8396
+== N=4 DET=7 Seeds 1..200 modus=zeichen [notizen=10 basis=1000 edits=1 md=kopie diff=STANDARD s=177.4]: WEG=1 mehrfachKreuz=0 mehrfach=43 kreuzend=2 ersetzung=13 torKollision=124 zustellungen=12241 | verlust=79 verdopp=835 div=0 | torProbe=12241 davonEigen=396 parkOffen=0 torFremd=11845 torEigen=8396
+### ACHSE 3: mdModus=ueberschreiben
+== N=4 DET=42 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=ueberschreiben diff=semantisch s=63.1]: WEG=8 mehrfachKreuz=10 mehrfach=183 kreuzend=57 ersetzung=320 torKollision=504 zustellungen=55194 | verlust=344 verdopp=1174 div=2 | torProbe=55194 davonEigen=21353 parkOffen=3 torFremd=33841 torEigen=29353
+== N=4 DET=42 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=ueberschreiben diff=STANDARD s=61.1]: WEG=1 mehrfachKreuz=10 mehrfach=170 kreuzend=58 ersetzung=320 torKollision=501 zustellungen=55059 | verlust=335 verdopp=1129 div=1 | torProbe=55059 davonEigen=21296 parkOffen=0 torFremd=33763 torEigen=29296
+== N=4 DET=7 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=ueberschreiben diff=semantisch s=64.4]: WEG=11 mehrfachKreuz=8 mehrfach=193 kreuzend=56 ersetzung=321 torKollision=505 zustellungen=55356 | verlust=352 verdopp=1186 div=0 | torProbe=55356 davonEigen=21535 parkOffen=0 torFremd=33821 torEigen=29535
+== N=4 DET=7 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=ueberschreiben diff=STANDARD s=63.1]: WEG=1 mehrfachKreuz=8 mehrfach=177 kreuzend=56 ersetzung=316 torKollision=496 zustellungen=55293 | verlust=336 verdopp=1164 div=0 | torProbe=55293 davonEigen=21539 parkOffen=0 torFremd=33754 torEigen=29539
+== N=2 DET=42 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=ueberschreiben diff=semantisch s=7.7]: WEG=0 mehrfachKreuz=0 mehrfach=0 kreuzend=4 ersetzung=27 torKollision=1 zustellungen=4904 | verlust=35 verdopp=46 div=1 | torProbe=4904 davonEigen=747 parkOffen=0 torFremd=4157 torEigen=4747
+== N=2 DET=42 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=ueberschreiben diff=STANDARD s=7.7]: WEG=0 mehrfachKreuz=0 mehrfach=0 kreuzend=3 ersetzung=27 torKollision=1 zustellungen=4903 | verlust=34 verdopp=45 div=1 | torProbe=4903 davonEigen=745 parkOffen=0 torFremd=4158 torEigen=4745
+== N=2 DET=7 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=ueberschreiben diff=semantisch s=7.4]: WEG=0 mehrfachKreuz=0 mehrfach=1 kreuzend=4 ersetzung=28 torKollision=1 zustellungen=4913 | verlust=36 verdopp=48 div=0 | torProbe=4913 davonEigen=756 parkOffen=0 torFremd=4157 torEigen=4756
+== N=2 DET=7 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=ueberschreiben diff=STANDARD s=7.1]: WEG=0 mehrfachKreuz=0 mehrfach=0 kreuzend=3 ersetzung=28 torKollision=1 zustellungen=4912 | verlust=36 verdopp=48 div=0 | torProbe=4912 davonEigen=754 parkOffen=0 torFremd=4158 torEigen=4754
+== N=3 DET=42 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=ueberschreiben diff=semantisch s=27.5]: WEG=3 mehrfachKreuz=3 mehrfach=71 kreuzend=23 ersetzung=122 torKollision=138 zustellungen=21256 | verlust=151 verdopp=400 div=0 | torProbe=21256 davonEigen=6895 parkOffen=0 torFremd=14361 torEigen=12895
+== N=3 DET=42 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=ueberschreiben diff=STANDARD s=25.9]: WEG=0 mehrfachKreuz=3 mehrfach=66 kreuzend=22 ersetzung=119 torKollision=138 zustellungen=21252 | verlust=148 verdopp=374 div=0 | torProbe=21252 davonEigen=6896 parkOffen=0 torFremd=14356 torEigen=12896
+== N=3 DET=7 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=ueberschreiben diff=semantisch s=26.8]: WEG=1 mehrfachKreuz=1 mehrfach=75 kreuzend=16 ersetzung=105 torKollision=145 zustellungen=21296 | verlust=165 verdopp=389 div=1 | torProbe=21296 davonEigen=6816 parkOffen=4 torFremd=14480 torEigen=12816
+== N=3 DET=7 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=ueberschreiben diff=STANDARD s=27.7]: WEG=0 mehrfachKreuz=1 mehrfach=73 kreuzend=15 ersetzung=106 torKollision=146 zustellungen=21292 | verlust=162 verdopp=390 div=1 | torProbe=21292 davonEigen=6813 parkOffen=4 torFremd=14479 torEigen=12813
+### ACHSE 5: yjs-Groessen/Ops (Zaehler neu, Verhalten unveraendert)
+== N=4 DET=42 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=kopie diff=semantisch s=64.5]: WEG=2 mehrfachKreuz=2 mehrfach=60 kreuzend=9 ersetzung=71 torKollision=167 zustellungen=12314 | verlust=124 verdopp=888 div=0 | torProbe=12314 davonEigen=465 parkOffen=0 torFremd=11849 torEigen=8465 | yjsKB=7230.9 yjsDateien=31456 yjsItems=51704
+== N=4 DET=42 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=kopie diff=STANDARD s=54.7]: WEG=0 mehrfachKreuz=2 mehrfach=60 kreuzend=9 ersetzung=71 torKollision=167 zustellungen=12314 | verlust=112 verdopp=902 div=0 | torProbe=12314 davonEigen=465 parkOffen=0 torFremd=11849 torEigen=8465 | yjsKB=7211.9 yjsDateien=31456 yjsItems=51468
+== N=4 DET=7 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=kopie diff=semantisch s=40.6]: WEG=1 mehrfachKreuz=1 mehrfach=45 kreuzend=8 ersetzung=48 torKollision=127 zustellungen=12221 | verlust=101 verdopp=904 div=0 | torProbe=12221 davonEigen=400 parkOffen=0 torFremd=11821 torEigen=8400 | yjsKB=7230.4 yjsDateien=31456 yjsItems=51712
+== N=4 DET=7 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=kopie diff=STANDARD s=40.4]: WEG=0 mehrfachKreuz=1 mehrfach=45 kreuzend=8 ersetzung=48 torKollision=127 zustellungen=12222 | verlust=96 verdopp=913 div=0 | torProbe=12222 davonEigen=400 parkOffen=0 torFremd=11822 torEigen=8400 | yjsKB=7211.7 yjsDateien=31456 yjsItems=51472
+== N=4 DET=42 Seeds 1..200 modus=zeichen [notizen=10 basis=200 edits=1 md=kopie diff=semantisch s=64.2]: WEG=3 mehrfachKreuz=1 mehrfach=59 kreuzend=4 ersetzung=29 torKollision=158 zustellungen=12305 | verlust=98 verdopp=807 div=0 | torProbe=12305 davonEigen=458 parkOffen=0 torFremd=11847 torEigen=8458 | yjsKB=75780.6 yjsDateien=31456 yjsItems=58912
+== N=4 DET=42 Seeds 1..200 modus=zeichen [notizen=10 basis=200 edits=1 md=kopie diff=STANDARD s=70.0]: WEG=3 mehrfachKreuz=1 mehrfach=59 kreuzend=4 ersetzung=29 torKollision=158 zustellungen=12305 | verlust=98 verdopp=807 div=0 | torProbe=12305 davonEigen=458 parkOffen=0 torFremd=11847 torEigen=8458 | yjsKB=75780.8 yjsDateien=31456 yjsItems=58936
+== N=6 DET=42 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=kopie diff=semantisch s=110.4]: WEG=16 mehrfachKreuz=2 mehrfach=140 kreuzend=29 ersetzung=274 torKollision=523 zustellungen=32509 | verlust=350 verdopp=2537 div=0 | torProbe=32509 davonEigen=1870 parkOffen=0 torFremd=30639 torEigen=13870 | yjsKB=22076.6 yjsDateien=71964 yjsItems=125514
+== N=6 DET=42 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=kopie diff=STANDARD s=101.2]: WEG=8 mehrfachKreuz=2 mehrfach=139 kreuzend=30 ersetzung=275 torKollision=522 zustellungen=32497 | verlust=300 verdopp=2614 div=0 | torProbe=32497 davonEigen=1895 parkOffen=0 torFremd=30602 torEigen=13895 | yjsKB=21890.6 yjsDateien=71964 yjsItems=123354
+
+### ZERLEGUNG des Bruchs bei N>=5 — Verlustort und Gegenprobe 'kein-fuzz'
+  [seed=15] fehlt n3.md:n3-base-6
+  [seed=47] fehlt n9.md:n9-base-7
+N=5 Seeds=50 DET=42 Eingriff=(keiner)
+  GRUNDTEXT-WEG am Ende         = 2
+  mergeForLocalDiff: 2776 Aufrufe, davon 8 mit toter Grundtextzeile (8 Zeilen)
+  unite/unionMerge : 3507 Aufrufe, davon 0 mit toter Grundtextzeile
+  loadAndMerge     : 12923 Aufrufe, davon 6 mit toter Grundtextzeile
+  crdt.setContent  : 6075 Aufrufe, davon 8 mit GEBORENER Loesch-Op auf Grundtext (8 Zeilen)
+  tickParked       : 1122 Aufrufe, davon 8 aufgeloest (Doc deckt) / 32 NACHTRAG per unionMerge (sync-handler.ts:514)
+                     davon 0 Nachtraege mit toter Grundtextzeile (0 Zeilen)
+  crdt.setContent  : 82 Aufrufe mit ZEILENGRENZEN-UEBERSCHREITENDER Op, 151 Aufrufe mit ueberhaupt einer DELETE-Op
+      davon ueber seed=15 applyLocalContent:1703 n3.md n3-base-6: 1 Zeilen
+N=5 Seeds=50 DET=42 Eingriff=kein-fuzz
+  GRUNDTEXT-WEG am Ende         = 0
+  mergeForLocalDiff: 2799 Aufrufe, davon 0 mit toter Grundtextzeile (0 Zeilen)
+  unite/unionMerge : 3505 Aufrufe, davon 0 mit toter Grundtextzeile
+  loadAndMerge     : 12925 Aufrufe, davon 0 mit toter Grundtextzeile
+  crdt.setContent  : 6096 Aufrufe, davon 0 mit GEBORENER Loesch-Op auf Grundtext (0 Zeilen)
+  tickParked       : 1177 Aufrufe, davon 19 aufgeloest (Doc deckt) / 47 NACHTRAG per unionMerge (sync-handler.ts:514)
+  [seed=15] fehlt n3.md:n3-base-6
+N=5 Seeds=50 DET=7 Eingriff=(keiner)
+  GRUNDTEXT-WEG am Ende         = 1
+  mergeForLocalDiff: 2755 Aufrufe, davon 2 mit toter Grundtextzeile (2 Zeilen)
+  unite/unionMerge : 3506 Aufrufe, davon 0 mit toter Grundtextzeile
+  loadAndMerge     : 12874 Aufrufe, davon 3 mit toter Grundtextzeile
+  crdt.setContent  : 6054 Aufrufe, davon 2 mit GEBORENER Loesch-Op auf Grundtext (2 Zeilen)
+  tickParked       : 1141 Aufrufe, davon 8 aufgeloest (Doc deckt) / 41 NACHTRAG per unionMerge (sync-handler.ts:514)
+                     davon 0 Nachtraege mit toter Grundtextzeile (0 Zeilen)
+  crdt.setContent  : 78 Aufrufe mit ZEILENGRENZEN-UEBERSCHREITENDER Op, 147 Aufrufe mit ueberhaupt einer DELETE-Op
+      davon ueber seed=15 applyLocalContent:1703 n3.md n3-base-6: 1 Zeilen
+  3-Wege-Zweig nach Zahl VERSCHIEDENER fremder Geraete im Doc-Vorlauf:
+N=5 Seeds=50 DET=7 Eingriff=kein-fuzz
+  GRUNDTEXT-WEG am Ende         = 0
+  mergeForLocalDiff: 2772 Aufrufe, davon 0 mit toter Grundtextzeile (0 Zeilen)
+  unite/unionMerge : 3503 Aufrufe, davon 0 mit toter Grundtextzeile
+  loadAndMerge     : 12815 Aufrufe, davon 0 mit toter Grundtextzeile
+  crdt.setContent  : 6068 Aufrufe, davon 0 mit GEBORENER Loesch-Op auf Grundtext (0 Zeilen)
+  tickParked       : 1150 Aufrufe, davon 15 aufgeloest (Doc deckt) / 46 NACHTRAG per unionMerge (sync-handler.ts:514)
+  [seed=47] fehlt n3.md:n3-base-57
+  [seed=163] fehlt n9.md:n9-base-134
+  [seed=198] fehlt n0.md:n0-base-132
+N=4 Seeds=200 DET=42 Eingriff=(keiner)
+  GRUNDTEXT-WEG am Ende         = 3
+  mergeForLocalDiff: 8464 Aufrufe, davon 9 mit toter Grundtextzeile (9 Zeilen)
+  unite/unionMerge : 10664 Aufrufe, davon 0 mit toter Grundtextzeile
+  loadAndMerge     : 35358 Aufrufe, davon 10 mit toter Grundtextzeile
+  crdt.setContent  : 18542 Aufrufe, davon 6 mit GEBORENER Loesch-Op auf Grundtext (6 Zeilen)
+  tickParked       : 2027 Aufrufe, davon 35 aufgeloest (Doc deckt) / 6 NACHTRAG per unionMerge (sync-handler.ts:514)
+                     davon 0 Nachtraege mit toter Grundtextzeile (0 Zeilen)
+  crdt.setContent  : 25 Aufrufe mit ZEILENGRENZEN-UEBERSCHREITENDER Op, 193 Aufrufe mit ueberhaupt einer DELETE-Op
+N=4 Seeds=200 DET=42 Eingriff=kein-fuzz
+  GRUNDTEXT-WEG am Ende         = 0
+  mergeForLocalDiff: 8467 Aufrufe, davon 0 mit toter Grundtextzeile (0 Zeilen)
+  unite/unionMerge : 10664 Aufrufe, davon 0 mit toter Grundtextzeile
+  loadAndMerge     : 35387 Aufrufe, davon 0 mit toter Grundtextzeile
+  crdt.setContent  : 18545 Aufrufe, davon 0 mit GEBORENER Loesch-Op auf Grundtext (0 Zeilen)
+  tickParked       : 2019 Aufrufe, davon 34 aufgeloest (Doc deckt) / 6 NACHTRAG per unionMerge (sync-handler.ts:514)
+
+### ZERLEGUNG mdModus=ueberschreiben, N=4 DET=42, 200 Seeds
+  [seed=116] fehlt n7.md:n7-base-6
+N=4 Seeds=200 DET=42 Eingriff=(keiner)
+  GRUNDTEXT-WEG am Ende         = 1
+  mergeForLocalDiff: 29438 Aufrufe, davon 4 mit toter Grundtextzeile (4 Zeilen)
+  unite/unionMerge : 10676 Aufrufe, davon 0 mit toter Grundtextzeile
+  loadAndMerge     : 36815 Aufrufe, davon 2 mit toter Grundtextzeile
+  crdt.setContent  : 39531 Aufrufe, davon 4 mit GEBORENER Loesch-Op auf Grundtext (4 Zeilen)
+  tickParked       : 8431 Aufrufe, davon 440 aufgeloest (Doc deckt) / 142 NACHTRAG per unionMerge (sync-handler.ts:514)
+                     davon 0 Nachtraege mit toter Grundtextzeile (0 Zeilen)
+  crdt.setContent  : 408 Aufrufe mit ZEILENGRENZEN-UEBERSCHREITENDER Op, 795 Aufrufe mit ueberhaupt einer DELETE-Op
+N=4 Seeds=200 DET=42 Eingriff=kein-fuzz
+  GRUNDTEXT-WEG am Ende         = 0
+  mergeForLocalDiff: 29258 Aufrufe, davon 0 mit toter Grundtextzeile (0 Zeilen)
+  unite/unionMerge : 10662 Aufrufe, davon 0 mit toter Grundtextzeile
+  loadAndMerge     : 36549 Aufrufe, davon 0 mit toter Grundtextzeile
+  crdt.setContent  : 39336 Aufrufe, davon 0 mit GEBORENER Loesch-Op auf Grundtext (0 Zeilen)
+  tickParked       : 8573 Aufrufe, davon 408 aufgeloest (Doc deckt) / 246 NACHTRAG per unionMerge (sync-handler.ts:514)

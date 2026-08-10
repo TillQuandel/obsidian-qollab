@@ -1,0 +1,12 @@
+Zeilen | Bearbeitung  | kollabiert | Ops | groesste Nicht-EQUAL-Op (Zeichen) | Items | Update-Byte | Text stimmt
+ 39000 | vorn (Zeile 10)      | false      |   3 |                                10 |     3 |      534944 | true
+ 39000 | hinten (drittletzte) | false      |   3 |                                10 |     3 |      534950 | true
+ 40001 | vorn (Zeile 10)      | true       |   5 |                                28 |     5 |      548988 | true
+ 40001 | hinten (drittletzte) | true       |   5 |                                28 |     5 |      548994 | true
+ 45000 | vorn (Zeile 10)      | true       |   5 |                             70014 |     5 |      618980 | true
+ 45000 | hinten (drittletzte) | true       |   3 |                             70024 |     3 |      618958 | true
+Zeilen | modus      | Zeilen am Ende | erwartet | Grundtext doppelt | beide Marken da
+ 39000 | semantisch |          39002 |    39002 |                 0 | true
+ 39000 | zeile      |          39002 |    39002 |                 0 | true
+ 45000 | semantisch |          45002 |    45002 |                 0 | true
+ 45000 | zeile      |          50003 |    45002 |              5001 | true
