@@ -502,6 +502,44 @@ derselben Stelle ab (`H-WAIT`-Timeout beim ersten Warten auf die Sidecar). Nur `
 > desselben Laufs: `guidA ≠ guidB` (Split-Brain, zwei Inkarnationen) — und trotzdem konvergent, mit
 > jedem Beitrag genau einmal. `r01` führt das als Befund, nicht als Assert.
 
+### Die übrigen sechs Runner, gefahren am 2026-08-12
+
+Dieselbe Änderung (Wartezeiten ≤ 120 s auf 240 s, sonst keine Zeile) an `s00`, `r11`, `r13`, `r14`,
+`r15`, `r16`. Serie sequenziell, 31 min. **Das Ergebnis ist dreigeteilt — die Timeout-Erklärung
+trägt nicht überall:**
+
+| Runner | Verdict | Einordnung |
+| --- | --- | --- |
+| `s00` | **PASS** | Timeout war der Blocker |
+| `r11` | **FAIL — 8 Asserts rot** | erreicht seine Prüfungen und ist **inhaltlich** rot (siehe unten) |
+| `r13`, `r14`, `r15`, `r16` | FAIL — **0** Asserts | sterben weiter **vor** den Asserts |
+
+**Warum die vier weiter sterben: eine übersehene Wartestelle im gemeinsamen Helfer.** Alle vier
+rufen `H-SETUP-SHARED`, und dort steht der Timeout, nicht im Runner:
+`harness-ext.ps1:288` wartet **90 s** auf die erste Sidecar, `:297` **120 s** auf die zweite. Beide
+liegen wieder unter der 120-s-Frist. Die Diagnose gilt also auch für sie — die Korrektur war nur
+unvollständig, weil sie an den Runner-Dateien ansetzte statt am Helfer.
+
+**`r11` ist der ernste Befund.** Der Runner prüft den Doc-Vorlauf (Task 16): A editiert eine Notiz,
+**nur die Sidecar** reist zu B (die `.md` bewusst nicht, sonst entsteht kein Vorlauf), B hat die
+Notiz nie geöffnet, dann zwei Edits in B kurz hintereinander. Zusage laut Kopfkommentar: *„As Zeile
+überlebt in BEIDEN Vaults, genau einmal. Vor dem Fix verschwand sie beim zweiten Tippen auf beiden
+Geraeten."* Gemessen wurde genau diese Signatur:
+
+    A-A-zeile-1x-{0,1,2}       ist=0  soll=1     As Zeile fehlt in As EIGENEM Vault
+    B-A-zeile-1x-{0,1,2}       ist=0  soll=1     und in Bs Vault ebenfalls
+    kontrolle-merge-kommt-an   ist=False
+    kontrolle-1x               ist=0  soll=1
+
+**Ob das ein echter Verlust oder ein Artefakt der veränderten Semantik ist, ist offen** — und die
+Unterscheidung ist die nächste Messung wert, nicht eine Vermutung. Der Runner schreibt extern
+(`H-EDIT`), also wird As Edit heute **geparkt** und erst nach Fristablauf per `unionMerge`
+nachgetragen; er läuft damit über einen anderen Pfad als 2026-08-03, wo die Zusage aufgestellt
+wurde. **Der Diskriminator dafür ist billig:** denselben Fall mit dem Prozess-Schreibweg fahren
+(`H-CDP type` bzw. `app.vault.modify`). Dann entfällt das Parken, und es zeigt sich, ob die Zeile
+unter dem heutigen Erfassungspfad überlebt. Bis dahin gilt der Befund als **ungeklärt, nicht als
+entwarnt** — es ist K.o.-Kriterium 1, das hier zur Debatte steht.
+
 **Bis die Wächter-Ursache gefunden oder die Timeouts der sieben alten Runner angehoben sind, sagt
 die Batterie über Regressionen nichts.**
 
