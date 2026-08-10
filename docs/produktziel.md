@@ -280,6 +280,26 @@ verworfene Hunk wird als sichtbarer Block angehängt statt geschluckt — mit Pr
 dasteht. Ohne diese Prüfung ist die Meldung **nicht idempotent** (Textlänge 121 → 186 → 251 über
 drei Merge-Runden, dieselbe Bauart wie die im August behobene Ersetzung).
 
+**Der Einbau ist am selben Tag versucht worden und gescheitert** (Branch
+`versuch/patch-apply-einbau`, nicht gemergt). Vier Anläufe, vier Befunde:
+
+1. **Die exakte Suche bricht den Alltagsfall.** `threeWayMerge('a\n','a\nLokal\n','a\nFremd\n')`
+   legt „Lokal" in den Meldeblock statt in den Text. Bei kurzen Texten deckt der Patch-Kontext
+   fast alles ab, jede fremde Änderung macht ihn krumm — **und der Fuzz gleicht das in der
+   Mehrzahl der Fälle korrekt aus.** Er ist nicht grundsätzlich im Unrecht.
+2. **Zeilen-Tokenisierung allein entschärft ihn nicht.** Auch über ganze Zeilen kann ein
+   verschobener Hunk fremde Zeilen ersetzen — gemessen fielen zwei einer Ersetzung zum Opfer.
+3. **Ein globaler Rückfall bricht die Löschsemantik.** Er verwirft mit dem schädlichen Hunk auch
+   die Lösch-Hunks; die offline gelöschte Zeile kehrt zurück
+   (`sweep-schranke-basiswahl.test.ts`).
+4. **Eine Schadensprüfung pro Hunk löst 149 von 150 Tests, die Löschsemantik nicht.**
+
+**Wichtiger als die vier Anläufe: Die Metrik, auf der die Entscheidungsvorlage steht, ist blind
+für den Unterschied zwischen „einsortiert" und „angehängt".** `verlust` zählt ein Token als
+vorhanden, sobald es irgendwo im Text steht — auch in einem Meldeblock. Die Tabelle oben
+**überschätzt deshalb, wie günstig der Tausch ausfällt.** Wer hier weiterarbeitet, braucht zuerst
+eine Kennzahl, die beides unterscheidet.
+
 **Offen vor einem Einbau:** Der gemeldete Block wandert über den Sync zu allen Peers und wird dort
 gewöhnlicher Text — dieselbe Lage wie bei den Git-Konfliktmarkern unter „Offene Widersprüche"
 Punkt 5, und `unionMerge` kann ihn nicht entfernen. Ungemessen. Ebenso ungemessen: der Realtest
