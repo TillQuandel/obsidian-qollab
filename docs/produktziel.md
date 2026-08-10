@@ -345,13 +345,47 @@ Seiten dieselbe Zeile hinzufügen, ist das ein Beitrag, kein zweiter.
   al. (PaPoC '19): Sortierung stellt Konvergenz her, nicht Lesbarkeit.
 - **Verschobene Blöcke:** Der Literaturbefund (§4.3, Blockduplikation) trifft unsere Lage
   **nicht** — gemessen 0 doppelt, 0 verloren; der Bestand verlor dort 297 Zeilen.
-- **Kein Realtest.** Die Batterie ist weiterhin durch den toten Dateiwächter blockiert.
+- ~~**Kein Realtest.**~~ **Nachgeholt am 2026-08-12** — siehe „Die Wirkung, an echten Instanzen
+  belegt" unten. Die *Batterie* ist weiterhin durch den toten Dateiwächter blockiert; der
+  Wirkungsnachweis kommt ohne sie aus.
 
 **Offen vor einem Einbau:** Der gemeldete Block wandert über den Sync zu allen Peers und wird dort
 gewöhnlicher Text — dieselbe Lage wie bei den Git-Konfliktmarkern unter „Offene Widersprüche"
-Punkt 5, und `unionMerge` kann ihn nicht entfernen. Ungemessen. Ebenso ungemessen: der Realtest
-(die Batterie ist weiterhin blockiert) und eine zeilentreue Fassung des Blocks, die die
-Verdopplung senken könnte.
+Punkt 5, und `unionMerge` kann ihn nicht entfernen. Ungemessen. Ebenso ungemessen: eine zeilentreue
+Fassung des Blocks, die die Verdopplung senken könnte. (Der Realtest ist am 2026-08-12 nachgeholt —
+siehe unten.)
+
+### Die Wirkung, an echten Instanzen belegt (2026-08-12)
+
+**Erstmals nicht nur Regressionsfreiheit, sondern Wirkung.** `r30` prüft das Herkunftstor an einem
+einzigen Vault; die Schadensklasse, die `ba9f943` behebt, kommt darin gar nicht vor. Der Lauf
+`harness/agent-t3-fuzz.ps1` löst sie am alten Build aus und zeigt, dass sie am neuen ausbleibt —
+drei echte Obsidian-Instanzen, drei Client-IDs, eine geteilte Inkarnation, alle `.md`-Schreibungen
+über `app.vault.modify`.
+
+Fixture zeichengleich aus `spike/schnitt/probe-fuzz.mjs` Seed 3: die lokale Ergänzung `|n0-D0-9`
+gehört an `n0-base-6`; alle drei Stände tragen `n0-base-4` unverändert.
+
+| Endstand in allen drei Vaults | `n0-base-4` | Verdict |
+| --- | --- | --- |
+| **alter Build** (`269C24EF…`, vor `ba9f943`), zweimal reproduziert | **`n0-base-4\|n0-D0-9`** — als Zeile zerstört | KLASSE-AUSGELOEST |
+| **neuer Build** (`5B34BF7D…`, `efae37a`) | **`n0-base-4`** — unversehrt | WIRKUNG-BELEGT |
+
+Am alten Build ist die Zeile in **allen drei** Vaults verschwunden, bei intakter Konvergenz — der
+stille Fall. Beide Läufe aus demselben Skript, mit im Skript erzwungener byte-identischer
+Ausgangslage; der deployte Build wurde je Vault gegen die Quelle gehasht. Die Endstände sind
+**byte-identisch mit der harness-freien Kalibrierung** (`spike/wirkung/`).
+
+**Der Preis, am echten Produkt sichtbar:** Der neue Merge behält `n0-base-5` neben
+`n0-base-5|n0-D1-4` — die „beide behalten, sortiert"-Auflösung. 11 statt 9 Zeilen, kein
+Grundtextverlust. Das ist die Interleaving-Anomalie (Kleppmann et al., PaPoC '19), hier erstmals
+am Produkt statt in der Simulation.
+
+**Was der Lauf NICHT zeigt:** eine Rate (ein Szenario, nicht 200 Seeds), `mdModus: 'ueberschreiben'`
+an echten Instanzen, den Sweep (kein Neustart im Lauf), N ≥ 5. Und: Für die behobene Klasse gibt es
+auf `master` weiterhin **keinen Unit-Test** — `tests/three-way-fuzz.test.ts` liegt nur auf
+`versuch/patch-apply-einbau` und ist dort an das nie eingebaute `MELDE_MARKE` gebunden. Bericht:
+`.superpowers/sdd/wirkungsnachweis-2026-08-12.md`.
 
 **Nebenbefund:** Auch der Bestand ist nicht idempotent — rechnet ein zweites Gerät den Merge auf
 dem Ergebnis des ersten, steht das lokale Token danach zweimal da (64 → 72 → 80 Zeichen). Das ist
