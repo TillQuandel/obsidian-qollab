@@ -1,6 +1,6 @@
 # Qollab
 
-**When two or more people edit the same Obsidian note over Dropbox, OneDrive or iCloud, one of the versions is lost. Qollab merges them instead.**
+**When two or more people edit the same Obsidian note over Dropbox, OneDrive or iCloud, one of the versions is lost. Qollab merges them instead — with no server, no account and nothing running in between.**
 
 ## The problem, in one morning
 
@@ -46,9 +46,30 @@ No second file, nothing to compare, nothing to click. Both of you carry on where
 
 Dropbox and OneDrive sync *files*. To them a note is a blob of bytes: two versions arrive, both changed since the last common state, and nothing in the file says what was added or removed. Keeping both is the only safe thing they can do.
 
-Qollab syncs *edits*. Next to each note it keeps a small **helper file** that records **what changed** — "two lines added after line 3" — rather than just the end result. Two lists of edits can be combined. Two blobs cannot.
+Qollab syncs *edits*. Next to each note it keeps a small **helper file** that records **what changed** — "two lines added after line 3" — rather than just the end result. Two lists of edits can be combined. Two blobs cannot. That is the whole idea.
 
-That is the whole idea, and it needs no server: no account, no subscription, no backend. Qollab rides on the file sync you already use. Git and GitHub work as a transport too.
+## Nothing in the middle
+
+Merging text that several people changed at once normally means putting something between them: a service that receives every keystroke, decides the order and hands back the result. That is how live collaboration works, and it is why those tools come with an account, a subscription and a company that has to stay in business.
+
+**Qollab has none of that.** No server, no account, no subscription, no relay, no peer-to-peer connection, nothing to configure. Two devices that never talk to each other directly still end up with the same merged note.
+
+**How that works:** the edit history is itself just a file. Next to `Shopping list.md` sits `Shopping list.md.5e307e01.yjs` — one per note, per device. It travels the same way the note does: through the file sync you already use. Your sync provider does not know it is doing anything special; it copies a file, as always. Each device reads the other's history file and merges it locally. The merge happens **on your machine**, in the plugin, with no network of its own.
+
+That has consequences worth knowing:
+
+- **No running costs and nothing to sign up for.** If it works today, it works in five years — there is no service that can be shut down, sold or repriced.
+- **Your notes stay where they already are.** Qollab adds files next to them. It opens no connection and sends nothing anywhere.
+- **Change the transport whenever you like.** Dropbox today, Syncthing tomorrow, a Git repository after that. Move the folder and it keeps working — nothing is bound to a provider.
+- **It works with what you already pay for**, including free tiers.
+
+**And the price, because there is one.** Everything below in [Limits in detail](#limits-in-detail) follows from having nothing in the middle:
+
+- **No live typing.** Files arrive when your sync gets around to it, and Qollab looks every 30 seconds. This is minutes-later collaboration, not Google-Docs-style.
+- **Things arrive out of order.** The note may show up long before its history, or the other way round — there is no server to serialise them, so Qollab has to park what it cannot yet explain.
+- **Nobody arbitrates.** When two devices genuinely disagree, there is no authority to decide. That is exactly why deleting is unsolved: without a common history, a deletion and a concurrent edit look the same from the inside.
+
+Git and GitHub are an intended transport for the same reason — with one honest gap, described under [Install](#install).
 
 ## What to expect day to day
 
