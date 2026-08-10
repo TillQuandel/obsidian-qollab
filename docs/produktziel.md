@@ -202,12 +202,26 @@ zu übernehmen.**
    behandelt nur die Hilfsdateien; die Notiz-Hälfte ist nie spezifiziert worden. Die Formulierung
    oben ist damit breiter, als die Konstruktion trägt.
 
-   **Was heute passieren würde** (aus dem Kontrollfluss gelesen, **nicht gemessen**): Eine `.md`
-   mit Git-Konfliktmarkern trägt keinen Lock und stammt nicht aus diesem Prozess → sie wird
+   **Was heute passiert — am 2026-08-12 gemessen** (`spike/konfliktmarker/`, harness-frei gegen die
+   echten Funktionen; vorher stand hier „aus dem Kontrollfluss gelesen, **nicht gemessen**"): Eine
+   `.md` mit Git-Konfliktmarkern trägt keinen Lock und stammt nicht aus diesem Prozess → sie wird
    geparkt → später vereinigt → die Markerzeilen stehen als gewöhnlicher Text im CRDT und wandern
-   über die eigene Hilfsdatei zu **allen** Peers. Und `unionMerge` kann sie nicht wieder
-   entfernen. Qollab würde einen Git-Konflikt also nicht auflösen, sondern **verteilen**.
-   Erkennung, Test und Doku dazu: null Treffer im gesamten Repo.
+   über die eigene Hilfsdatei zu **allen** Peers. **Qollab löst einen Git-Konflikt nicht auf,
+   sondern verteilt ihn — bestätigt.** Erkennung, Test und Doku: weiterhin null Treffer in `src/`
+   und `tests/` (die `conflict`-Treffer dort meinen durchweg Sync-Konfliktkopien, nicht Git-Marker).
+
+   **Zwei Präzisierungen, die die frühere Fassung nicht hatte:**
+
+   - **`unionMerge` bekommt sie nicht weg, `threeWayMerge` schon.** Räumt ein Gerät die Marker von
+     Hand auf und trifft auf einen Peer, der die Markerfassung noch trägt, liefert `unionMerge`
+     alle drei Markerzeilen zurück (gemessen 3/3, 82 → 144 Zeichen) — das Aufräumen ist per Union
+     nicht durchsetzbar. `threeWayMerge` entfernt sie vollständig (0/3), weil an der Basis die
+     Löschung als Hunk ablesbar ist; `unionMerge` hat keine Basis und kann per Konstruktion nichts
+     löschen. **Entscheidend ist deshalb, welcher Weg im Produkt läuft — und der Parkplatz löst
+     über `unionMerge` auf** (`sync-handler.ts:514`, `unionMerge(p.text, doc)`), also über den Weg,
+     der die Marker festhält.
+   - **Sie wachsen nicht.** Über sechs Wiederholungsreihen ist jede ab Runde 1 längenstabil; der
+     einzige Sprung ist der erste Merge. Die Nicht-Idempotenz trifft diesen Fall nicht.
 
 ## Grundtext-Verlust ab drei und vier Geräten — behoben **in der gemessenen Lage**
 
@@ -425,13 +439,44 @@ stille Fall. Am neuen Build steht die Zeile genau einmal. Das ist die Vorhersage
 `crdt-manager.ts` und der erste Beleg dafür am echten Produkt.
 
 **Die Regressions-Batterie ist derzeit nicht aussagefähig.** Sieben von neun Runnern brechen an
-derselben Stelle ab (`H-WAIT`-Timeout beim ersten Warten auf die Sidecar). Ursache ist **nicht der
-Fix**, sondern die Umgebung: Obsidians nativer Dateiwächter reagiert dort nicht mehr, eine extern
-geschriebene `.md` löst `modify` erst nach **30,4 s** aus (Fallback-Poll), die Sidecar folgt nach
-dem nächsten 30-s-Scan. Discriminator auf derselben Maschine in derselben Minute: **alter Build
-120 s, neuer Build 119 s** — buildunabhängig. Und älter als der Fix: Logs vom 2026-08-06/07 zeigen
-94–103 s, die vom 2026-08-03 noch 2,1 s. Nur `r30` (nach dem Bruch geschrieben, passende Timeouts)
-läuft **PASS 9/9, deckungsgleich mit dem Vorlauf**; `r31` (31 min) wurde nicht gefahren.
+derselben Stelle ab (`H-WAIT`-Timeout beim ersten Warten auf die Sidecar). Nur `r30` läuft
+**PASS 9/9, deckungsgleich mit dem Vorlauf**; `r31` (31 min) wurde nicht gefahren.
+
+> **URSACHE KORRIGIERT am 2026-08-12. Die frühere Erklärung war falsch — es gibt keinen defekten
+> Dateiwächter.** Hier stand: „Obsidians nativer Dateiwächter reagiert dort nicht mehr, eine extern
+> geschriebene `.md` löst `modify` erst nach 30,4 s aus […] Discriminator: alter Build 120 s, neuer
+> Build 119 s — buildunabhängig […] älter als der Fix." Nachgeprüft an den Logs hält davon nichts:
+>
+> - **Die Sieben warten 90 s auf ein Ereignis, das per Konstruktion frühestens nach 120 s
+>   eintritt.** `H-EDIT` schreibt extern (`harness.ps1:162`, `[IO.File]::WriteAllText` bei laufendem
+>   Obsidian). Genau das parkt das **Herkunftstor** (`main.ts:329-335`) — und geparkter Inhalt
+>   erzeugt **keine Sidecar**. Er wird erst nach Fristablauf nachgetragen:
+>   `PARK_FRIST_TICKS = 4` (`main.ts:92`) × `SCAN_INTERVAL_MS = 30_000`
+>   (`sidecar-watcher.ts:3`) = **120 s**. Alle sieben Runner setzen **90 s**
+>   (`s00.ps1:39`, `r01.ps1:54`, `r11.ps1:68`, `r13.ps1:44`, `r14.ps1:42`, `r15.ps1:46`,
+>   `r16.ps1:50`). 90 < 120 — der Abbruch ist rechnerisch unvermeidlich.
+> - **Die Trennlinie ist der Schreibweg, nicht der Timeout.** 7/7 Extern-Schreiber scheitern,
+>   2/2 Prozess-Schreiber bestehen: `r30` tippt über CDP (`r30-herkunftstor.ps1:62`,
+>   `ed.replaceSelection`), `r31` ebenso. In denselben `r30`-Läufen, in derselben Minute, liegen
+>   zwischen `.md`-Schreibung und Sidecar **0,075 s** im Prozess und **117,6 s** extern. Ein toter
+>   Dateiwächter kann diesen Unterschied nicht machen; das Herkunftstor macht genau ihn.
+> - **„120 s" ist ein Konstruktionswert, kein Umgebungssignal.** Alle vier `r30`-`verdict.json`
+>   melden `C-nach-frist-erfasst = "nach 120s"` — auch der Lauf vom **2026-08-04**, also vor dem
+>   behaupteten Bruch.
+> - **Der Zeitpunkt passt auf den Commit, nicht auf die Umgebung.** Die letzten schnellen Logs
+>   (2,1 s) stammen vom 2026-08-03; `ae57907` („Herkunftstor im modify-Pfad verdrahten, Uhr
+>   definieren") datiert auf den **2026-08-04**. `r30-herkunftstor.ps1:3-7` sagt es selbst vorweg:
+>   das alte Abnahmekriterium editiere „ausschliesslich EXTERN […] Genau das gilt seit dem
+>   Erstkontakt-Fix als fremd und wird geparkt — der Lauf waere aus einem Harness-Artefakt rot,
+>   nicht aus einem Fehler."
+> - **„30,4 s" und „119 s" sind in keinem Log als Latenzmessung auffindbar.**
+>
+> **Die Batterie misst also nicht die Umgebung, sondern ist am Produkt vorbeigebaut.** Sie ist
+> nicht kaputt, sie ist veraltet: Sie prüft einen Schreibweg, den das Plugin seit dem 2026-08-04
+> bewusst anders behandelt. Zwei Wege zurück, beide mit Preis — Timeouts über 120 s heben (dann
+> misst man den *Nachtrag nach Frist*, nicht den lokalen Edit, und die Folge-Waits bei 90–120 s
+> fallen als nächstes), oder den Schreibweg auf den Prozess umstellen (`H-CDP type` /
+> `app.vault.modify`), was `H-START-CDP` statt `H-START` verlangt und damit einen echten Umbau.
 
 **Bis die Wächter-Ursache gefunden oder die Timeouts der sieben alten Runner angehoben sind, sagt
 die Batterie über Regressionen nichts.**
@@ -553,8 +598,29 @@ noch für alle Lagen entkräftet.
 
 `flushParked` (`src/sync-handler.ts:424`) hat **repoweit keinen Aufrufer** — nachgeprüft, es gibt
 nur die Definition. Sein eigener Kommentar verspricht, beim Abschalten des Plugins jeden geparkten
-Stand nachzutragen; `onunload` (`main.ts:1623-1631`) ruft ihn nicht. Wer das Plugin abschaltet,
-während etwas geparkt ist, hat einen unbelegten Pfad vor sich.
+Stand nachzutragen; `onunload` (`main.ts:1623-1631`) ruft ihn nicht.
+
+**Eingeordnet am 2026-08-12 — im Normalfall kostet das keine Daten.** Der Parkplatz ist rein
+in-memory (`sync-handler.ts:365-370`), und der Text steht ja weiterhin in der `.md` auf der Platte.
+Beim nächsten Start greift keine der beiden Abkürzungen des Sweeps: der Merker nicht (der
+Fremd-Write hat mtime/size der `.md` geändert), die mtime-Prüfung nicht (die eigene Hilfsdatei
+wurde seit dem Parken nicht geschrieben, ist also älter). Der Text läuft damit durch
+`applyLocalContent` und wird erfasst. Genau das sagt der Code selbst zu: „*Nach einem Neustart ist
+ein Parkplatz weg, und der Startup-Sweep erfasst die Datei wie bisher — Bestandsverhalten.*" Preis
+ist das Bestandsverhalten (verliert nie, verdoppelt genau einmal sichtbar), nicht Verlust.
+
+**Ein Verlustpfad bleibt in einer Teillage:** Wurde nach dem Parken die **eigene Hilfsdatei**
+geschrieben — was der Normallauf tut, `saveState` (`sync-handler.ts:1962`) steht **vor**
+`resolveParked` (`:1972`) —, ist ihre mtime jünger als die der `.md`. Dann greift die
+mtime-Abkürzung `main.ts:1320` (`stat.mtime >= file.stat.mtime` → `continue`), die Notiz wird
+übersprungen, und der erste Write-Back danach überschreibt die `.md` mit dem Doc-Stand: der fremde
+Text ist auch von der Platte weg. **Ungemessen** — es gibt keinen Test, der Parkplatz und Neustart
+verbindet (`parken-fremder-md.test.ts` bleibt in einer Sitzung, die Neustart-Tests parken nichts).
+
+Ein Aufruf in `onunload` ist **nicht** der naheliegende Fix: `onunload` ist synchron, `flushParked`
+ist langlaufend und schreibend (Sicherungskopie plus `writeBinary` je Notiz), es umgeht die
+`PathQueue`, und `disposeAll()` zieht ihm die Y.Docs weg. Die Teillage oben ist die eigentliche
+Adresse.
 
 **Was dieser Apparat NICHT misst — für jede Zahl daraus mitzulesen:**
 
