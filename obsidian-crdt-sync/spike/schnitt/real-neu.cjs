@@ -155,6 +155,13 @@ function isNulledYjsState(update) {
   }
 }
 var diffModusStandard = (typeof process !== "undefined" ? process.env?.QOLLAB_DIFF_MODUS : void 0) ?? "zeile";
+var zeilenModusSchwelle = 39e3;
+function zeilenzahl(text) {
+  let n = 1;
+  let i = -1;
+  while ((i = text.indexOf("\n", i + 1)) !== -1) n++;
+  return n;
+}
 var CrdtManager = class {
   constructor() {
     this.dmp = new import_diff_match_patch.diff_match_patch();
@@ -212,7 +219,7 @@ var CrdtManager = class {
   // verschiebt Grenzen und kann dabei ein Surrogatpaar zerlegen, das die
   // Ausrichtung anschliessend wieder zusammenzieht.
   diffOps(current, content) {
-    if (this.diffModus === "zeile") {
+    if (this.diffModus === "zeile" && this.zeilenModusTraegt(current, content)) {
       this.diffGeaendert++;
       const a = this.dmp.diff_linesToChars_(current, content);
       const zeilenweise = this.dmp.diff_main(a.chars1, a.chars2, false);
@@ -228,12 +235,27 @@ var CrdtManager = class {
       return grob.filter((d) => d[1].length > 0);
     }
     const roh = this.dmp.diff_main(current, content);
-    if (this.diffModus !== "semantisch") return roh;
+    if (this.diffModus !== "semantisch" && this.diffModus !== "zeile") return roh;
     const vorher = roh.map((d) => `${d[0]} ${d[1]}`);
     this.dmp.diff_cleanupSemantic(roh);
     const gleich = vorher.length === roh.length && roh.every((d, i) => `${d[0]} ${d[1]}` === vorher[i]);
     if (!gleich) this.diffGeaendert++;
     return roh;
+  }
+  // Traegt der Zeilen-Modus fuer dieses Textpaar noch? Gemessen wird an der
+  // Groesse, an der `diff_linesToChars_` bricht: der Zahl der VERSCHIEDENEN
+  // Zeilen. Herleitung, Messung und Abstand stehen an `zeilenModusSchwelle`.
+  //
+  // Gezaehlt wird ueber BEIDE Texte gemeinsam. Das ist die konservative Wahl:
+  // die harte Grenze gilt fuer den ersten Text allein (40.000), die weichere
+  // fuer beide zusammen (65.535) — wer die Vereinigung unter 40.000 haelt, haelt
+  // beide ein.
+  zeilenModusTraegt(current, content) {
+    if (zeilenzahl(current) + zeilenzahl(content) < zeilenModusSchwelle) return true;
+    const gesehen = /* @__PURE__ */ new Set();
+    for (const zeile of current.split("\n")) gesehen.add(zeile);
+    for (const zeile of content.split("\n")) gesehen.add(zeile);
+    return gesehen.size < zeilenModusSchwelle;
   }
   hasDoc(filePath) {
     return this.docs.has(filePath);

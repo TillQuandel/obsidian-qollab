@@ -275,6 +275,60 @@ const diffModusStandard: DiffModus =
     ? (process.env?.QOLLAB_DIFF_MODUS as DiffModus | undefined)
     : undefined) ?? 'zeile';
 
+// Ab so vielen VERSCHIEDENEN Zeilen faellt `diffOps` aus dem Zeilen-Modus auf
+// `semantisch` zurueck — den Stand, der bis 2026-08-09 ausgeliefert wurde.
+//
+// WARUM: `diff_linesToChars_` deckelt die Zahl der verschiedenen Zeilen. Ist die
+// Marke erreicht, fasst es ALLES AB DORT zu EINEM Token zusammen
+// (`node_modules/diff-match-patch/index.js:492` Abbruch, `:507` `maxLines`
+// = 40000 fuer text1, `:509` 65535 fuer text2). Eine nebenlaeufige
+// Bearbeitung in diesem Sammel-Token laesst beide Geraete denselben Riesenblock
+// loeschen und je ihre eigene Fassung einfuegen — beide Einfuegungen ueberleben
+// die Vereinigung, der Schwanz steht doppelt da (`probe-grenze-nebenlaeufig.mjs`,
+// 45.000 Zeilen: 5.001 verdoppelte Grundtextzeilen; `semantisch` an derselben
+// Stelle: 0). K.o.-Kriterium 1 bleibt gewahrt, aber `docs/produktziel.md`
+// Gruppe 1 „Nichts wird verdoppelt" faellt.
+//
+// WO GENAU DIE MARKE LIEGT, GEMESSEN (`spike/schnitt/probe-grenze-schwelle.mjs`,
+// Kriterium: `chars1` hat ein Zeichen je Zeile, ist es kuerzer als die
+// Zeilenzahl, deckt ein Token mehr als eine Zeile):
+//
+//   gesamt | verschieden | chars1 | kollabiert
+//    45000 |       39998 |  45000 | false
+//    45000 |       39999 |  45000 | false
+//    45000 |       40000 |  40000 | TRUE
+//    45000 |       45000 |  40000 | TRUE
+//
+// Die Reihe mit KONSTANT 45.000 Gesamtzeilen belegt zugleich die Messgroesse:
+// die Bibliothek bricht an den VERSCHIEDENEN Zeilen, nicht an den Gesamtzeilen.
+// Die 65.535 gelten erst fuer den ZWEITEN Text (`maxLines` wird nach `text1`
+// hochgesetzt); massgeblich ist die 40.000 des ersten.
+//
+// DER ABSTAND (39.000 statt 39.999 = 2,5 %) hat drei Gruende:
+//   1. Die Pruefung unten zaehlt ueber `split('\n')`. Die Bibliothek tokenisiert
+//      Zeilen MIT ihrem `\n`; die letzte Zeile ohne Zeilenumbruch ist ihr ein
+//      eigenes Token, dem Split nicht — und ein Text, der auf `\n` endet, gibt
+//      dem Split ein leeres Reststueck, das die Bibliothek nicht kennt. Die
+//      Pruefung kann die Bibliothekszahl deshalb je Text um 1 unter- ODER
+//      ueberschaetzen; nur die Unterschaetzung ist gefaehrlich, und der Abstand
+//      deckt sie.
+//   2. `maxLines = 40000` ist eine interne, undokumentierte Konstante von
+//      diff-match-patch — ein Versionswechsel kann sie still verschieben.
+//   3. 39.000 ist als kollapsfrei GEMESSEN (`probe-grenze.mjs`, Reihe 39.000).
+//      Der Preis des Abstands ist eine Notiz zwischen 39.000 und 40.000
+//      verschiedenen Zeilen, die den Zeilen-Modus nicht bekommt — bei rund
+//      500 kB Text ist das keine reale Lage.
+const zeilenModusSchwelle = 39000;
+
+// Zeilenzahl ueber `indexOf` statt `split`: keine Array-Allokation ueber dem
+// ganzen Text. Ein Text ohne `\n` ist eine Zeile.
+function zeilenzahl(text: string): number {
+  let n = 1;
+  let i = -1;
+  while ((i = text.indexOf('\n', i + 1)) !== -1) n++;
+  return n;
+}
+
 export class CrdtManager {
   private dmp = new diff_match_patch();
   private docs = new Map<string, Y.Doc>();
@@ -335,7 +389,7 @@ export class CrdtManager {
   // verschiebt Grenzen und kann dabei ein Surrogatpaar zerlegen, das die
   // Ausrichtung anschliessend wieder zusammenzieht.
   private diffOps(current: string, content: string): Diff[] {
-    if (this.diffModus === 'zeile') {
+    if (this.diffModus === 'zeile' && this.zeilenModusTraegt(current, content)) {
       // Der Standardweg. `diff_linesToChars_` bildet jede VERSCHIEDENE Zeile auf
       // genau ein Zeichen ab; der Diff laeuft danach auf diesen Zeichen, kennt
       // also keine Grenze innerhalb einer Zeile. `diff_charsToLines_` faltet das
@@ -349,11 +403,11 @@ export class CrdtManager {
       // zeichenweise. Genau das ist der Punkt: dieselbe Aenderung, auf mehreren
       // Geraeten unabhaengig gerechnet, trifft damit DIESELBEN Items.
       //
-      // Grenze der Bibliothek, bewusst hingenommen: `diff_linesToChars_` bricht
-      // bei 65.535 verschiedenen Zeilen ab und fasst den Rest zu EINER Zeile
-      // zusammen. Der Diff bleibt dann korrekt, nur grob — bei einer Notiz, die
-      // diese Grenze erreicht, ist die Op-Sparsamkeit ohnehin nicht mehr das
-      // Problem.
+      // Grenze der Bibliothek: `diff_linesToChars_` bricht bei 40.000
+      // VERSCHIEDENEN Zeilen des ERSTEN Textes ab und fasst alles ab dort zu
+      // EINEM Token zusammen (die 65.535 gelten erst fuer den zweiten Text).
+      // Oberhalb ist dieser Weg nicht mehr tragfaehig — `zeilenModusSchwelle`
+      // oben faengt das ab, mit Messung und Begruendung des Abstands.
       this.diffGeaendert++;
       const a = this.dmp.diff_linesToChars_(current, content);
       const zeilenweise = this.dmp.diff_main(a.chars1, a.chars2, false) as Diff[];
@@ -369,7 +423,10 @@ export class CrdtManager {
       return grob.filter((d) => d[1].length > 0);
     }
     const roh = this.dmp.diff_main(current, content) as Diff[];
-    if (this.diffModus !== 'semantisch') return roh;
+    // `zeile` landet hier nur ueber den Rueckfall an `zeilenModusSchwelle` und
+    // bekommt dann den Stand, der bis 2026-08-09 ausgeliefert wurde. Ein
+    // unbekannter Wert aus `QOLLAB_DIFF_MODUS` bleibt wie bisher bei `roh`.
+    if (this.diffModus !== 'semantisch' && this.diffModus !== 'zeile') return roh;
     // ECHTE Kopie, nicht `roh.slice()`: `diff_cleanupSemantic` schreibt IN die
     // Tupel (`diffs[i][1] = …`). Eine flache Kopie zeigt danach auf dieselben
     // Objekte und der Vergleich meldet immer „unveraendert" — der Zaehler waere
@@ -381,6 +438,25 @@ export class CrdtManager {
       roh.every((d, i) => `${d[0]} ${d[1]}` === vorher[i]);
     if (!gleich) this.diffGeaendert++;
     return roh;
+  }
+
+  // Traegt der Zeilen-Modus fuer dieses Textpaar noch? Gemessen wird an der
+  // Groesse, an der `diff_linesToChars_` bricht: der Zahl der VERSCHIEDENEN
+  // Zeilen. Herleitung, Messung und Abstand stehen an `zeilenModusSchwelle`.
+  //
+  // Gezaehlt wird ueber BEIDE Texte gemeinsam. Das ist die konservative Wahl:
+  // die harte Grenze gilt fuer den ersten Text allein (40.000), die weichere
+  // fuer beide zusammen (65.535) — wer die Vereinigung unter 40.000 haelt, haelt
+  // beide ein.
+  private zeilenModusTraegt(current: string, content: string): boolean {
+    // Billiger Vorfilter: die GESAMTZAHL der Zeilen ist eine obere Schranke fuer
+    // die Zahl der verschiedenen. Bleibt sie unter der Schwelle, ist der teure
+    // Mengenaufbau unnoetig — und das ist jede reale Notiz.
+    if (zeilenzahl(current) + zeilenzahl(content) < zeilenModusSchwelle) return true;
+    const gesehen = new Set<string>();
+    for (const zeile of current.split('\n')) gesehen.add(zeile);
+    for (const zeile of content.split('\n')) gesehen.add(zeile);
+    return gesehen.size < zeilenModusSchwelle;
   }
 
   hasDoc(filePath: string): boolean {

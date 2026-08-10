@@ -171,3 +171,166 @@ describe('setContent: Form der erzeugten Ops', () => {
     expect(grob.reduce((s, o) => s + (o.retain ?? 0), 0)).toBe(0);
   });
 });
+
+// --- Die Bibliotheksgrenze ---------------------------------------------------
+// `diff_linesToChars_` deckelt die Zahl der VERSCHIEDENEN Zeilen. Ab der 40.000.
+// verschiedenen Zeile des ERSTEN Textes faellt alles ab dort zu EINEM Token
+// zusammen (`node_modules/diff-match-patch/index.js:492` Abbruch, `:507`
+// `maxLines = 40000`; die 65.535 auf `:509` gelten erst fuer den zweiten
+// Text). Gemessen mit
+// `spike/schnitt/probe-grenze-schwelle.mjs`:
+//
+//   gesamt | verschieden | chars1 | kollabiert
+//    45000 |       39999 |  45000 | false
+//    45000 |       40000 |  40000 | true
+//
+// Die Reihe mit konstant 45.000 Gesamtzeilen belegt zugleich, dass die
+// Bibliothek an den VERSCHIEDENEN und nicht an den Gesamt-Zeilen bricht.
+//
+// Im kollabierten Schwanz deckt eine einzige Op den ganzen Rest der Notiz.
+// Bearbeiten zwei Geraete NEBENLAEUFIG zwei verschiedene Stellen dort, loeschen
+// beide denselben Riesenblock und fuegen jeweils ihre eigene Fassung ein — beide
+// Einfuegungen ueberleben die Vereinigung, der Schwanz steht doppelt da
+// (`spike/schnitt/probe-grenze-nebenlaeufig.mjs`, 45.000 Zeilen: 5.001 doppelt).
+// K.o.-Kriterium 1 bleibt gewahrt, `docs/produktziel.md` Gruppe 1 „Nichts wird
+// verdoppelt" faellt.
+
+// Knapp oberhalb der Grenze: 41.000 verschiedene Zeilen. Der kollabierte Schwanz
+// umfasst 41.000 − 39.999 = 1.001 Zeilen.
+const OBERHALB = 41000;
+// Knapp unterhalb der eingebauten Schwelle (39.000). Die Schwelle zaehlt die
+// verschiedenen Zeilen BEIDER Texte zusammen; hier sind das 38.801.
+const UNTERHALB = 38800;
+
+function grundtext(zeilen: number): string {
+  const z: string[] = [];
+  for (let i = 0; i < zeilen; i++) z.push(`n0-base-${i}`);
+  return z.join(NL) + NL;
+}
+
+function mitMarke(text: string, idx: number, marke: string): string {
+  const z = text.split(NL);
+  z.splice(idx, 0, marke);
+  return z.join(NL);
+}
+
+// Zwei Replikate mit gemeinsamem Ausgangsstand bearbeiten unabhaengig zwei
+// VERSCHIEDENE Stellen, danach sehen sie einander. Kein Transport, kein Tor.
+function nebenlaeufig(basis: string, a: string, b: string, modus?: DiffModus): string {
+  const quelle = new CrdtManager();
+  if (modus) quelle.diffModus = modus;
+  quelle.setContent('gross.md', basis);
+  const saat = quelle.encodeState('gross.md');
+
+  const mach = (neu: string): Uint8Array => {
+    const c = new CrdtManager();
+    if (modus) c.diffModus = modus;
+    c.applyUpdate('gross.md', saat);
+    c.setContent('gross.md', neu);
+    return c.encodeState('gross.md');
+  };
+
+  const ziel = new Y.Doc();
+  Y.applyUpdate(ziel, mach(a));
+  Y.applyUpdate(ziel, mach(b));
+  return ziel.getText('content').toString();
+}
+
+// Wie viele Grundtextzeilen stehen mehr als einmal da?
+function doppelt(ergebnis: string, zeilen: number): number {
+  const zaehler = new Map<string, number>();
+  for (const z of ergebnis.split(NL)) {
+    if (z.length > 0) zaehler.set(z, (zaehler.get(z) ?? 0) + 1);
+  }
+  let summe = 0;
+  for (let i = 0; i < zeilen; i++) {
+    const c = zaehler.get(`n0-base-${i}`) ?? 0;
+    if (c > 1) summe += c - 1;
+  }
+  return summe;
+}
+
+describe('setContent: jenseits der Zeilengrenze von diff_linesToChars_', () => {
+  it('verdoppelt den kollabierten Schwanz nicht', () => {
+    const basis = grundtext(OBERHALB);
+    const erg = nebenlaeufig(
+      basis,
+      mitMarke(basis, OBERHALB - 200, 'n0-DA-1'),
+      mitMarke(basis, OBERHALB - 100, 'n0-DB-1')
+    );
+    const zeilen = erg.split(NL).filter((z) => z.length > 0);
+    // Beide Einfuegungen kommen an — sonst misst der Test nur, dass nichts
+    // passiert ist.
+    expect(zeilen).toContain('n0-DA-1');
+    expect(zeilen).toContain('n0-DB-1');
+    expect(doppelt(erg, OBERHALB)).toBe(0);
+    expect(zeilen.length).toBe(OBERHALB + 2);
+  });
+
+  // GEGENPROBE zum Instrument: dieselbe Lage UNTERHALB der Grenze ist schon im
+  // Bestand sauber. Zeigt der Zaehler auch hier eine Verdopplung, misst er den
+  // Kollaps nicht, sondern irgendetwas anderes.
+  it('unterhalb der Grenze ist dieselbe Lage sauber', () => {
+    const basis = grundtext(UNTERHALB);
+    const erg = nebenlaeufig(
+      basis,
+      mitMarke(basis, UNTERHALB - 200, 'n0-DA-1'),
+      mitMarke(basis, UNTERHALB - 100, 'n0-DB-1')
+    );
+    expect(doppelt(erg, UNTERHALB)).toBe(0);
+    expect(erg.split(NL).filter((z) => z.length > 0).length).toBe(UNTERHALB + 2);
+  });
+});
+
+// --- Die wichtigste Gegenprobe: unterhalb bleibt es zeilentreu ---------------
+// Eine zu tief gesetzte Schwelle wuerde den Fix von `82c5426` still abschalten.
+// Deshalb dieselbe aktenkundige Ersetzung wie ganz oben, aber eingebettet in
+// eine Notiz knapp unterhalb der Schwelle.
+
+const FUELL = UNTERHALB - 5; // + der 5-zeilige VOR-Block = 38.800 verschiedene
+
+// `grundtext` endet auf genau einem NL, `VOR`/`NACH` beginnen mit einem
+// Nicht-NL — die Verkettung bleibt zeilenrein.
+const grossVor = (): string => grundtext(FUELL) + VOR;
+const grossNach = (): string => grundtext(FUELL) + NACH;
+
+function replikateGross(anzahl: number, modus?: DiffModus): string[] {
+  const quelle = new CrdtManager();
+  if (modus) quelle.diffModus = modus;
+  quelle.setContent('g.md', grossVor());
+  const saat = quelle.encodeState('g.md');
+
+  const repl: CrdtManager[] = [];
+  for (let i = 0; i < anzahl; i++) {
+    const c = new CrdtManager();
+    if (modus) c.diffModus = modus;
+    c.applyUpdate('g.md', saat);
+    repl.push(c);
+  }
+  const nach = grossNach();
+  for (const c of repl) c.setContent('g.md', nach);
+  for (const a of repl) {
+    for (const b of repl) if (a !== b) a.applyUpdate('g.md', b.encodeState('g.md'));
+  }
+  return repl.map((c) => c.getContent('g.md'));
+}
+
+describe('setContent: unterhalb der Schwelle bleibt der Fix von 82c5426 aktiv', () => {
+  it.each([2, 3])(
+    '%i Replikate verlieren die Grundtextzeile auch in einer grossen Notiz nicht',
+    (n) => {
+      const erg = replikateGross(n);
+      for (const t of erg) expect(t).toBe(erg[0]);
+      expect(erg[0].split(NL)).toContain('n5-base-1');
+      expect(erg[0]).toBe(grossNach());
+    }
+  );
+
+  // GEGENPROBE: bei dieser Groesse verliert der Bestandsschalter die Zeile
+  // weiterhin. Waere der Test blind, meldete er auch hier gruen.
+  it('Bestandsschalter `semantisch` verliert sie bei derselben Groesse', () => {
+    const erg = replikateGross(2, 'semantisch');
+    for (const t of erg) expect(t).toBe(erg[0]);
+    expect(erg[0].split(NL)).not.toContain('n5-base-1');
+  });
+});
