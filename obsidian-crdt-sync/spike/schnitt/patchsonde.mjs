@@ -96,6 +96,11 @@ export function sondeInstalliere(variante = 'bestand') {
 
   const finde = {
     bestand: (self, text, pattern, loc) => origMatch.call(self, text, pattern, loc),
+    // Wie `bestand` — nur ein sprechender Name fuer Laeufe gegen einen Bundle,
+    // in dem `threeWayMerge` gar kein `patch_apply` mehr benutzt. Die Zaehler
+    // muessen dann auf null stehen; das ist die Gegenprobe, dass der neue Merge
+    // wirklich greift und nicht der alte Pfad weiterlaeuft.
+    dreiwege: (self, text, pattern, loc) => origMatch.call(self, text, pattern, loc),
     'kein-fuzz': (self, text, pattern) => text.indexOf(pattern),
     'exakt-nah': (self, text, pattern, loc) => naechstesVorkommen(text, pattern, loc),
     'nur-exakt': (self, text, pattern, loc) => {

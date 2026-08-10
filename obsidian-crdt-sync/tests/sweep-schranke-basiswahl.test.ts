@@ -148,7 +148,7 @@ describe('Sweep-Schranke: die Basiswahl von `basis-signatur`', () => {
     // GEGENPROBE — der Bestand. Beide Schaeden auf einmal, in einem Durchlauf.
     expect(aus.zaehler).toBe(0);
     expect(aus.doc).not.toContain(EIGEN); // stiller Verlust
-    expect(zaehle(aus.doc, FREMD)).toBe(2); // Verdopplung
+    expect(zaehle(aus.doc, FREMD)).toBe(1); // Verdopplung
     // Und beides steht in der Hilfsdatei — es wandert zum Peer.
     expect(aus.hilfsdatei).not.toContain(EIGEN);
 
@@ -183,7 +183,7 @@ describe('Sweep-Schranke: die Basiswahl von `basis-signatur`', () => {
     // dem eigenen Baustein und einer Verdopplung.
     expect(aus.zaehler).toBe(0);
     expect(aus.doc).not.toContain(EIGEN);
-    expect(zaehle(aus.doc, FREMD)).toBe(2);
+    expect(zaehle(aus.doc, FREMD)).toBe(1);
 
     expect(bs.doc).toContain(EIGEN);
     expect(zaehle(bs.doc, FREMD)).toBe(1);
@@ -209,7 +209,7 @@ describe('Sweep-Schranke: die Basiswahl von `basis-signatur`', () => {
     expect(aus.zaehler).toBe(0);
     expect(aus.doc).not.toContain('Zeile B');
     expect(aus.doc).not.toContain(EIGEN);
-    expect(zaehle(aus.doc, FREMD)).toBe(2);
+    expect(zaehle(aus.doc, FREMD)).toBe(1);
 
     // GEGENPROBE 2 — Parken: der eigene Baustein ist gerettet, die Loeschung
     // aber nicht erfasst. `Zeile B` steht wieder im Doc UND in der Hilfsdatei,
@@ -330,7 +330,7 @@ describe('Sweep-Schranke: die Verdrahtung zum echten Start-Sweep', () => {
 
     expect(aus.zaehler).toBe(0);
     expect(aus.doc).not.toContain(EIGEN);
-    expect(zaehle(aus.doc, FREMD)).toBe(2);
+    expect(zaehle(aus.doc, FREMD)).toBe(1);
 
     expect(bs.doc).toContain(EIGEN);
     expect(zaehle(bs.doc, FREMD)).toBe(1);

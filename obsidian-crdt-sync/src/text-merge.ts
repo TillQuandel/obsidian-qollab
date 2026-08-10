@@ -76,6 +76,181 @@ export function vergleichsfassung(text: string): string {
 // Diese Funktion bildet keine Diff-Indizes auf Zeilen zurück.
 const dmp = new diff_match_patch();
 
+// ZEILENWEISER 3-WEGE-MERGE — seit 2026-08-11 statt `patch_apply`.
+//
+// Warum der Fuzzy-Patcher hier weg musste, gemessen (`spike/schnitt/`, Bericht
+// `.superpowers/sdd/patch-apply-2026-08-11.md`):
+//
+// `patch_apply` sucht die Stelle eines Hunks unscharf. Findet es eine Stelle,
+// deren Kontext nicht zeichengleich ist, übersetzt es die Op-Indizes per
+// `diff_xIndex` (index.js:1869-1899) — die Op landet verschoben und greift
+// mitten in eine unbeteiligte Zeile. Über 3.000 Tripel kostete das **431
+// zerstörte Grundtextzeilen**. Der Verwurf, den der Fuzz dabei vermeidet, ist
+// null: `results[i] === false` trat über 4.283 Hunks kein einziges Mal ein.
+//
+// Ihn einfach abzuschalten trägt aber NICHT — auch das ist gemessen: Die exakte
+// Suche verwirft die vielen Fälle mit, in denen der Fuzz **richtig** liegt
+// (+35,4 % Gesamt-Textverlust; selbst `threeWayMerge('a\n','a\nLokal\n',
+// 'a\nFremd\n')` fiel dann aus).
+//
+// Der Ausweg ist, die Frage anders zu stellen. `patch_apply` ist ein Werkzeug
+// für den Fall OHNE gemeinsamen Vorfahren — hier gibt es einen: `base`. Beide
+// Seiten lassen sich dagegen auflösen, ganz ohne unscharfe Suche. Genau das tut
+// `dreiWegeZeilen`, und weil es auf ZEILEN arbeitet, kann keine Op mehr eine
+// fremde Zeile aufbrechen.
+//
+// Ergebnis über dieselben 3.000 Tripel: **Grundtextverlust 0, stiller Verlust
+// der lokalen Änderung 0**, Textmenge +2,4 %.
+//
+// Zwei Eigenschaften, die dabei teuer gelernt wurden und an denen der Merge
+// hängt, siehe `ueberlappt` und die Idempotenz-Zweige in `dreiWegeZeilen`.
+
+// Zeilen inklusive Zeilenende; die letzte hat keines, wenn der Text nicht auf
+// einem endet. Das ist `splitLines` weiter unten — hier bewusst dieselbe
+// Funktion und nicht `split('\n').slice(0, -1)`, wie es der Messapparat tut:
+// Dort endet jeder Text auf `\n`, in Obsidian ist das Gegenteil der Normalfall.
+// Die Apparat-Fassung verschluckt eine Schlusszeile ohne Zeilenende
+// VOLLSTÄNDIG — gemessen an `obsidian-reality.test.ts`, wo aus dem Stand
+// `'ZWEITER'` ein leerer Text wurde.
+const zeilenListe = (text: string): string[] => (text.length ? splitLines(text) : []);
+
+function zeilenDiff(o: string, x: string): [number, string][] {
+  const { chars1, chars2, lineArray } = dmp.diff_linesToChars_(o, x);
+  const d = dmp.diff_main(chars1, chars2, false);
+  dmp.diff_charsToLines_(d, lineArray);
+  return d as unknown as [number, string][];
+}
+
+// Ein Hunk: welcher Basisbereich [start, ende) wird durch welche Zeilen ersetzt.
+type Hunk = [number, number, string[]];
+
+function hunks(base: string, x: string): Hunk[] {
+  const out: Hunk[] = [];
+  let i = 0;
+  const d = zeilenDiff(base, x);
+  for (let k = 0; k < d.length; k++) {
+    const [op, txt] = d[k];
+    const zs = zeilenListe(txt);
+    if (op === 0) {
+      i += zs.length;
+      continue;
+    }
+    if (op === -1) {
+      let ersatz: string[] = [];
+      if (k + 1 < d.length && d[k + 1][0] === 1) {
+        ersatz = zeilenListe(d[k + 1][1]);
+        k++;
+      }
+      out.push([i, i + zs.length, ersatz]);
+      i += zs.length;
+    } else {
+      out.push([i, i, zs]);
+    }
+  }
+  return out;
+}
+
+// Gehört der Hunk in den gerade eingesammelten Bereich [start, ende)?
+//
+// Der Unterschied zwischen „grenzt an" und „überlappt" ist hier nicht
+// akademisch: Löscht die eine Seite den Basisbereich [3,4) und fügt die andere
+// bei Position 4 ein, berühren sie sich nur. Wer beide als Konflikt behandelt,
+// behält beide Fassungen — und damit kehrt die gelöschte Zeile zurück. Genau so
+// fiel `sweep-schranke-basiswahl.test.ts`, der Test, der die Löschsemantik hält.
+function ueberlappt(
+  h: Hunk,
+  start: number,
+  ende: number,
+  gegenEinfuegungen: Set<number>
+): boolean {
+  const [s, e] = h;
+  // Der Hunk, der die Runde eröffnet, gehört immer dazu. Ohne diesen Fall wird
+  // eine Einfügung bei `start` nie konsumiert und die Schleife dreht endlos.
+  if (s === start) return true;
+  if (s === e) {
+    // Reine Einfügung: belegt keinen Basisbereich, darf also andocken. Konflikt
+    // nur, wenn sie echt im Bereich liegt oder die Gegenseite an derselben
+    // Stelle einfügt — dann ist die Reihenfolge offen und muss festgelegt werden.
+    if (s > start && s < ende) return true;
+    return gegenEinfuegungen.has(s);
+  }
+  return s < ende && e > start;
+}
+
+function dreiWegeZeilen(base: string, a: string, b: string): string {
+  const ob = zeilenListe(base);
+  const ha = hunks(base, a);
+  const hb = hunks(base, b);
+  const out: string[] = [];
+  let i = 0;
+  let ia = 0;
+  let ib = 0;
+
+  while (ia < ha.length || ib < hb.length) {
+    const sa = ia < ha.length ? ha[ia][0] : Infinity;
+    const sb = ib < hb.length ? hb[ib][0] : Infinity;
+    const start = Math.min(sa, sb);
+    for (; i < start && i < ob.length; i++) out.push(ob[i]);
+
+    let ende = start;
+    const aH: Hunk[] = [];
+    const bH: Hunk[] = [];
+    const aEinfuegungen = new Set<number>();
+    const bEinfuegungen = new Set<number>();
+    let gewachsen = true;
+    while (gewachsen) {
+      gewachsen = false;
+      while (ia < ha.length && ueberlappt(ha[ia], start, ende, bEinfuegungen)) {
+        ende = Math.max(ende, ha[ia][1]);
+        if (ha[ia][0] === ha[ia][1]) aEinfuegungen.add(ha[ia][0]);
+        aH.push(ha[ia++]);
+        gewachsen = true;
+      }
+      while (ib < hb.length && ueberlappt(hb[ib], start, ende, aEinfuegungen)) {
+        ende = Math.max(ende, hb[ib][1]);
+        if (hb[ib][0] === hb[ib][1]) bEinfuegungen.add(hb[ib][0]);
+        bH.push(hb[ib++]);
+        gewachsen = true;
+      }
+    }
+
+    const bau = (hs: Hunk[]): string[] => {
+      const res: string[] = [];
+      let p = start;
+      for (const [s, e, r] of hs) {
+        for (; p < s; p++) res.push(ob[p]);
+        res.push(...r);
+        p = e;
+      }
+      for (; p < ende; p++) res.push(ob[p]);
+      return res;
+    };
+    const ta = (aH.length ? bau(aH) : ob.slice(start, ende)).join('');
+    const tb = (bH.length ? bau(bH) : ob.slice(start, ende)).join('');
+
+    if (ta === tb) out.push(ta);
+    else if (aH.length === 0) out.push(tb);
+    else if (bH.length === 0) out.push(ta);
+    // IDEMPOTENZ. Trägt eine Fassung die andere bereits vollständig, ist nichts
+    // nachzutragen. Ohne diese beiden Zweige hängt „beide behalten" bei jedem
+    // weiteren Merge erneut an — gemessen 132 → 150 → 168 Zeichen über drei
+    // Runden, dieselbe Bauart wie die im August behobene nicht-idempotente
+    // Ersetzung in `crdt-manager.ts`.
+    else if (ta.includes(tb)) out.push(ta);
+    else if (tb.includes(ta)) out.push(tb);
+    else {
+      // Beide Seiten haben dieselbe Stelle angefasst und keine trägt die andere:
+      // beide Fassungen behalten, in fester Reihenfolge, damit alle Geräte
+      // dasselbe Ergebnis rechnen. Sichtbar statt still (Gruppe 5).
+      const [x, y] = [ta, tb].sort();
+      out.push(x, y);
+    }
+    i = Math.max(i, ende);
+  }
+  for (; i < ob.length; i++) out.push(ob[i]);
+  return out.join('');
+}
+
 export function threeWayMerge(base: string, local: string, other: string): string {
   const localBom = local.startsWith(BOM);
   const localBody = ohneBom(local);
@@ -84,8 +259,7 @@ export function threeWayMerge(base: string, local: string, other: string): strin
   const localLf = aufLf(localBody);
   const otherLf = aufLf(ohneBom(other));
 
-  const patches = dmp.patch_make(baseLf, localLf);
-  const [merged] = dmp.patch_apply(patches, otherLf);
+  const merged = dreiWegeZeilen(baseLf, localLf, otherLf);
 
   const eol = localBody.includes('\r\n') ? '\r\n' : '\n';
   const out = eol === '\n' ? merged : merged.replace(/\n/g, eol);

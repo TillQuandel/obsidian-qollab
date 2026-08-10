@@ -508,14 +508,115 @@ function vergleichsfassung(text) {
   return aufLf(ohneBom(text));
 }
 var dmp = new import_diff_match_patch2.diff_match_patch();
+var zeilenListe = (text) => text.length ? splitLines(text) : [];
+function zeilenDiff(o, x) {
+  const { chars1, chars2, lineArray } = dmp.diff_linesToChars_(o, x);
+  const d = dmp.diff_main(chars1, chars2, false);
+  dmp.diff_charsToLines_(d, lineArray);
+  return d;
+}
+function hunks(base, x) {
+  const out = [];
+  let i = 0;
+  const d = zeilenDiff(base, x);
+  for (let k = 0; k < d.length; k++) {
+    const [op, txt] = d[k];
+    const zs = zeilenListe(txt);
+    if (op === 0) {
+      i += zs.length;
+      continue;
+    }
+    if (op === -1) {
+      let ersatz = [];
+      if (k + 1 < d.length && d[k + 1][0] === 1) {
+        ersatz = zeilenListe(d[k + 1][1]);
+        k++;
+      }
+      out.push([i, i + zs.length, ersatz]);
+      i += zs.length;
+    } else {
+      out.push([i, i, zs]);
+    }
+  }
+  return out;
+}
+function ueberlappt(h, start, ende, gegenEinfuegungen) {
+  const [s, e] = h;
+  if (s === start) return true;
+  if (s === e) {
+    if (s > start && s < ende) return true;
+    return gegenEinfuegungen.has(s);
+  }
+  return s < ende && e > start;
+}
+function dreiWegeZeilen(base, a, b) {
+  const ob = zeilenListe(base);
+  const ha = hunks(base, a);
+  const hb = hunks(base, b);
+  const out = [];
+  let i = 0;
+  let ia = 0;
+  let ib = 0;
+  while (ia < ha.length || ib < hb.length) {
+    const sa = ia < ha.length ? ha[ia][0] : Infinity;
+    const sb = ib < hb.length ? hb[ib][0] : Infinity;
+    const start = Math.min(sa, sb);
+    for (; i < start && i < ob.length; i++) out.push(ob[i]);
+    let ende = start;
+    const aH = [];
+    const bH = [];
+    const aEinfuegungen = /* @__PURE__ */ new Set();
+    const bEinfuegungen = /* @__PURE__ */ new Set();
+    let gewachsen = true;
+    while (gewachsen) {
+      gewachsen = false;
+      while (ia < ha.length && ueberlappt(ha[ia], start, ende, bEinfuegungen)) {
+        ende = Math.max(ende, ha[ia][1]);
+        if (ha[ia][0] === ha[ia][1]) aEinfuegungen.add(ha[ia][0]);
+        aH.push(ha[ia++]);
+        gewachsen = true;
+      }
+      while (ib < hb.length && ueberlappt(hb[ib], start, ende, aEinfuegungen)) {
+        ende = Math.max(ende, hb[ib][1]);
+        if (hb[ib][0] === hb[ib][1]) bEinfuegungen.add(hb[ib][0]);
+        bH.push(hb[ib++]);
+        gewachsen = true;
+      }
+    }
+    const bau = (hs) => {
+      const res = [];
+      let p = start;
+      for (const [s, e, r] of hs) {
+        for (; p < s; p++) res.push(ob[p]);
+        res.push(...r);
+        p = e;
+      }
+      for (; p < ende; p++) res.push(ob[p]);
+      return res;
+    };
+    const ta = (aH.length ? bau(aH) : ob.slice(start, ende)).join("");
+    const tb = (bH.length ? bau(bH) : ob.slice(start, ende)).join("");
+    if (ta === tb) out.push(ta);
+    else if (aH.length === 0) out.push(tb);
+    else if (bH.length === 0) out.push(ta);
+    else if (ta.includes(tb)) out.push(ta);
+    else if (tb.includes(ta)) out.push(tb);
+    else {
+      const [x, y] = [ta, tb].sort();
+      out.push(x, y);
+    }
+    i = Math.max(i, ende);
+  }
+  for (; i < ob.length; i++) out.push(ob[i]);
+  return out.join("");
+}
 function threeWayMerge(base, local, other) {
   const localBom = local.startsWith(BOM);
   const localBody = ohneBom(local);
   const baseLf = aufLf(ohneBom(base));
   const localLf = aufLf(localBody);
   const otherLf = aufLf(ohneBom(other));
-  const patches = dmp.patch_make(baseLf, localLf);
-  const [merged] = dmp.patch_apply(patches, otherLf);
+  const merged = dreiWegeZeilen(baseLf, localLf, otherLf);
   const eol = localBody.includes("\r\n") ? "\r\n" : "\n";
   const out = eol === "\n" ? merged : merged.replace(/\n/g, eol);
   return localBom ? BOM + out : out;

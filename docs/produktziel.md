@@ -280,7 +280,15 @@ verworfene Hunk wird als sichtbarer Block angehängt statt geschluckt — mit Pr
 dasteht. Ohne diese Prüfung ist die Meldung **nicht idempotent** (Textlänge 121 → 186 → 251 über
 drei Merge-Runden, dieselbe Bauart wie die im August behobene Ersetzung).
 
-**Der Einbau ist am selben Tag versucht worden und gescheitert** (Branch
+> **BEHOBEN am 2026-08-11 — aber anders als hier beschrieben.** Der Rest-Verlust ist weg, und
+> zwar nicht durch Abschalten des Fuzz, sondern durch einen **Werkzeugwechsel**: `threeWayMerge`
+> mergt jetzt **zeilenweise gegen die Basis** statt fuzzy zu patchen (Abschnitt unten). Alle acht
+> gemessenen Zellen: Grundtextverlust **23 → 0**, Gesamt-Textverlust −18,3 %, Verdopplung −6,5 %.
+> Auch die drei Achsen, an denen der Fix vom 2026-08-10 nicht trug — N ≥ 5, große Notizen,
+> `mdModus: 'ueberschreiben'` —, sind damit erledigt. Der folgende Abschnitt bleibt stehen, weil
+> die Messungen gültig sind und der Weg dorthin erklärt, warum die naheliegende Lösung nicht taugt.
+
+**Der Einbau der Melde-Variante ist am selben Tag versucht worden und gescheitert** (Branch
 `versuch/patch-apply-einbau`, nicht gemergt). Vier Anläufe, vier Befunde:
 
 1. **Die exakte Suche bricht den Alltagsfall.** `threeWayMerge('a\n','a\nLokal\n','a\nFremd\n')`
@@ -299,6 +307,45 @@ für den Unterschied zwischen „einsortiert" und „angehängt".** `verlust` z�
 vorhanden, sobald es irgendwo im Text steht — auch in einem Meldeblock. Die Tabelle oben
 **überschätzt deshalb, wie günstig der Tausch ausfällt.** Wer hier weiterarbeitet, braucht zuerst
 eine Kennzahl, die beides unterscheidet.
+
+### Die Lösung: zeilenweiser 3-Wege-Merge statt Fuzzy-Patch (2026-08-11)
+
+**`patch_apply` war das falsche Werkzeug.** Es ist für den Fall **ohne** gemeinsamen Vorfahren
+gebaut — hier gibt es einen: `base`. Beide Seiten werden jetzt zeilenweise dagegen aufgelöst, ohne
+unscharfe Suche. Der Hinweis stand seit Wochen im eigenen Messapparat
+(`spike/schnitt/schnitte.mjs:39`: „Wo ein echter Vorfahr vorliegt, ist der Fuzz unnötig").
+
+Weil auf **Zeilen** gearbeitet wird, kann keine Operation mehr eine fremde Zeile aufbrechen — das
+war die Schadensmechanik des Zeichen-Diffs.
+
+| Summe über acht Zellen | `WEG` | `verlust` | `verdopp` | `div` |
+| --- | --- | --- | --- | --- |
+| Bestand (`patch_apply`) | **23** | 1.679 | 10.672 | 2 |
+| **zeilenweise** | **0** | **1.371** (−18,3 %) | **9.982** (−6,5 %) | **1** |
+
+Kein Rückschritt in einer einzigen Zelle, in keiner Spalte. 566/566 Tests grün.
+
+**Zwei Nebenwirkungen, ausdrücklich:** Bei nebenläufigen Einfügungen an derselben Stelle steht
+jetzt der fremde Beitrag vor dem lokalen (sortiert, damit **alle** Geräte dasselbe rechnen). Und
+die dokumentierte Schwäche „`patch_apply` dedupliziert nicht" entfällt an der Wurzel — wo beide
+Seiten dieselbe Zeile hinzufügen, ist das ein Beitrag, kein zweiter.
+
+**Was dabei offen bleibt — die Grenzen von diff3 sind bekannt und nachgemessen:**
+
+- **diff3 ist formal nicht idempotent** (Khanna/Kunal/Pierce, FSTTCS 2007, Fact 4.2.2). Gemessen
+  über 2.000 Seeds: der neue Merge in **24,7 %** der Fälle, der **Bestand in 100 %**. Die
+  verbleibenden Fälle sind ausnahmslos *wachsende* Ergebnisse — mehrfaches Mergen derselben `.md`
+  (Sweep, mehrfache Zustellung) kann eine Zeile verdoppeln. Die Harness zeigt `verdopp` trotzdem
+  gesunken: überkompensiert, nicht beseitigt.
+- **Konvergenz ist nicht garantiert.** Über 2.000 Seeds mit drei Beiträgen liefern **13,7 %** der
+  Merge-Reihenfolgen verschiedene Texte. Grundtext geht dabei in **keiner** Reihenfolge verloren,
+  und `div` steht in den gemessenen Zellen bei 0–1, weil Yjs darüberliegt. Für N ≥ 5 über alle
+  Achsen ist das nicht abschließend belegt.
+- **„Beide behalten in sortierter Reihenfolge"** ist die Interleaving-Anomalie aus Kleppmann et
+  al. (PaPoC '19): Sortierung stellt Konvergenz her, nicht Lesbarkeit.
+- **Verschobene Blöcke:** Der Literaturbefund (§4.3, Blockduplikation) trifft unsere Lage
+  **nicht** — gemessen 0 doppelt, 0 verloren; der Bestand verlor dort 297 Zeilen.
+- **Kein Realtest.** Die Batterie ist weiterhin durch den toten Dateiwächter blockiert.
 
 **Offen vor einem Einbau:** Der gemeldete Block wandert über den Sync zu allen Peers und wird dort
 gewöhnlicher Text — dieselbe Lage wie bei den Git-Konfliktmarkern unter „Offene Widersprüche"

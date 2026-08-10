@@ -230,17 +230,23 @@ describe('Task 18 / Teil 1 — geprüfte Kandidaten, die NICHT die Quelle sind',
   });
 });
 
-describe('Task 18 / Q3 — threeWayMerge dedupliziert nicht (nur bei .md-Konflikten)', () => {
-  // Nur in den Modi MIT Datei-Konflikten messbar (baseline 5/40, baselineRace
-  // 7/40), in `noMdConflict` 0/40. Es ist die in text-merge.ts dokumentierte
-  // WARNUNG: enthält `local` eine Einfügung, die `other` bereits hat, fügt
-  // `patch_apply` sie ein zweites Mal ein. `chooseLocalDiffBase` existiert genau
-  // dagegen — die Heuristik greift nicht in jeder Lage.
-  it('Q3: eine Einfügung, die beide Seiten schon tragen, wird erneut eingefügt', () => {
+describe('Task 18 / Q3 — beidseitig vorhandene Einfügung wird nicht verdoppelt', () => {
+  // BIS 2026-08-11 war das die umgekehrte Zusage, und sie dokumentierte einen
+  // Mangel: Enthielt `local` eine Einfügung, die `other` bereits trug, fügte
+  // `patch_apply` sie ein ZWEITES Mal ein (die WARNUNG in text-merge.ts). Nur
+  // in den Modi mit Datei-Konflikten messbar (baseline 5/40, baselineRace 7/40),
+  // in `noMdConflict` 0/40. `chooseLocalDiffBase` existiert genau dagegen — als
+  // Heuristik, die nicht in jeder Lage greift.
+  //
+  // Mit dem zeilenweisen 3-Wege-Merge entfällt der Mangel an der Wurzel: Beide
+  // Seiten werden gegen die Basis aufgelöst, und wo beide dieselbe Zeile
+  // hinzufügen, ist das EIN Beitrag, kein zweiter. Damit ist die Verdopplung
+  // nicht mehr abzufangen, sondern schlicht ausgeschlossen.
+  it('Q3: eine Einfügung, die beide Seiten schon tragen, steht genau einmal', () => {
     const basis = 'a\n';
     const lokal = 'a\nFREMD\n'; // die .md hat den Fremd-Edit bereits aufgeholt
     const anderer = 'a\nFREMD\n'; // der Doc auch
     const res = threeWayMerge(basis, lokal, anderer);
-    expect(zaehle(res, 'FREMD')).toBe(2);
+    expect(zaehle(res, 'FREMD')).toBe(1);
   });
 });
