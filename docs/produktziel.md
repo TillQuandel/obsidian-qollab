@@ -520,6 +520,26 @@ rufen `H-SETUP-SHARED`, und dort steht der Timeout, nicht im Runner:
 liegen wieder unter der 120-s-Frist. Die Diagnose gilt also auch für sie — die Korrektur war nur
 unvollständig, weil sie an den Runner-Dateien ansetzte statt am Helfer.
 
+**Zweiter Anlauf mit korrigiertem Helfer (`harness-ext-disc.ps1`, dieselben zwei Werte auf 240 s):
+Der Fix trägt.** `r13` und `r14` erreichen ihre Asserts. Die Serie wurde bei `r15` abgebrochen
+(Hintergrundlauf gekillt), `r15`/`r16` stehen aus.
+
+| Runner | vorher | jetzt | rote Asserts |
+| --- | --- | --- | --- |
+| `r13` | 0 Asserts erreicht | **13 erreicht** | `alt-A-1x` ist **2** soll 1; `alt-B-1x` ist **3** soll 1 |
+| `r14` | 0 Asserts erreicht | **15 erreicht** | `kontrolle2-keine-duplikate` ist **2/2/1** soll 1/1/1 |
+
+**Beide roten Befunde sind Duplikate, kein Verlust** — und sie haben eine naheliegende, aber
+**ungeprüfte** Erklärung: Der extern geschriebene Stand wird geparkt und per `unionMerge`
+aufgelöst; `unionMerge` hat keinen gemeinsamen Vorfahren und kann deshalb per Konstruktion nicht
+deduplizieren. Genau das sagt der Code selbst zu (`sync-handler.ts:365-370`: „verliert nie,
+verdoppelt genau einmal sichtbar"). Bei `r13` ist die tragende Zusage
+(`externe-aenderung-ueberlebt`) grün — es fehlt nichts, es steht doppelt da.
+
+**`r11` passt NICHT in dieses Muster.** Dort fehlt Text (0 statt 1), und genau das dürfte
+`unionMerge` nie tun. Der Vorlauf-Diskriminator (`agent-t4-vorlauf.ps1`) ist dafür gebaut, aber
+noch nicht gefahren.
+
 **`r11` ist der ernste Befund.** Der Runner prüft den Doc-Vorlauf (Task 16): A editiert eine Notiz,
 **nur die Sidecar** reist zu B (die `.md` bewusst nicht, sonst entsteht kein Vorlauf), B hat die
 Notiz nie geöffnet, dann zwei Edits in B kurz hintereinander. Zusage laut Kopfkommentar: *„As Zeile

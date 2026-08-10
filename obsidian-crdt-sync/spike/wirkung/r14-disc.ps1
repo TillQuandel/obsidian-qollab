@@ -11,7 +11,7 @@
 param([string]$RunId = ("r14-" + (Get-Date -Format "yyyyMMdd-HHmmss")))
 
 . "C:\tmp\qollab-test\harness\harness.ps1"
-. "C:\tmp\qollab-test\harness\harness-ext.ps1"
+. "C:\tmp\qollab-test\harness\harness-ext-disc.ps1"
 
 $szenario        = 'r14'
 $verdictOverride = $null
