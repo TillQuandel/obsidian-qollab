@@ -1027,10 +1027,80 @@ die der Gewinner bereits trägt — nur an anderer Position —, ist ein künfti
    **aber nicht kostenfrei**: Auf Z0 steigt `verlust` von 103 auf 123 (+19 %), auf Z3/Z6 sinkt er.
 
 **Was das NICHT ist: ein Fix.** Der Messarm benutzt den Doc-Stand *anderer* Geräte, den ein echtes
-Gerät nicht hat — er zeigt das Potenzial, nicht den Weg. **Ungemessen, aber naheliegend:** ein rein
-**lokales, zeilenweises** Gate an `switchToGuid` — nur materialisieren, was `winnerText` nicht schon
-trägt. `winnerText` steht dort lokal zur Verfügung (`:1443`). Das Gate existiert bereits, es ist nur
-zu grob: Gleichheit des ganzen Textes statt je Zeile.
+Gerät nicht hat — er zeigt das Potenzial, nicht den Weg.
+
+### Das naheliegende Gate ist gefallen — die Verdopplung ist der Preis der Urheberschaft (2026-08-12)
+
+Der naheliegende Eingriff war: ein rein **lokales, zeilenweises** Gate an `switchToGuid`, das nur
+materialisiert, was `winnerText` nicht schon trägt. `winnerText` steht dort lokal zur Verfügung.
+**Er ist gemessen gefallen, und der Grund ist strukturell — er trifft jeden Ansatz dieser Bauart.**
+
+**Der Mechanismus** (harness-frei nachvollziehbar, `spike/gate-widerlegung/probe-aliasing.mjs`):
+
+    winnerText = b0 b3 b2          localText = b0 b1 A1 b2 b3
+
+    OHNE Gate   Ziel: b0 b3 b1 A1 b2 b3   -> b3 zweimal: einmal als Item des
+                                             Gewinners, einmal als frische Op
+                                             des Verlierers
+                Gewinner löscht sein b3  -> b0 b1 A1 b2 b3   lokaler Stand lebt
+
+    MIT Gate    Ziel: b0 b3 b1 A1 b2     -> b3 nur noch als Gewinner-Item
+                derselbe Delete          -> b0 b1 A1 b2      lokaler Beitrag TOT
+
+**Das Gate lässt eine lokale Zeile weg, *weil* der Gewinner-Doc dafür schon ein Item trägt — und
+aliasiert damit den eigenen Beitrag auf ein fremdes Item.** Ab da tötet ihn jeder gewöhnliche Delete
+oder Edit auf dem Gewinner-Gerät, der mit dem lokalen Inhalt nie etwas zu tun hatte. Das Löschen ist
+in Yjs monoton und propagiert auf alle Geräte; der Endstand bleibt konvergent, der Verlust ist also
+**still**.
+
+**Nutzenmenge und Gefahrenmenge sind identisch.** Von 3.348 weggelassenen Vorkommen war **null**
+ohne Gewinner-Item — es gibt keine sichere Teilmenge des Eingriffs. Gepaart gemessen (4.000 Seeds,
+identisches Szenario je Arm): Grundtextzeilen, die nach einem späteren Delete auf 0 Vorkommen
+fallen — **ohne Gate 1.536, mit Gate 2.187 (+42 %)**. Der Tausch lautet damit: −0,84 % sichtbare
+Verdopplung gegen **+42 % stillen Grundtextverlust**, also K.o.-Kriterium 1.
+
+> **Die Verdopplung, die das Gate entfernt, ist nicht Rauschen — sie ist der Träger der lokalen
+> Urheberschaft.** Das zweite Vorkommen einer Zeile ist die einzige Kopie, die dem Verlierer-Gerät
+> gehört. Wer es einspart, gibt seinen Beitrag in fremde Hand.
+
+Das erklärt zugleich den Vorbefund „Grundtext wird nie verdoppelt, betroffen sind ausschließlich
+Bearbeitungs-Tokens": Genau diese Tokens sind der lokale Beitrag, und ihre Doppelung ist das, was
+ihn überleben lässt.
+
+**Ein zweiter Entwurf — den lokalen Beitrag als Yjs-Update übertragen statt zu materialisieren —
+fiel härter:** Das Rest-Update trägt ein **Delete-Set** über die Item-IDs der Verlierer-Kette. Teilen
+zwei Geräte dieselbe Verlierer-Inkarnation (der Normalzustand jedes konvergierten Paars, hergestellt
+von `mergeCompatible`), löscht das zweite Gerät genau die Items, die im Gewinner-Doc **leben**.
+Gepaart gemessen: **1.134 von 1.134 Grundtextzeilen verloren (100 %), 200 von 200 Notizen**,
+konvergent und damit still.
+
+**Der lehrreichste Teil ist, warum das keiner Messung auffiel:** `spike/schnitt/schnitte.mjs` prägt
+je Notiz und Gerät genau **einmal** eine eigene zufällige Kennung — alle Verlierer-Ketten des
+Apparats sind gerätprivat und disjunkt. Ein konvergiertes Paar trifft dort **nie** auf einen
+Nachzügler. Die Null, die der Entwurf gemessen hatte, war eine Eigenschaft des Szenariogenerators,
+nicht des Entwurfs. Und die Wächter blieben grün, weil sie zwei getrennte `CrdtManager` benutzen —
+**ein grüner Wächter über einer gebrochenen Zusage.**
+
+**Was die Kartierung noch ergab** (gemessen über Coverage, nicht geschätzt):
+
+- `switchToGuid` wird über die volle Suite **24×** betreten (18× davon bis `:1454`); genau **zehn**
+  Testdateien erreichen es, ihre Einzelzähler summieren sich exakt auf die Suite-Summe.
+- **Der einzige Test, der die Zielschadensklasse abbildet, pinnt den Schaden statt ihn zu
+  verbieten:** `erstkontakt-duplikat.test.ts:102` erwartet `toBe(2)`.
+- **Und ein zeilenweises Gate könnte genau diesen Fall gar nicht treffen** — der Test baut einen
+  veralteten Gewinner-Stand, in dem das duplizierte Token gar nicht vorkommt.
+- Das bestehende Hash-Gate bei `:1444` ist **ohne gemessene Wirkung**; `hash-gate.test.ts` sagt das
+  selbst („Die Mutationsprobe (Gate entfernt) lässt die Tests dieser Datei GRÜN").
+- **Keine Löschsemantik ist an dieser Stelle in Gefahr:** `unionMerge` kann per Konstruktion nichts
+  entfernen, und der Löschsemantik-Wächter des Projekts betritt `switchToGuid` nie (0 Eintritte).
+- **Testlücke:** Alle zehn Dateien arbeiten mit ein bis drei verschiedenen, nicht-leeren Zeilen —
+  keine Leerzeile, keine wiederholte Zeile, kein CRLF, kein BOM, kein Frontmatter, kein Fall mit
+  mehr als zwei Geräten.
+
+**Folge für die Kandidatenlage:** Der Eintrag „an der Materialisierung ansetzen" ist damit **nicht
+mehr offen**, sondern in seiner naheliegenden Form gefallen. Ein dritter Entwurf (`unite` selbst
+ändern) hat **kein Urteil** — sein Prüflauf scheiterte technisch. Er ist aber derselben Bauart und
+stünde unter demselben Einwand.
 
 ## Quellen
 
