@@ -29,7 +29,7 @@
 #   Erwartet: As Zeile ueberlebt in BEIDEN Vaults, genau einmal.
 
 param(
-    [Parameter(Mandatory)][ValidateSet('setup','basis','schlag','zeigen')][string]$Phase,
+    [Parameter(Mandatory)][ValidateSet('setup','basis','basis-sweep','schlag','zeigen')][string]$Phase,
     [string]$Tag = 'lauf',
     [double]$Pause = 1.0,
     # STRIKTE VARIANTE: B legt die Notiz nur per `app.vault.create` an und praegt
@@ -186,6 +186,52 @@ switch ($Phase) {
     L "[B] a = $((Lies 'a') -replace $NL,'|')"
     L "[B] b = $((Lies 'b') -replace $NL,'|')"
     L "[B] Sidecars: a=$((Side 'a').Count) b=$((Side 'b').Count)"
+  }
+
+  # BASIS UEBER DEN STARTUP-SWEEP — der Pfad, den `r11` tatsaechlich nimmt.
+  #
+  # In r11 werden Bs Notizen extern angelegt, BEVOR Obsidian dort startet
+  # (`H-START 'b'` steht in r11.ps1:86 hinter der Anlage). Sie durchlaufen also
+  # den Startup-Sweep. Die Laeufe t4/t5/t6b haben das NICHT getroffen: dort lief
+  # B bereits und legte die Notiz per `app.vault.create` im Prozess an.
+  #
+  # Diese Phase stoppt Obsidian, schreibt beide `.md` extern, startet neu und
+  # protokolliert, was der Sweep daraus macht. Danach ist `setup` NICHT noetig —
+  # sie faehrt die Fenster selbst hoch.
+  'basis-sweep' {
+    Prod-Nicht-Offen
+    if (-not (Guard2)) { throw 'Guard blockiert' }
+    Stop-Process -Name 'Obsidian' -Force -EA 0
+    Start-Sleep -Seconds 12
+
+    foreach ($v in @('a','b')) {
+        Remove-Item -Recurse -Force (Join-Path $Vp[$v] '.qollab') -EA 0
+        Remove-Item -Force (Join-Path $Vp[$v] $NOTE) -EA 0
+        [IO.File]::WriteAllText((Join-Path $Vp[$v] $NOTE), $BASIS, [Text.UTF8Encoding]::new($false))
+    }
+    L '[BS] Beide .md EXTERN angelegt, bei geschlossener App. Kein CRDT-Zustand.'
+
+    . "$Wurzel\harness\harness.ps1"
+    . "$Wurzel\harness\harness-cdp.ps1"
+    if (-not (H-START-CDP $Vp['a'])) { throw 'H-START-CDP fehlgeschlagen' }
+    Start-Process "obsidian://open?path=$([uri]::EscapeDataString($Vp['b']))"
+    Start-Sleep -Seconds 12
+    $null = Warte {
+        try { @((Invoke-RestMethod 'http://127.0.0.1:9222/json' -TimeoutSec 5) | Where-Object { $_.type -eq 'page' }).Count -ge 2 }
+        catch { $false }
+    } 180 'zwei Fenster'
+
+    # Dem Startup-Sweep Zeit geben. Er laeuft vor Watcher und Poll
+    # (main.ts:597), aber die Sidecar-Schreibung folgt asynchron.
+    Start-Sleep -Seconds 60
+    foreach ($v in @('a','b')) {
+        $st = Cdp "vault-$v" 'const p=app.plugins.plugins["qollab"]; return {vault:app.vault.getName(), geladen:!!p, clientId:p?p.clientId:null};'
+        L "[BS] vault-$v : geladen=$($st.wert.geladen) clientId=$($st.wert.clientId) (aus '$($st.wert.vault)')"
+    }
+    L "[BS] a = $((Lies 'a') -replace $NL,'|')"
+    L "[BS] b = $((Lies 'b') -replace $NL,'|')"
+    L "[BS] Sidecars nach dem Sweep: a=$((Side 'a').Count) b=$((Side 'b').Count)"
+    L '[BS] Hinweis: r11 setzt voraus, dass B die Notiz OHNE jede Sidecar kennt.'
   }
 
   # DER SCHLAG. A editiert im Prozess, NUR die Sidecar reist, dann tippt B

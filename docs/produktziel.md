@@ -619,6 +619,37 @@ Der nächste Diskriminator müsste Punkt 1 und 2 gezielt einführen, statt sie w
 neutralisieren. **Dieser Lauf ist ein Lehrstück für `[[Messinstrument-Blindheit]]`: Er hat die
 Variable, die er prüfen sollte, durch seine eigenen Wartezeiten ausgeschaltet.**
 
+#### Vierter Lauf über den Startup-Sweep — auch dort überlebt die Zeile
+
+Punkt 2 ist nachgeholt (`basis-sweep`, Lauf `t7`). Aus `r11.ps1:86` gelesen statt rekonstruiert:
+Dort werden Bs Notizen **extern angelegt, bevor Obsidian dort startet** (`H-START 'b'` steht
+dahinter) — sie durchlaufen also den **Startup-Sweep**. Die Läufe `t4`/`t5`/`t6b` haben das nicht
+getroffen, weil B dort bereits lief und die Notiz per `create` im Prozess anlegte.
+
+`basis-sweep` stoppt Obsidian, schreibt beide `.md` extern, startet neu und lässt den Sweep laufen.
+**Nebenbefund, für sich schon interessant: Nach dem Sweep haben beide Vaults `0` Sidecars** — er
+überführt eine extern angelegte, unveränderte `.md` nicht in CRDT-Zustand. Damit ist `r11`s
+Vorbedingung („B kennt die Notiz ohne jede Sidecar") über den echten Pfad hergestellt.
+
+Ergebnis des anschließenden Schlags (extern geschrieben): erneut **`A-ZEILE-UEBERLEBT`**.
+
+**Bilanz über vier Varianten derselben Klasse:**
+
+| Lauf | Schreibweg | Bs Ausgangslage | Ergebnis |
+| --- | --- | --- | --- |
+| `t4` | Prozess | eigener State | A-ZEILE-UEBERLEBT |
+| `t5` | Prozess | kein State (`create`) | A-ZEILE-UEBERLEBT |
+| `t6b` | **extern** | kein State (`create`) | A-ZEILE-UEBERLEBT |
+| `t7` | **extern** | über den **Startup-Sweep** | A-ZEILE-UEBERLEBT |
+
+**Der Verlust aus `r11` ist in keinem kontrolliert aufgebauten Lauf reproduzierbar.** Was bleibt,
+sind Unterschiede im Runner selbst — drei Notizen mit gestaffelten Tastenpausen (1,0/2,5/6,0 s),
+`H-SYNC-ONE` statt Dateikopie, und ein Vorlauf mit `AliveA`/`AliveB`-Notizen. **Einordnung: Der
+Befund ist entkräftet, soweit er sich kontrolliert nachstellen lässt.** Er als Produktfehler zu
+führen, wäre durch nichts gedeckt; ihn als erledigt abzuhaken ebenfalls nicht, solange der Runner
+selbst rot bleibt. Die nächste sinnvolle Frage ist deshalb nicht mehr „ist das ein Bug", sondern
+„prüft `r11` noch, was er zu prüfen vorgibt".
+
 **Der vermutlich tiefere Grund für `r11`s Rot — und er betrifft mehr als diesen Runner:** Die
 Vorbedingung des Aufbaus lautet „B hat die `.md`, aber **keinen eigenen CRDT-State**". Genau die
 ist heute nur noch über einen **externen** Schreibvorgang herstellbar (`H-WRITE-NOTE`), und genau
