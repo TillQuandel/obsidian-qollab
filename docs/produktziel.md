@@ -2,8 +2,8 @@
 
 Was dieses Projekt erreichen will, woran sich jede Entscheidung messen lässt, und welche
 Missverständnisse dabei wiederholt aufgetreten sind. **Single Source of Truth für den Zweck.**
-Der Ist-Zustand steht im README (nutzerorientiert, englisch), die Messhistorie in `.superpowers/sdd/`
-(lokal, nicht versioniert). Dieses Dokument beschreibt das **Ziel** — es ist keine Zustandsbeschreibung.
+Der Ist-Zustand steht im README (nutzerorientiert, englisch), die Messhistorie im privaten Repo
+`obsidian-qollab-doku/sdd/`. Dieses Dokument beschreibt das **Ziel** — es ist keine Zustandsbeschreibung.
 
 ## Der Satz
 
@@ -186,7 +186,7 @@ zu übernehmen.**
    geteilter Historie, liegt die Fehlerquote unter den Wiederbelebungen bei **37,5 %**. „Das
    Problem ist klein" gilt für die Rate, nicht für die Schwere im Einzelfall.
 3. **`isFileProcessing` bei obsidian-livesync.** Als Vorbild zitiert, laut
-   `.superpowers/sdd/recherche-herkunft-2026-08-04-b.md` existiert die Funktion dort nicht.
+   `obsidian-qollab-doku/sdd/recherche-herkunft-2026-08-04-b.md` existiert die Funktion dort nicht.
    Ungeklärt.
 
 4. **Git/GitHub als Transport vs. „keine Registrierung" — Zielkonflikt in diesem Dokument.**
@@ -269,7 +269,9 @@ Er kann sie nicht erreichen.
 
 **Die Gegenprobe oben führt nur die Grundtext-Spalte. Mit allen Spalten ist sie ein schlechter
 Tausch.** Acht Zellen à 200 Seeds × 10 Notizen, Summen
-(`.superpowers/sdd/patch-apply-2026-08-11.md`):
+(Bericht `patch-apply-2026-08-11.md` **beim Rechnerwechsel verloren**, s. u.; die Rohdaten liegen
+versioniert unter `obsidian-crdt-sync/spike/schnitt/ergebnis-patch-*.txt` — die Zahlen sind also
+nachrechenbar, die Herleitung im Bericht nicht mehr nachlesbar):
 
 | Variante | Grundtext `WEG` | `verlust` | `verdopp` | `div` |
 | --- | --- | --- | --- | --- |
@@ -399,7 +401,9 @@ am Produkt statt in der Simulation.
 an echten Instanzen, den Sweep (kein Neustart im Lauf), N ≥ 5. Und: Für die behobene Klasse gibt es
 auf `master` weiterhin **keinen Unit-Test** — `tests/three-way-fuzz.test.ts` liegt nur auf
 `versuch/patch-apply-einbau` und ist dort an das nie eingebaute `MELDE_MARKE` gebunden. Bericht:
-`.superpowers/sdd/wirkungsnachweis-2026-08-12.md`.
+`wirkungsnachweis-2026-08-12.md` — **beim Rechnerwechsel verloren** (s. u.), und anders als bei der
+Messung oben ist hier keine versionierte Rohdatei bekannt, aus der sich der Lauf rekonstruieren
+ließe. Die Aussagen dieses Abschnitts stehen damit ohne nachlesbaren Beleg.
 
 **Nebenbefund:** Auch der Bestand ist nicht idempotent — rechnet ein zweites Gerät den Merge auf
 dem Ergebnis des ersten, steht das lokale Token danach zweimal da (64 → 72 → 80 Zeichen). Das ist
@@ -1191,6 +1195,10 @@ nicht gleich „unschädlich": **41,4 % davon** sind die Verdopplungsklasse des 
 - `README.md` — Ist-Zustand mit Messzahlen (nutzerorientiert)
 - `manifest.json` — „Automatische Merge-Konfliktlösung via Yjs CRDTs für OneDrive/SharePoint-Sync."
 - `docs/superpowers/plans/2026-05-19-github-collab.md` — GitHub als ursprüngliches Zielszenario
-- `.superpowers/sdd/` — Messhistorie und Sessionberichte (lokal, nicht versioniert)
+- `obsidian-qollab-doku/sdd/` — Messhistorie und Sessionberichte bis 2026-08-04 (privates Repo).
+  Hier stand `.superpowers/sdd/` (lokal, nicht versioniert); der Ordner ging beim Rechnerwechsel am
+  2026-08-11 verloren, weil ein `git clone` nur Versioniertes zurückholt. Messergebnisse seit dem
+  2026-08-09 liegen als Rohdaten unter `obsidian-crdt-sync/spike/` und als Befunde in diesem Dokument.
+- `obsidian-qollab-doku/harness/` — der Realtest-Harness (privates Repo), rekonstruiert am 2026-08-11
 - Vault: `[[CRDT-Delete-vs-Edit-Semantik]]`, `[[Per-User-CRDT-State-Files-Pattern]]`
 - Till, Sitzung 2026-08-07 — die Präzisierungen in diesem Dokument

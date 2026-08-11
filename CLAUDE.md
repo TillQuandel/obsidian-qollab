@@ -24,22 +24,34 @@ dass jemand einen Server betreibt.*
 | --- | --- |
 | **Ziel**, K.o.-Kriterien, Missverständnisse | `docs/produktziel.md` (versioniert) |
 | **Ist-Zustand** mit Messzahlen, nutzerorientiert | `README.md` (englisch) |
-| Messhistorie, Sessionberichte, Folgeprompts | `.superpowers/sdd/` (**lokal, nicht versioniert**) |
+| Messhistorie bis 2026-08-04, Sessionberichte, Folgeprompts | `obsidian-qollab-doku/sdd/` (privates Repo) |
+| Messergebnisse seit 2026-08-09 | Rohdaten in `obsidian-crdt-sync/spike/`, Befunde in `docs/produktziel.md` |
 | Code | `obsidian-crdt-sync/src/` |
 | Messinstrumente (Spikes) | `obsidian-crdt-sync/spike/` |
-| Realtest-Harness | `C:\tmp\qollab-test\` |
+| Realtest-Harness | `obsidian-qollab-doku/harness/` (privates Repo), Betriebsort `$QOLLAB_TEST_ROOT` (Standard `C:\tmp\qollab-test\`) |
+
+**Hier stand bis 2026-08-11 `.superpowers/sdd/` (lokal, nicht versioniert) und `C:\tmp\qollab-test\`.
+Beides existiert nicht mehr.** Der Umzug auf den neuen Rechner lief über `git clone` — und der holt
+zurück, was versioniert war. Der gesamte Realtest-Harness war es nicht und ist verloren gegangen;
+rekonstruiert wurde er aus den Runner-Kopien unter `spike/wirkung/`, der Bau-Spezifikation in
+`sdd/realtest-katalog-2026-07-27.md` und `src/state-file.ts`. Deshalb die Regel: **Was einen
+Rechnerwechsel überleben soll, gehört in ein Repo — ein Ordner außerhalb ist kein Aufbewahrungsort,
+sondern ein Betriebsort.**
 
 ## Harte Regeln
 
 1. **Grundtext darf nie zerstört werden.** K.o.-Kriterium, keine Abwägung.
 2. **Kein Dienst, den jemand betreiben muss.** Signalling als Datei über den gemeinsamen Speicher
    zählt als serverlos; ein Backend nicht.
-3. **Realtest-Harness (`C:\tmp\qollab-test\`): `C:\Users\tillq\Obsidian_Vault` ist tabu.**
+3. **Realtest-Harness: der produktive Vault ist tabu.**
    `H-START-CDP` startet Obsidian ohne Vault-Argument und stellt alle `open:true`-Vaults aus
    `%APPDATA%\obsidian\obsidian.json` wieder her — so wurde der produktive Vault schon einmal
-   unbeabsichtigt mitgeöffnet. Der Guard muss **vor** dem ersten `H-STOP` laufen (`H-STOP` killt
-   jeden Obsidian-Prozess). **Niemals** den globalen `Local Storage\leveldb` löschen — dort liegen
-   die Profile aller Vaults in einer Datenbank.
+   unbeabsichtigt mitgeöffnet. Der Guard (`harness/guard.ps1`) läuft vor jedem Kill, und der
+   häufigere Kill-Punkt ist **`H-RESET`**, nicht `H-STOP`. **Niemals** den globalen
+   `Local Storage\leveldb` löschen — dort liegen die Profile aller Vaults in einer Datenbank.
+   Solange ein Vault außerhalb der Testwurzel auf `open:true` steht, bricht jeder Lauf ab; der Weg
+   durch dieses Tor (`H-GUARD-SICHERUNG` / `H-GUARD-AUFRAEUMEN`) ist ein bewusster Eingriff in die
+   globale Obsidian-Konfiguration und steht in `harness/README.md`.
 4. **Kein `Co-Authored-By`** in Commit-Messages.
 5. **Merge nach `master` und Rollout brauchen Tills ausdrückliches Go.** Ein Formatwechsel der
    Hilfsdateien zwingt alle Geräte zum gleichzeitigen Update — ein halb aktualisierter Vault
