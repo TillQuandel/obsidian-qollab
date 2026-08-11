@@ -913,10 +913,13 @@ Erstkontakt. Dieses Dokument führt nur, was für die Produktentscheidung nötig
 
 ### Der Ort, erschöpfend zerlegt (2026-08-12)
 
-**Der Mechanismus oben stimmt, die Zuspitzung auf den modify-Handler nicht.** Der Doc-Text kann
-sich nur auf zwei Wegen ändern — `setContent` (setzt exakt den übergebenen Text) oder `applyUpdate`
-(Yjs-Merge einer fremden Sidecar). Beide Wege wurden instrumentiert und die Zunahme der
-Zeilen-Mehrfachnennung je Aufruf gezählt (`spike/verdopplung/herkunft.mjs`, 200 Seeds, DET = 42):
+**Der Befund oben ist bestätigt und präzisiert — Ort und Ursache sind zu trennen.** Die Vault-Note
+nennt als Quelle bereits „das Aneinanderhängen zweier Op-Ketten gleicher Kennung
+(`mergeCompatible → applyUpdate`)" und die Materialisierungen als deren **Zulieferer**. Genau diese
+Arbeitsteilung ist jetzt quantifiziert: Der Doc-Text kann sich nur auf zwei Wegen ändern —
+`setContent` (setzt exakt den übergebenen Text) oder `applyUpdate` (Yjs-Merge einer fremden
+Sidecar). Beide Wege wurden instrumentiert und die Zunahme der Zeilen-Mehrfachnennung je Aufruf
+gezählt (`spike/verdopplung/herkunft.mjs`, 200 Seeds, DET = 42):
 
 | Zelle | `verdopp` (Gerät 0) | über `setContent` | über `applyUpdate` | `applyUpdate` ÷ Geräte |
 | --- | --- | --- | --- | --- |
@@ -926,9 +929,17 @@ Zeilen-Mehrfachnennung je Aufruf gezählt (`spike/verdopplung/herkunft.mjs`, 200
 | N = 4, `ueberschreiben` | 1.056 | 56 | 4.352 | 1.088,0 |
 
 Die Division durch die Gerätezahl trifft den gemessenen Endwert in allen vier Zellen — **rund 99 %
-der Verdopplung wird in `CrdtManager.applyUpdate` eingeschleppt.** Ursache ist nicht Yjs, sondern
-dass **derselbe Inhalt auf mehreren Geräten unabhängig als eigene Ops materialisiert wird**: Yjs
-dedupliziert nach Item-ID, nicht nach Inhalt.
+der Verdopplung wird in `CrdtManager.applyUpdate` sichtbar.** Das ist der **Ort**, nicht die
+Ursache: Yjs dedupliziert nach Item-ID, nicht nach Inhalt, und trägt beim Merge zusammen, was
+vorher entstanden ist. Die **Ursache** ist, dass **derselbe Inhalt auf mehreren Geräten unabhängig
+als eigene Ops materialisiert wird** — die Note nennt das den Zulieferer, und `setContent` erzeugt
+diese Ops, ohne dass beim Erzeugen schon ein Duplikat entstünde (daher die kleinen `setContent`-
+Zahlen: das Duplikat wird erst drüben sichtbar).
+
+**Praktische Folge für die Suche nach einem Hebel:** An `applyUpdate` selbst ist nichts zu holen —
+dort ist der Text schon doppelt vorhanden, und Löschen propagiert (siehe „Weglassen statt Löschen"
+in der Vault-Note: 2,8–50,7 % stiller Verlust). Der Hebel muss **vor** der Materialisierung
+greifen.
 
 **Harness-frei reproduzierbar** (`spike/verdopplung/minimal-crdt.mjs`, fährt den echten
 `CrdtManager`):
