@@ -1,0 +1,42 @@
+# Minimalbeispiele
+
+## minimal-crdt.mjs — der tragende Mechanismus (Yjs-Merge)
+--- FALL 1  eine Zeile, zwei Geraete, kein gemeinsamer Vorfahr
+  A vor dem Merge  = "a|"
+  B (byte-gleich)  = "a|"
+  A nach applyUpdate(B) = "a|a|"
+  doppelte Zeilen: a x2
+--- FALL 2  Apparatsprache: derselbe Notiztext auf beiden Geraeten
+  Text auf beiden       = "n0-base-0|n0-base-1|n0-D1-0|"
+  A nach applyUpdate(B) = "n0-base-0|n0-base-1|n0-D1-0|n0-base-0|n0-base-1|n0-D1-0|"
+  doppelte Zeilen: n0-base-0 x2, n0-base-1 x2, n0-D1-0 x2
+--- GEGENPROBE  dieselbe Lage MIT gemeinsamer Historie
+  A nach applyUpdate(B) = "a|b|"
+  doppelte Zeilen: (keine)
+
+## minimal.mjs — der Nebenweg (unionMerge, rund 1 Prozent)
+--- FALL 1  derselbe Token, verschiedene Stelle (Minimalfall, 3 Zeilen)
+  other (per Sync gelieferte .md) = "a|T|b|"
+  local (Doc-Stand)              = "a|b|T|"
+  unionMerge(other, local)       = "a|T|b|T|"
+  doppelte Zeilen: T x2
+--- FALL 2  Apparatsprache: Fremd-Token im Doc und in der .md an anderer Stelle
+  other (per Sync gelieferte .md) = "n0-base-0|n0-base-1|n0-D1-0|n0-base-2|n0-base-3|"
+  local (Doc-Stand)              = "n0-base-0|n0-base-1|n0-base-2|n0-base-3|n0-D1-0|"
+  unionMerge(other, local)       = "n0-base-0|n0-base-1|n0-D1-0|n0-base-2|n0-base-3|n0-D1-0|"
+  doppelte Zeilen: n0-D1-0 x2
+--- GEGENPROBE A  derselbe Token an DERSELBEN Stelle
+  other (per Sync gelieferte .md) = "a|T|b|"
+  local (Doc-Stand)              = "a|T|b|"
+  unionMerge(other, local)       = "a|T|b|"
+  doppelte Zeilen: (keine)
+--- GEGENPROBE B  verschiedene Token an verschiedenen Stellen
+  other (per Sync gelieferte .md) = "a|T1|b|"
+  local (Doc-Stand)              = "a|b|T2|"
+  unionMerge(other, local)       = "a|T1|b|T2|"
+  doppelte Zeilen: (keine)
+--- GEGENPROBE C  derselbe Fall MIT gemeinsamem Vorfahren (threeWayMerge)
+  base="a|b|" local="a|b|T|" other="a|T|b|"
+  threeWayMerge = "a|T|b|T|"
+  T steht 2x
+== minimal: FALL1 doppelt=1 FALL2 doppelt=1 | GEGENPROBE A=0 B=0 C(T-Vorkommen)=2

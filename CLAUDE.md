@@ -94,4 +94,9 @@ damit der Bestand nachmessbar ist — **ein Lauf ohne gesetzte Variablen misst d
 | Variable | Standard | Bestand |
 | --- | --- | --- |
 | `QOLLAB_SWEEP_SCHRANKE` / `SPIKE_SCHRANKE` | `basis-signatur` | `aus` |
-| `QOLLAB_DIFF_MODUS` / `SPIKE_DIFF` | `semantisch` | `roh` |
+| `QOLLAB_DIFF_MODUS` / `SPIKE_DIFF` | **`zeile`** | `roh` |
+
+**Korrektur 2026-08-12:** Hier stand `semantisch` als Standard. Der Code sagt `zeile`
+(`src/crdt-manager.ts:276`, `?? 'zeile'`) — seit dem Fix vom 2026-08-10 (`82c5426`). Nachgemessen:
+`QOLLAB_DIFF_MODUS=zeile` liefert auf der Zelle N=4/`kopie` zeichengleich `verdopp=845` wie ein Lauf
+ohne gesetzte Variable. `semantisch` ist der Stand von 2026-08-07 bis 2026-08-09.

@@ -1,0 +1,2 @@
+== herkunft N=4 DET=42 Seeds 1..200 [notizen=10 basis=8 edits=1 md=kopie diff=STANDARD patch=dreiwege s=37.6]: verdopp=845 verlust=103 | setContent ruf=10343 plus=14 minus=4 (davon ausApplyLocal ruf=8160 plus=14) | applyUpdate ruf=125209 plus=3378 minus=8
+== herkunft N=5 DET=42 Seeds 1..200 [notizen=10 basis=8 edits=1 md=kopie diff=STANDARD patch=dreiwege s=64.8]: verdopp=1557 verlust=153 | setContent ruf=13388 plus=20 minus=15 (davon ausApplyLocal ruf=10242 plus=17) | applyUpdate ruf=212193 plus=7823 minus=40

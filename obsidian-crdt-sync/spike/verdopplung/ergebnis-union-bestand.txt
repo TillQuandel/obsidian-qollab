@@ -1,0 +1,21 @@
+# union-Arm: bestand   (je Zelle 200 Seeds x 10 Notizen, patch=dreiwege)
+seed=30 WEG=0 mehrfachKreuz=1 mehrfach=2 kreuzend=3 ersetzung=4 torKoll=6
+seed=141 WEG=0 mehrfachKreuz=1 mehrfach=2 kreuzend=2 ersetzung=2 torKoll=4
+== N=4 DET=42 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=kopie diff=STANDARD patch=dreiwege s=36.0]: WEG=0 mehrfachKreuz=2 mehrfach=56 kreuzend=6 ersetzung=48 torKollision=148 zustellungen=12289 | verlust=103 verdopp=845 div=0 | torProbe=12289 davonEigen=454 parkOffen=0 torFremd=11835 torEigen=8454 | yjsKB=7175.5 yjsDateien=31456 yjsItems=50848 | paRuf=0 paHunk=0 paWeg=0 paGemeldet=0 mmRuf=0 mmNix=0 mmKrumm=0 mmVers=0
+## zaehl union: ruf=30924 unveraendert=18337 neuDup=118 dupDelta=342 zeilenPlus=19909 | dreiwege: ruf=4131 unveraendert=3438 neuDup=3 dupDelta=77
+seed=10 WEG=0 mehrfachKreuz=1 mehrfach=2 kreuzend=3 ersetzung=4 torKoll=7
+== N=5 DET=42 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=kopie diff=STANDARD patch=dreiwege s=57.5]: WEG=0 mehrfachKreuz=1 mehrfach=68 kreuzend=9 ersetzung=93 torKollision=226 zustellungen=21099 | verlust=153 verdopp=1557 div=0 | torProbe=21099 davonEigen=903 parkOffen=0 torFremd=20196 torEigen=10903 | yjsKB=13080.0 yjsDateien=49850 yjsItems=81480 | paRuf=0 paHunk=0 paWeg=0 paGemeldet=0 mmRuf=0 mmNix=0 mmKrumm=0 mmVers=0
+## zaehl union: ruf=46944 unveraendert=25256 neuDup=140 dupDelta=861 zeilenPlus=35420 | dreiwege: ruf=5566 unveraendert=4193 neuDup=4 dupDelta=220
+seed=46 WEG=0 mehrfachKreuz=1 mehrfach=3 kreuzend=4 ersetzung=7 torKoll=10
+seed=90 WEG=0 mehrfachKreuz=1 mehrfach=1 kreuzend=5 ersetzung=5 torKoll=5
+seed=112 WEG=0 mehrfachKreuz=1 mehrfach=2 kreuzend=4 ersetzung=4 torKoll=8
+== N=6 DET=42 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=kopie diff=STANDARD patch=dreiwege s=88.0]: WEG=0 mehrfachKreuz=3 mehrfach=117 kreuzend=24 ersetzung=187 torKollision=432 zustellungen=32326 | verlust=226 verdopp=2401 div=0 | torProbe=32326 davonEigen=1938 parkOffen=0 torFremd=30388 torEigen=13938 | yjsKB=21545.8 yjsDateien=71964 yjsItems=119502 | paRuf=0 paHunk=0 paWeg=0 paGemeldet=0 mmRuf=0 mmNix=0 mmKrumm=0 mmVers=0
+## zaehl union: ruf=64525 unveraendert=32001 neuDup=377 dupDelta=2262 zeilenPlus=54680 | dreiwege: ruf=7258 unveraendert=4908 neuDup=31 dupDelta=744
+seed=30 WEG=0 mehrfachKreuz=1 mehrfach=2 kreuzend=3 ersetzung=4 torKoll=6
+seed=58 WEG=0 mehrfachKreuz=1 mehrfach=2 kreuzend=2 ersetzung=4 torKoll=4
+seed=70 WEG=0 mehrfachKreuz=1 mehrfach=2 kreuzend=3 ersetzung=3 torKoll=6
+seed=141 WEG=0 mehrfachKreuz=1 mehrfach=2 kreuzend=3 ersetzung=3 torKoll=7
+seed=188 WEG=0 mehrfachKreuz=1 mehrfach=4 kreuzend=2 ersetzung=3 torKoll=11
+== N=4 DET=42 Seeds 1..200 modus=zeichen [notizen=10 basis=8 edits=1 md=ueberschreiben diff=STANDARD patch=dreiwege s=58.6]: WEG=0 mehrfachKreuz=5 mehrfach=133 kreuzend=32 ersetzung=227 torKollision=418 zustellungen=56532 | verlust=277 verdopp=1056 div=1 | torProbe=56532 davonEigen=22717 parkOffen=0 torFremd=33815 torEigen=30717 | yjsKB=7268.2 yjsDateien=31456 yjsItems=52028 | paRuf=0 paHunk=0 paWeg=0 paGemeldet=0 mmRuf=0 mmNix=0 mmKrumm=0 mmVers=0
+## zaehl union: ruf=50440 unveraendert=29333 neuDup=237 dupDelta=771 zeilenPlus=30227 | dreiwege: ruf=5045 unveraendert=3020 neuDup=12 dupDelta=519
+# fertig: bestand

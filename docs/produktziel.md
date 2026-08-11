@@ -911,6 +911,64 @@ vollständige Kandidatenlage mit Instrumenten, Zellbasen und Zahlen steht in der
 `[[CRDT-Erstkontakt-ohne-gemeinsame-Historie]]`** — dort ist die Single Source of Truth für den
 Erstkontakt. Dieses Dokument führt nur, was für die Produktentscheidung nötig ist.
 
+### Der Ort, erschöpfend zerlegt (2026-08-12)
+
+**Der Mechanismus oben stimmt, die Zuspitzung auf den modify-Handler nicht.** Der Doc-Text kann
+sich nur auf zwei Wegen ändern — `setContent` (setzt exakt den übergebenen Text) oder `applyUpdate`
+(Yjs-Merge einer fremden Sidecar). Beide Wege wurden instrumentiert und die Zunahme der
+Zeilen-Mehrfachnennung je Aufruf gezählt (`spike/verdopplung/herkunft.mjs`, 200 Seeds, DET = 42):
+
+| Zelle | `verdopp` (Gerät 0) | über `setContent` | über `applyUpdate` | `applyUpdate` ÷ Geräte |
+| --- | --- | --- | --- | --- |
+| N = 4, `kopie` | 845 | **14** | **3.378** | 844,5 |
+| N = 5 | 1.557 | 20 | 7.823 | 1.564,6 |
+| N = 6 | 2.401 | 60 | 14.480 | 2.413,3 |
+| N = 4, `ueberschreiben` | 1.056 | 56 | 4.352 | 1.088,0 |
+
+Die Division durch die Gerätezahl trifft den gemessenen Endwert in allen vier Zellen — **rund 99 %
+der Verdopplung wird in `CrdtManager.applyUpdate` eingeschleppt.** Ursache ist nicht Yjs, sondern
+dass **derselbe Inhalt auf mehreren Geräten unabhängig als eigene Ops materialisiert wird**: Yjs
+dedupliziert nach Item-ID, nicht nach Inhalt.
+
+**Harness-frei reproduzierbar** (`spike/verdopplung/minimal-crdt.mjs`, fährt den echten
+`CrdtManager`):
+
+    A = "a\n", B = "a\n"  (byte-gleich, KEIN gemeinsamer Vorfahr)
+    A.applyUpdate(B)  ->  "a\na\n"
+
+    Gegenprobe MIT gemeinsamer Historie  ->  "a\nb\n", keine Verdopplung
+
+**Damit zeigt ein dritter, unabhängiger Weg auf denselben Hebel:** Punkt 1 und 2 unter „Offene
+Widersprüche" kamen über die Löschsemantik zum Erstkontakt, dieser Befund kommt über die
+Verdopplung. **Der Erstkontakt ohne gemeinsame Historie ist die Adresse der größten Fehlerzahl des
+Projekts.**
+
+**Die drei anderen Kandidaten sind gemessen ausgeschieden:**
+
+| Kandidat | Wirkung auf `verdopp` |
+| --- | --- |
+| `diffModus` (`setContent`) | **flach**: `roh` +0,03 %, `semantisch` −1,2 % — kostet dafür Grundtext (`WEG` 0 → 50 bzw. 20) |
+| `unionMerge` | **0,84 %** (49 von 5.859 über vier Zellen); erzeugt über 192.833 Aufrufe selbst nur 872 Doppel |
+| `threeWayMerge` | 50 Doppel — noch darunter |
+| Herkunftstor schärfen (Hebel B) | **1,6 %** |
+
+**Und der Schaden ist milder als die Zahl vermuten lässt** (`spike/verdopplung/stellen.mjs`,
+40 Seeds): Die Doppel stehen **einsortiert**, nicht angehängt — 78 % unmittelbar unter dem Original,
+der Rest bis Abstand 3, nur 6 % in einem wiederholten Schlussblock. **Grundtext wird nie
+verdoppelt** (0 von 358); betroffen sind ausschließlich Bearbeitungs-Tokens. Typischer Endstand bei
+N = 4:
+
+    n1-D0-9
+    n1-D2-9      <- je einmal pro Gerät, das den Token
+    n1-D2-9         unabhängig materialisiert hat
+    n1-D2-9
+    n1-base-4
+
+**Nicht gemessen:** Die Zerlegung läuft auf vier der acht Zellen (5.859 der 9.982); die
+Großnotiz-Zellen sind nicht enthalten. Und dass die mehrfachen Kopien von verschiedenen Client-IDs
+stammen, ist aus dem Muster erschlossen und am Minimalbeispiel gezeigt — **nicht** an den echten
+Yjs-Items nachgezählt.
+
 ## Quellen
 
 - `README.md` — Ist-Zustand mit Messzahlen (nutzerorientiert)
