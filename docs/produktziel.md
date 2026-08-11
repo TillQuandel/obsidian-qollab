@@ -980,6 +980,58 @@ Großnotiz-Zellen sind nicht enthalten. Und dass die mehrfachen Kopien von versc
 stammen, ist aus dem Muster erschlossen und am Minimalbeispiel gezeigt — **nicht** an den echten
 Yjs-Items nachgezählt.
 
+### Die Tür: 81,5 % sitzen in einer Zeile (2026-08-12)
+
+Es gibt repoweit genau **drei** Aufrufstellen von `setContent` — nachgezählt, nicht vermutet:
+`ensureDoc` (`sync-handler.ts:1307`), `switchToGuid` (`:1454`), `applyLocalContent` (`:1703`).
+Start-Sweep, `unite` und `tickParked` sind keine eigenen Türen, sondern Einstiege, die über diese
+drei laufen.
+
+Jede Tür wurde einzeln unterdrückt und der Effekt gemessen (`spike/verdopplung/aufrufstelle.mjs`,
+je 200 Seeds, DET = 42):
+
+| unterdrückte Tür | `verdopp` Z0 | Δ | Aktivität des Arms |
+| --- | --- | --- | --- |
+| — (Basis) | 845 | — | — |
+| `ensureDoc:1307` | **845** | **0 %** | feuert: 11.950 gestrichene Zeilen |
+| `switchToGuid:1454` | **111** | **−86,9 %** | 432 gestrichene Zeilen |
+| `applyLocalContent:1703` | 1.043 | **+23,4 %** | 227 gestrichene Zeilen |
+
+Über alle vier Zellen für `switchToGuid`:
+
+| Zelle | `verdopp` Basis → unterdrückt | `verlust` Basis → unterdrückt |
+| --- | --- | --- |
+| Z0 N=4 `kopie` | 845 → 111 | 103 → **123** |
+| Z1 N=5 | 1.557 → 237 | 153 → 153 |
+| Z3 N=6 | 2.401 → 411 | 226 → 217 |
+| Z6 N=4 `ueberschreiben` | 1.056 → 323 | 277 → 267 |
+| **Summe** | **5.859 → 1.082 (−81,5 %)** | **759 → 760 (+1)** |
+
+**Der Mechanismus steht im Code und ist dort auch benannt.** Das Gate bei `:1444` lautet
+`if (winnerText === localText) return;` — es greift nur bei **byte-identischem** Text. Bei jeder
+Abweichung wird die ganze Vereinigung als frische Ops **dieses** Geräts materialisiert
+(`:1454`, `setContent(unite(winnerText, localText))`), und der Kommentar darüber sagt den Preis
+selbst: „*der lokale Beitrag zählt danach als frische Einfügung dieses Geräts*". Jede Zeile darin,
+die der Gewinner bereits trägt — nur an anderer Position —, ist ein künftiges Duplikat.
+
+**Zwei methodische Punkte, die für künftige Messungen zählen:**
+
+1. **Der naheliegende Indikator rankt falsch.** Zählt man ungefiltert, wie viel Text eine Tür
+   einfügt, der beim Peer schon steht, führt `ensureDoc` mit 87 % — es ist aber **kausal inert**:
+   11.950 gestrichene Zeilen ändern `verdopp`, `verlust` und `applyPlus` um **kein einziges
+   Zählwerk**. Was der Adopt-Zweig materialisiert, sammelt der Tie-Break ohnehin wieder ein. Erst
+   nach Herausrechnen des Grundtexts sagt der Indikator das Ergebnis voraus (84,7 % gegen gemessene
+   86,9 %). Ohne die Gegenprobe wäre die falsche Tür bearbeitet worden.
+2. **Unterdrücken kann schaden.** Der `applyLocalContent`-Arm hebt `verdopp` um 23 % und `verlust`
+   um 33 %; „alle drei" kostet `verlust` 103 → 235. Nur `switchToGuid` ist in der Summe neutral —
+   **aber nicht kostenfrei**: Auf Z0 steigt `verlust` von 103 auf 123 (+19 %), auf Z3/Z6 sinkt er.
+
+**Was das NICHT ist: ein Fix.** Der Messarm benutzt den Doc-Stand *anderer* Geräte, den ein echtes
+Gerät nicht hat — er zeigt das Potenzial, nicht den Weg. **Ungemessen, aber naheliegend:** ein rein
+**lokales, zeilenweises** Gate an `switchToGuid` — nur materialisieren, was `winnerText` nicht schon
+trägt. `winnerText` steht dort lokal zur Verfügung (`:1443`). Das Gate existiert bereits, es ist nur
+zu grob: Gleichheit des ganzen Textes statt je Zeile.
+
 ## Quellen
 
 - `README.md` — Ist-Zustand mit Messzahlen (nutzerorientiert)

@@ -1,0 +1,3 @@
+== aufrufstelle N=5 DET=42 Seeds 1..200 [notizen=10 basis=8 edits=1 md=kopie diff=STANDARD patch=dreiwege s=80.7 unterdrueckt=switchToGuid]: verdopp=237 verlust=153 applyPlus=1187 ohneRahmen=0 wegRuf=1235 wegZeilen=1423
+== aufrufstelle N=6 DET=42 Seeds 1..200 [notizen=10 basis=8 edits=1 md=kopie diff=STANDARD patch=dreiwege s=110.8 unterdrueckt=switchToGuid]: verdopp=411 verlust=217 applyPlus=2488 ohneRahmen=0 wegRuf=1838 wegZeilen=2106
+== aufrufstelle N=4 DET=42 Seeds 1..200 [notizen=10 basis=8 edits=1 md=ueberschreiben diff=STANDARD patch=dreiwege s=69.3 unterdrueckt=switchToGuid]: verdopp=323 verlust=267 applyPlus=1343 ohneRahmen=0 wegRuf=699 wegZeilen=780

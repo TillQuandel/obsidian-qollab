@@ -1,0 +1,2 @@
+== aufrufstelle N=4 DET=42 Seeds 1..200 [notizen=10 basis=8 edits=1 md=kopie diff=STANDARD patch=dreiwege s=50.2 unterdrueckt=ensureDoc]: verdopp=845 verlust=103 applyPlus=3378 ohneRahmen=0
+== aufrufstelle N=4 DET=42 Seeds 1..200 [notizen=10 basis=8 edits=1 md=kopie diff=STANDARD patch=dreiwege s=47.3 unterdrueckt=switchToGuid]: verdopp=111 verlust=123 applyPlus=439 ohneRahmen=0

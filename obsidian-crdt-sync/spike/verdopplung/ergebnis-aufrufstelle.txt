@@ -1,0 +1,20 @@
+== aufrufstelle N=4 DET=42 Seeds 1..200 [notizen=10 basis=8 edits=1 md=kopie diff=STANDARD patch=dreiwege s=47.0 unterdrueckt=nichts]: verdopp=845 verlust=103 applyPlus=3378 ohneRahmen=0
+  -- nach Aufrufstelle (innerster Rahmen) --
+   ensureDoc                                  ruf=   3534 neu=  31212 schaedlich= 11950 selbst=    0
+   switchToGuid                               ruf=   2183 neu=   3178 schaedlich=  1187 selbst=    0
+   applyLocalContent                          ruf=   4626 neu=   5038 schaedlich=   569 selbst=   14
+  -- nach Einstieg > Aufrufstelle --
+   applyLocalContent > ensureDoc              ruf=   3534 neu=  31212 schaedlich= 11950 selbst=    0
+   loadAndMerge > switchToGuid                ruf=   2183 neu=   3178 schaedlich=  1187 selbst=    0
+   applyLocalContent > applyLocalContent      ruf=   4614 neu=   5026 schaedlich=   559 selbst=    4
+   tickParked > applyLocalContent             ruf=     12 neu=     12 schaedlich=    10 selbst=   10
+== aufrufstelle N=5 DET=42 Seeds 1..200 [notizen=10 basis=8 edits=1 md=kopie diff=STANDARD patch=dreiwege s=79.8 unterdrueckt=nichts]: verdopp=1557 verlust=153 applyPlus=7823 ohneRahmen=0
+  -- nach Aufrufstelle (innerster Rahmen) --
+   ensureDoc                                  ruf=   4043 neu=  35627 schaedlich= 15632 selbst=    0
+   switchToGuid                               ruf=   3146 neu=   4744 schaedlich=  1996 selbst=    0
+   applyLocalContent                          ruf=   6199 neu=   6821 schaedlich=   858 selbst=   17
+  -- nach Einstieg > Aufrufstelle --
+   applyLocalContent > ensureDoc              ruf=   4043 neu=  35627 schaedlich= 15632 selbst=    0
+   loadAndMerge > switchToGuid                ruf=   3146 neu=   4744 schaedlich=  1996 selbst=    0
+   applyLocalContent > applyLocalContent      ruf=   6183 neu=   6804 schaedlich=   845 selbst=    4
+   tickParked > applyLocalContent             ruf=     16 neu=     17 schaedlich=    13 selbst=   13

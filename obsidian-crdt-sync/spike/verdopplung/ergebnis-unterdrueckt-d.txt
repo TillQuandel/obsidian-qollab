@@ -1,0 +1,12 @@
+== aufrufstelle N=4 DET=42 Seeds 1..200 [notizen=10 basis=8 edits=1 md=kopie diff=STANDARD patch=dreiwege s=50.7 unterdrueckt=nichts]: verdopp=845 verlust=103 applyPlus=3378 ohneRahmen=0 wegRuf=0 wegZeilen=0
+  -- nach Aufrufstelle (innerster Rahmen) --
+   ensureDoc                                  ruf=   3534 neu=  31212 schaedlich= 11950 davonToken=   14 selbst=    0
+   switchToGuid                               ruf=   2183 neu=   3178 schaedlich=  1187 davonToken= 1187 selbst=    0
+   applyLocalContent                          ruf=   4626 neu=   5038 schaedlich=   569 davonToken=  201 selbst=   14
+  -- nach Einstieg > Aufrufstelle --
+   applyLocalContent > ensureDoc              ruf=   3534 neu=  31212 schaedlich= 11950 davonToken=   14 selbst=    0
+   loadAndMerge > switchToGuid                ruf=   2183 neu=   3178 schaedlich=  1187 davonToken= 1187 selbst=    0
+   applyLocalContent > applyLocalContent      ruf=   4614 neu=   5026 schaedlich=   559 davonToken=  191 selbst=    4
+   tickParked > applyLocalContent             ruf=     12 neu=     12 schaedlich=    10 davonToken=   10 selbst=   10
+== aufrufstelle N=4 DET=42 Seeds 1..200 [notizen=10 basis=8 edits=1 md=kopie diff=STANDARD patch=dreiwege s=48.3 unterdrueckt=ensureDoc]: verdopp=845 verlust=103 applyPlus=3378 ohneRahmen=0 wegRuf=1493 wegZeilen=11950
+== aufrufstelle N=6 DET=42 Seeds 1..200 [notizen=10 basis=8 edits=1 md=kopie diff=STANDARD patch=dreiwege s=121.0 unterdrueckt=ensureDoc]: verdopp=2401 verlust=226 applyPlus=14480 ohneRahmen=0 wegRuf=2495 wegZeilen=19968
