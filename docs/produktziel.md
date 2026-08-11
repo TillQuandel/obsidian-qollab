@@ -521,24 +521,81 @@ liegen wieder unter der 120-s-Frist. Die Diagnose gilt also auch für sie — di
 unvollständig, weil sie an den Runner-Dateien ansetzte statt am Helfer.
 
 **Zweiter Anlauf mit korrigiertem Helfer (`harness-ext-disc.ps1`, dieselben zwei Werte auf 240 s):
-Der Fix trägt.** `r13` und `r14` erreichen ihre Asserts. Die Serie wurde bei `r15` abgebrochen
-(Hintergrundlauf gekillt), `r15`/`r16` stehen aus.
+Der Fix trägt.** Wo vorher **null** Asserts erreicht wurden, misst die Batterie wieder:
 
-| Runner | vorher | jetzt | rote Asserts |
-| --- | --- | --- | --- |
-| `r13` | 0 Asserts erreicht | **13 erreicht** | `alt-A-1x` ist **2** soll 1; `alt-B-1x` ist **3** soll 1 |
-| `r14` | 0 Asserts erreicht | **15 erreicht** | `kontrolle2-keine-duplikate` ist **2/2/1** soll 1/1/1 |
+| Runner | vorher | jetzt | rote Asserts | Art |
+| --- | --- | --- | --- | --- |
+| `r13` | 0 erreicht | **13** | `alt-A-1x` ist **2** soll 1; `alt-B-1x` ist **3** soll 1 | Duplikate |
+| `r14` | 0 erreicht | **15** | `kontrolle2-keine-duplikate` ist **2/2/1** soll 1/1/1 | Duplikate |
+| `r15` | 0 erreicht | **19** | `B-text-B-1x` ist **0** soll 1; `A-erhaelt-B-edit` False; `A-text-B2-1x` ist **0** soll 1 | **Verlust** |
 
-**Beide roten Befunde sind Duplikate, kein Verlust** — und sie haben eine naheliegende, aber
+`r16` läuft **PASS, 11 Asserts grün** (der erste Versuch scheiterte an `H-START` — Obsidian kam
+nicht hoch, weil der Singleton-Lock des Vorlaufs noch hing; nach einer Pause lief er durch. Kein
+Befund, ein Infrastruktur-Hänger).
+
+**Gesamtbild der Batterie nach der Korrektur:**
+
+| | vor dem 2026-08-12 | danach |
+| --- | --- | --- |
+| Runner, die überhaupt messen | **2** (`r30`, `r31`) | **8** von 9 (`r31` weiterhin ungefahren) |
+| davon PASS | 2 | **4** (`s00`, `r01`, `r16`, `r30`) |
+| davon FAIL mit inhaltlichem Befund | 0 | **4** (`r11`, `r13`, `r14`, `r15`) |
+| davon tot vor dem ersten Assert | 7 | **0** |
+
+**Die Batterie ist damit wieder aussagefähig** — was seit dem 2026-08-04 nicht mehr galt.
+
+**Die Befunde zerfallen in zwei Gruppen, und nur eine hat eine Erklärung.** `r13`/`r14` zeigen
+Duplikate, kein Verlust — und sie haben eine naheliegende, aber
 **ungeprüfte** Erklärung: Der extern geschriebene Stand wird geparkt und per `unionMerge`
 aufgelöst; `unionMerge` hat keinen gemeinsamen Vorfahren und kann deshalb per Konstruktion nicht
 deduplizieren. Genau das sagt der Code selbst zu (`sync-handler.ts:365-370`: „verliert nie,
 verdoppelt genau einmal sichtbar"). Bei `r13` ist die tragende Zusage
 (`externe-aenderung-ueberlebt`) grün — es fehlt nichts, es steht doppelt da.
 
-**`r11` passt NICHT in dieses Muster.** Dort fehlt Text (0 statt 1), und genau das dürfte
-`unionMerge` nie tun. Der Vorlauf-Diskriminator (`agent-t4-vorlauf.ps1`) ist dafür gebaut, aber
-noch nicht gefahren.
+**`r11` und `r15` passen NICHT in dieses Muster.** Dort *fehlt* Text (0 statt 1), und genau das
+dürfte `unionMerge` nie tun — derselbe Code verspricht ausdrücklich „verliert nie, verdoppelt genau
+einmal sichtbar". **Diese Spannung ist ungelöst.** Entweder trifft die Park-Erklärung für sie nicht
+zu, oder die Zusage „verliert nie" gilt nicht in allen Lagen. Beides wäre wichtig zu wissen; beides
+ist ungemessen.
+
+### Der Vorlauf-Diskriminator: über den Prozess-Schreibweg überlebt die Zeile (2026-08-12)
+
+`agent-t4-vorlauf.ps1` fährt `r11`s Aufbau — A editiert, **nur die Sidecar** reist zu B, B tippt
+zweimal kurz hintereinander —, aber jeder Schreibvorgang läuft über `app.vault.modify` im Renderer
+statt extern. Damit ist er „eigen" (`WriteProvenance` umhüllt den DataAdapter), es wird nichts
+geparkt, und die Sidecar entsteht sofort statt nach 120 s.
+
+Der Doc-Vorlauf entstand nachweislich: Vor der Zustellung trug `a` den Marker `AAA`, `b` nicht;
+nach der Sidecar-Zustellung trug `b`s **Doc** ihn, seine `.md` nicht.
+
+| Endstand | in `a` | in `b` |
+| --- | --- | --- |
+| As Marker | **1** (soll 1) | **1** (soll 1) |
+| Bs Marker 1 | 1 | 1 |
+| Bs Marker 2 | 1 | 1 |
+| konvergent | **ja** | **ja** |
+
+**Verdict `A-ZEILE-UEBERLEBT`.** Kein Verlust, keine Verdopplung, beide Vaults byte-gleich. Damit
+ist `r11`s Rot **sehr wahrscheinlich ein Artefakt des Park-Pfades**, nicht ein Fehler des heutigen
+Erfassungspfades.
+
+**Eine Abweichung vom Original ist ausdrücklich zu nennen, sie schwächt den Schluss ab:** In `r11`
+hat B die Notiz *nie geöffnet und keinen eigenen State* — in diesem Lauf legt B sie selbst an und
+trägt damit eine eigene Inkarnation. Der Doc-Vorlauf ist derselbe, die Erstkontakt-Lage nicht.
+Ein schärferer Lauf, in dem B ohne eigenen State startet und die Notiz erst über die fremde
+Sidecar kennenlernt, steht aus. **Bis dahin gilt: entlastet, nicht freigesprochen.**
+
+**Der vermutlich tiefere Grund für `r11`s Rot — und er betrifft mehr als diesen Runner:** Die
+Vorbedingung des Aufbaus lautet „B hat die `.md`, aber **keinen eigenen CRDT-State**". Genau die
+ist heute nur noch über einen **externen** Schreibvorgang herstellbar (`H-WRITE-NOTE`), und genau
+der wird seit dem Herkunftstor geparkt. **Der Runner kann seine eigene Ausgangslage nicht mehr
+herstellen, ohne den Pfad zu betreten, den er nicht messen wollte.** Das ist kein Timeout-Problem
+und mit einer größeren Zahl nicht zu beheben.
+
+Ein gangbarer Weg für den schärferen Lauf steht im Harness bereits belegt: `app.vault.create`
+erzeugt **keine** Sidecar, erst ein `modify` tut es (gemessen, `agent-t2b.ps1:87-89`). B könnte die
+Notiz also im Prozess anlegen, ohne eigenen State zu prägen — damit wäre `r11`s Vorbedingung
+zeichengleich und ohne Parken herstellbar.
 
 **`r11` ist der ernste Befund.** Der Runner prüft den Doc-Vorlauf (Task 16): A editiert eine Notiz,
 **nur die Sidecar** reist zu B (die `.md` bewusst nicht, sonst entsteht kein Vorlauf), B hat die
