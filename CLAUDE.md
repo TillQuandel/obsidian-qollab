@@ -2,6 +2,13 @@
 
 ## Zuerst lesen
 
+**`.superpowers/sdd/folgeprompt-aktuell.md`** — der Übergabe-Prompt der letzten Session: Stand
+(Commit, Testzahl), der offene Auftrag, die **Sperrliste** (was gemessen gefallen ist, mit Zahl und
+Grund) und die Harness-Fallstricke. **Als Erstes lesen** — er verhindert, dass eine neue Session
+Kandidaten durchprobiert, die schon mehrfach gefallen sind. Die Datei ist lokal und nicht
+versioniert; ältere Stände liegen datiert daneben (`folgeprompt-<datum>.md`) und sind Historie.
+Wer eine Session abschließt, **überschreibt sie** (siehe deren Schlussabschnitt).
+
 **[docs/produktziel.md](docs/produktziel.md)** — Zweck, K.o.-Kriterien, wiederkehrende
 Missverständnisse, offene Widersprüche. **Vor jeder inhaltlichen Aussage über das Projekt lesen.**
 Der Zweck ist mehrfach falsch wiedergegeben worden; die Tabelle dort verhindert die bekannten
