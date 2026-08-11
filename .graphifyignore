@@ -1,0 +1,33 @@
+# Was NICHT in den Wissensgraphen gehoert.
+#
+# Grund: Generierte Artefakte und Messdaten wandern sonst als eigene Knoten in
+# den Graphen und verrauschen die Community-Namen — dasselbe Muster, das bei
+# jobfinder 66 gespeicherte API-Antworten und 33 CSVs in die Architektur-Labels
+# gezogen hat (Vault-Note [[graphify]], Praxis-Test 2026-08-02).
+
+# Abhaengigkeiten und Baustaende
+node_modules/
+.worktrees/
+graphify-out/
+
+# Gebaute Bundles — main.js im Wurzelverzeichnis ist der Deploy-Artefakt,
+# real*.cjs sind die gebuendelten Messstaende des Spike-Apparats.
+main.js
+**/real*.cjs
+**/*.cjs
+
+# Messergebnisse des Spike-Apparats: reine Zahlenkolonnen, kein Wissen ueber
+# die Architektur. Die Instrumente selbst (*.mjs, *.ts) bleiben drin — sie
+# tragen die Begruendung im Kopfkommentar.
+obsidian-crdt-sync/spike/**/ergebnis-*.txt
+obsidian-crdt-sync/spike/**/proseed-*.txt
+obsidian-crdt-sync/spike/**/*.log
+
+# Sessionberichte und Messhistorie: lange deutsche Prosa, die sich sonst in die
+# Code-Struktur mischt. Der Zweck des Projekts steht in docs/produktziel.md und
+# CLAUDE.md — die bleiben ausdruecklich drin.
+.superpowers/
+
+# Laufzeit-Muell
+debug.log
+*.zip
