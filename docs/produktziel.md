@@ -1102,6 +1102,38 @@ mehr offen**, sondern in seiner naheliegenden Form gefallen. Ein dritter Entwurf
 ändern) hat **kein Urteil** — sein Prüflauf scheiterte technisch. Er ist aber derselben Bauart und
 stünde unter demselben Einwand.
 
+#### Nachtrag: die Aliasierung steht bereits im heutigen Stand
+
+**Die Formulierung „die Verdopplung ist der Träger der Urheberschaft" ist richtig, aber sie darf
+nicht als „ohne Gate ist der Beitrag sicher" gelesen werden.** Beim Bau der Wächter fiel auf — und
+ist harness-frei nachgeprüft (`spike/gate-widerlegung/probe-head-aliasing.mjs`) —, dass dieselbe
+Aliasierung **ohne jedes Gate** eintritt, sobald `unionMerge` eine Zeile gar nicht erst verdoppelt:
+
+    Vorlage der Widerlegung   winner "b0 b3 b2"           local "b0 b1 A1 b2 b3"
+      -> Vereinigung trägt b3 ZWEIMAL -> Gewinner löscht sein b3 -> Beitrag lebt
+
+    Gewöhnliche Vorlage       winner "# Notiz / nur auf C / gemeinsam"
+                              local  "# Notiz / nur auf A / gemeinsam"
+      -> Vereinigung trägt „gemeinsam" EINMAL -> Gewinner löscht es -> **Beitrag tot**
+
+Der Unterschied ist die **Ausrichtung des Zeilen-Diffs**: Steht die gemeinsame Zeile auf beiden
+Seiten an derselben Stelle, erkennt `unionMerge` sie als gleich und erzeugt kein zweites Item; das
+Verlierer-Gerät hat dann keine eigene Kopie.
+
+**Was das für die Bewertung heißt — zwei Fälle, die auseinanderzuhalten sind:**
+
+- **Gemeinsame Zeile, gemeinsam gelöscht** (der Fall oben): Nach dem Wechsel teilen beide Geräte
+  die Historie, ein Delete propagiert. Das ist erwartetes CRDT-Verhalten, kein Fehler — auch wenn
+  es für den Nutzer auf dem Verlierer-Gerät wie ein Verlust aussieht.
+- **Eigener, exklusiver Beitrag aliasiert** (der Gate-Fall): Eine Zeile, die nur der Verlierer an
+  dieser Stelle beigetragen hat, wird auf ein fremdes Item gelegt. Das ist der Schaden, den die
+  +42 % messen.
+
+Die gepaarte Messung (4.000 Seeds, +42 %) bleibt damit gültig: Das Gate **vergrößert** die Menge der
+kollabierten Zeilen erheblich. Es **schafft** das Phänomen aber nicht. **Offen und nicht gelöst:**
+der Fall „gleiche Zeile, gleiche Stelle" — dort ist der lokale Beitrag auch heute ohne eigene Kopie.
+Wie oft das im Betrieb trägt, ist ungemessen.
+
 ## Quellen
 
 - `README.md` — Ist-Zustand mit Messzahlen (nutzerorientiert)
