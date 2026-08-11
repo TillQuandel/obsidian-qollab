@@ -1,0 +1,30 @@
+== aliasierung Z0 N=4 DET=42 Seeds 1..200 [notizen=10 basis=8 edits=1 md=kopie diff=STANDARD s=47.3]: verdopp=845 verlust=103
+   switchToGuid:1454  ruf=2183 rufLeer=31 neu(Menge)=3178 eigenItems=3178 fremdItems=19994 gemischtItems=0
+   Kontrollen: ohneVereinigung=0 kollision=0 rekonAbweichung=0 ohneAberNichtImGewinner=0
+   lokale Zeilenvorkommen materialisiert=20727  mit eigener Kopie=3178 (15.3 %)  OHNE=17549 (84.7 %)  davon ganz ohne eigenes Item=17549 teils=0
+     grundtext              lokal=  17464 mit=      0 ohne=  17464 (100.0 %) davon ganz= 17464
+     token-fremdes-geraet   lokal=    791 mit=    722 ohne=     69 (8.7 %) davon ganz=    69
+     token-eigenes-geraet   lokal=   2472 mit=   2456 ohne=     16 (0.6 %) davon ganz=    16
+== aliasierung Z1 N=5 DET=42 Seeds 1..200 [notizen=10 basis=8 edits=1 md=kopie diff=STANDARD s=71.3]: verdopp=1557 verlust=153
+   switchToGuid:1454  ruf=3146 rufLeer=58 neu(Menge)=4744 eigenItems=4744 fremdItems=28813 gemischtItems=0
+   Kontrollen: ohneVereinigung=0 kollision=0 rekonAbweichung=0 ohneAberNichtImGewinner=0
+   lokale Zeilenvorkommen materialisiert=30041  mit eigener Kopie=4744 (15.8 %)  OHNE=25297 (84.2 %)  davon ganz ohne eigenes Item=25297 teils=0
+     grundtext              lokal=  25168 mit=      0 ohne=  25168 (100.0 %) davon ganz= 25168
+     token-fremdes-geraet   lokal=   1447 mit=   1332 ohne=    115 (7.9 %) davon ganz=   115
+     token-eigenes-geraet   lokal=   3426 mit=   3412 ohne=     14 (0.4 %) davon ganz=    14
+# fertig: 01
+== aliasierung Z3 N=6 DET=42 Seeds 1..200 [notizen=10 basis=8 edits=1 md=kopie diff=STANDARD s=110.9]: verdopp=2401 verlust=226
+   switchToGuid:1454  ruf=4294 rufLeer=68 neu(Menge)=6459 eigenItems=6459 fremdItems=39343 gemischtItems=0
+   Kontrollen: ohneVereinigung=0 kollision=0 rekonAbweichung=0 ohneAberNichtImGewinner=0
+   lokale Zeilenvorkommen materialisiert=41006  mit eigener Kopie=6459 (15.8 %)  OHNE=34547 (84.2 %)  davon ganz ohne eigenes Item=34547 teils=0
+     grundtext              lokal=  34352 mit=      0 ohne=  34352 (100.0 %) davon ganz= 34352
+     token-fremdes-geraet   lokal=   2183 mit=   2010 ohne=    173 (7.9 %) davon ganz=   173
+     token-eigenes-geraet   lokal=   4471 mit=   4449 ohne=     22 (0.5 %) davon ganz=    22
+== aliasierung Z6 N=4 DET=42 Seeds 1..200 [notizen=10 basis=8 edits=1 md=ueberschreiben diff=STANDARD s=67.9]: verdopp=1056 verlust=277
+   switchToGuid:1454  ruf=2192 rufLeer=38 neu(Menge)=3126 eigenItems=3126 fremdItems=20085 gemischtItems=0
+   Kontrollen: ohneVereinigung=0 kollision=0 rekonAbweichung=0 ohneAberNichtImGewinner=0
+   lokale Zeilenvorkommen materialisiert=20824  mit eigener Kopie=3126 (15.0 %)  OHNE=17698 (85.0 %)  davon ganz ohne eigenes Item=17698 teils=0
+     grundtext              lokal=  17536 mit=      0 ohne=  17536 (100.0 %) davon ganz= 17536
+     token-fremdes-geraet   lokal=    861 mit=    718 ohne=    143 (16.6 %) davon ganz=   143
+     token-eigenes-geraet   lokal=   2427 mit=   2408 ohne=     19 (0.8 %) davon ganz=    19
+# fertig: 36

@@ -1130,9 +1130,61 @@ Verlierer-Gerät hat dann keine eigene Kopie.
   +42 % messen.
 
 Die gepaarte Messung (4.000 Seeds, +42 %) bleibt damit gültig: Das Gate **vergrößert** die Menge der
-kollabierten Zeilen erheblich. Es **schafft** das Phänomen aber nicht. **Offen und nicht gelöst:**
-der Fall „gleiche Zeile, gleiche Stelle" — dort ist der lokale Beitrag auch heute ohne eigene Kopie.
-Wie oft das im Betrieb trägt, ist ungemessen.
+kollabierten Zeilen erheblich. Es **schafft** das Phänomen aber nicht.
+
+#### Die Rate, gemessen — und warum die naheliegende Zahl nichts aussagt (2026-08-12)
+
+Gemessen wurde nicht über den Diff, sondern **am Yjs-Item**: Nach dem Wechsel trägt der Doc genau
+zwei Sorten Items — die per `applyUpdate` eingespielten Gewinner-Ops und die Ops, die `setContent`
+gerade erzeugt hat. Jede Ergebniszeile wurde ihrem Einfüger zugeordnet
+(`spike/aliasierung/besitz.mjs`, Z0/Z1/Z3/Z6, je 200 Seeds, DET = 42). Das ist Grundwahrheit statt
+Stellvertreter; die Kalibrierung reproduziert `ruf`, `neu`, `verdopp` und `verlust` in allen vier
+Zellen ziffernidentisch.
+
+**Die rohe Zahl lautet 84,5 % (95.091 von 112.598) — und sie ist wertlos.** Eine adversarische
+Gegenprüfung hat gezeigt, warum: Der Grundtext macht **exakt 8,0000** Zeilen je Aufruf aus
+(11.815 × 8 = 94.520, Rest 0) — das ist wörtlich der Startwert `SPIKE_BASELINES=8`. Die Rate ist
+damit eine Ablesung am Parameter, keine Eigenschaft des Systems. Nachgefahren mit anderer
+Notizgröße: **`basis=2` → 58,3 %, `basis=8` → 84,6 %, größer → 95,6 %.**
+
+**Was die Aufschlüsselung dagegen hergibt** (Summe über vier Zellen, Bezug jeweils die lokal
+materialisierten Vorkommen dieser Zeilenart):
+
+| Zeilenart | ohne eigene Kopie | Anteil |
+| --- | --- | --- |
+| Grundtext | 94.520 von 94.520 | **100 %** |
+| Token eines fremden Geräts | 500 von 5.282 | 9,5 % |
+| **Token des eigenen Geräts** | **71 von 12.796** | **0,55 %** |
+
+Der Grundtext liegt per Konstruktion auf beiden Geräten identisch — das ist der Fall „gemeinsame
+Zeile, gemeinsam gelöscht", also erwartetes CRDT-Verhalten. **Der eigene Beitrag bekommt in
+99,45 % der Fälle eine eigene Kopie.** Die 71 Ausnahmen wurden im Klartext geprüft: Der Token stand
+dort jeweils **bereits im `winnerText`** — eine weitergereichte Kopie desselben Beitrags, kein
+zweiter unabhängiger.
+
+**Die härteste Einschränkung, ausdrücklich:** Der eigentliche Schadensfall — eine Zeile, die *nur*
+das unterlegene Gerät an dieser Stelle beigetragen hat — ist im Apparat **nicht herstellbar**.
+`buildScenario` (`spike/schnitt/harness.mjs:141-150`) vergibt jeden Token genau einmal an genau ein
+Gerät, der Grundtext kommt byte-identisch auf jedes. Jeder Zeileninhalt hat damit genau **eine**
+Herkunft. Die 0,55 % sind deshalb die schärfste Näherung, die dieser Apparat zulässt — kein Beweis
+der Abwesenheit.
+
+**Ist der Schaden erreichbar?** Ja, aber die Kette braucht **sechs** Bedingungen, jede am Code oder
+gemessen belegt: (B1) Inkarnationsspaltung auf dieser Notiz; (B2) dieses Gerät ist der Verlierer;
+(B3) der Beitrag ist zeichengleich mit einer Gewinnerzeile und überholt keine gemeinsame Zeile;
+(B4) die Löschung kommt **nach** dem Wechsel — davor trägt `winnerText` sie nicht mehr, der Diff
+sieht einen INSERT und der Verlierer bekommt seine eigene Kopie; (B5) der Verlierer fasst genau
+diese Zeile bis dahin nicht an — **ein Edit darauf heilt den Alias vollständig**; (B6) es existiert
+ein Delete auf dieses Item.
+
+**Einordnung: erreichbar ja, häufig nicht belegt.** Zwei der sechs Glieder heilen sich im normalen
+Gebrauch von selbst (B4, B5). Wer aus der rohen Rate eine Schadensrate macht, überschätzt sie um
+den Faktor 1.339 (Mengen) bzw. 152 (Raten).
+
+**Was diese Messung nicht entscheidet:** ob eine aliasierte Grundtextzeile nach einem späteren
+Delete tatsächlich fällt — die 94.520 sind die *Population*, aus der die früher gemessenen 1.536
+gefallenen Zeilen stammen können, nicht die Schadensmenge. Und die Spalte „mit eigener Kopie" ist
+nicht gleich „unschädlich": **41,4 % davon** sind die Verdopplungsklasse des Projekts.
 
 ## Quellen
 

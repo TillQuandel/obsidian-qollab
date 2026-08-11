@@ -1,0 +1,36 @@
+# ERREICHBARKEIT — SPIKE_DET=7, diffModus=zeile
+
+## PROBE 1 — erzeugt setContent an :1454 Delete-Ops auf Gewinner-Items?
+  Zufallspaare (Alphabet a-d, Laenge 1..6): 3966
+  davon mit geloeschten Gewinner-Zeichen an :1454: 0
+  GEGENPROBE CRLF: geloeschte Gewinner-Zeichen = 6 (Ziel "a\r\nb\r\nc\r\nd\r\n")
+
+## PROBE 2 — der aliasierte Beitrag und seine Todesarten
+  a) Gewinner LOESCHT seine Zeile
+     Besitzer der Zeile beim Verlierer vor dem Schlag: 101 (Gewinner=101, Verlierer=202)
+     danach: beim Verlierer 0x, beim Gewinner 0x  -> TOT
+  b) Gewinner AENDERT seine Zeile (kein Loeschwille)
+     Besitzer der Zeile beim Verlierer vor dem Schlag: 101 (Gewinner=101, Verlierer=202)
+     danach: beim Verlierer 0x, beim Gewinner 0x  -> TOT
+  c) Gewinner spielt einen ALTEN Stand zurueck (git checkout / Backup)
+     Besitzer der Zeile beim Verlierer vor dem Schlag: 101 (Gewinner=101, Verlierer=202)
+     danach: beim Verlierer 0x, beim Gewinner 0x  -> TOT
+
+## PROBE 3 — heilt ein spaeterer eigener Edit den Alias?
+  a) Verlierer editiert eine ANDERE Zeile (10 Runden)
+     Besitzer von "- [ ] Kran bestellen" nach dem Edit: 101 (Gewinner=101, Verlierer=202)
+     nach der Loeschung durch den Gewinner: 0x -> TOT
+  b) Verlierer editiert GENAU DIESE Zeile (Haken setzen)
+     Besitzer von "- [x] Kran bestellen" nach dem Edit: 202 (Gewinner=101, Verlierer=202)
+     nach der Loeschung durch den Gewinner: 1x -> LEBT
+  c) Verlierer haengt weiter unten Text an
+     Besitzer von "- [ ] Kran bestellen" nach dem Edit: 101 (Gewinner=101, Verlierer=202)
+     nach der Loeschung durch den Gewinner: 0x -> TOT
+
+## PROBE 4 — dieselbe Loeschung, aber VOR dem Wechsel
+  Besitzer der Zeile beim Verlierer: 202 (Gewinner=101, Verlierer=202)
+  Endstand: Verlierer 1x, Gewinner 1x -> LEBT (Wiederbelebung)
+
+## PROBE 5 — Gegenrichtung: was kostet es, wenn NICHT aliasiert wird?
+  Zeilen im Verlierer-Doc: 16, davon ganz beim Gewinner: 11
+  Gewinner loescht "- [ ] Statik pruefen": beim Verlierer danach 0x, konvergent=true

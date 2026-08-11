@@ -1,0 +1,283 @@
+===== ALIASIERUNGS-SONDE   SPIKE_DET=7
+E = der lokale Beitrag hat ein EIGENES Yjs-Item; a = er haengt am fremden.
+
+== A  Position: Verschiebung d gegen k gemeinsame Zeilen
+   (Zelle = eigene Kopie? E/a ; Klammer = Vorkommen von M im Ziel)
+           d=0   d=1   d=2   d=3   d=4   d=5   d=6
+   k=0   a(1)     .     .     .     .     .     .
+   k=1   a(1)  E(2)     .     .     .     .     .
+   k=2   a(1)  E(2)  E(2)     .     .     .     .
+   k=3   a(1)  E(2)  E(2)  E(2)     .     .     .
+   k=4   a(1)  E(2)  E(2)  E(2)  E(2)     .     .
+   k=5   a(1)  E(2)  E(2)  E(2)  E(2)  E(2)     .
+   k=6   a(1)  E(2)  E(2)  E(2)  E(2)  E(2)  E(2)
+
+   Loeschprobe (Gewinner loescht sein M) fuer k=6:
+     d=0  Ziel="# Titel\nM\ng0\ng1\ng2\ng3\ng4\ng5\nnur-W\nnur-L\n"    -> TOT
+     d=1  Ziel="# Titel\nM\ng0\nM\ng1\ng2\ng3\ng4\ng5\nnur-W\nnur-L\n" -> ueberlebt
+     d=2  Ziel="# Titel\nM\ng0\ng1\nM\ng2\ng3\ng4\ng5\nnur-W\nnur-L\n" -> ueberlebt
+     d=3  Ziel="# Titel\nM\ng0\ng1\ng2\nM\ng3\ng4\ng5\nnur-W\nnur-L\n" -> ueberlebt
+     d=4  Ziel="# Titel\nM\ng0\ng1\ng2\ng3\nM\ng4\ng5\nnur-W\nnur-L\n" -> ueberlebt
+     d=5  Ziel="# Titel\nM\ng0\ng1\ng2\ng3\ng4\nM\ng5\nnur-W\nnur-L\n" -> ueberlebt
+     d=6  Ziel="# Titel\nM\ng0\ng1\ng2\ng3\ng4\ng5\nnur-W\nM\nnur-L\n" -> ueberlebt
+
+== B  Umgebung bei UNVERSCHOBENER gemeinsamer Zeile
+  M zwischen lauter Unterschieden                | Gew 1x  Lok 1x  Ziel 1x | ALIAS        | TOT      
+  M in gemeinsamem Kontext (2 Zeilen)            | Gew 1x  Lok 1x  Ziel 1x | ALIAS        | TOT      
+  M in gemeinsamem Kontext (6 Zeilen)            | Gew 1x  Lok 1x  Ziel 1x | ALIAS        | TOT      
+  M als erste Zeile                              | Gew 1x  Lok 1x  Ziel 1x | ALIAS        | TOT      
+  M als letzte Zeile                             | Gew 1x  Lok 1x  Ziel 1x | ALIAS        | TOT      
+  M einzige Gemeinsamkeit, Rest komplett verschieden | Gew 1x  Lok 1x  Ziel 1x | ALIAS        | TOT      
+  M beim Verlierer ZWEIMAL, beim Gewinner einmal | Gew 1x  Lok 2x  Ziel 2x | EIGENE KOPIE | ueberlebt
+  KONTROLLE: M um 3 Zeilennummern verschoben, 0 gemeinsame ueberholt | Gew 1x  Lok 1x  Ziel 1x | ALIAS        | TOT      
+  KONTROLLE: M um 3 Zeilennummern verschoben, 1 gemeinsame ueberholt | Gew 1x  Lok 1x  Ziel 2x | EIGENE KOPIE | ueberlebt
+
+== C  Realistische Notizformen
+  je eine ANDERE Zeile geaendert (Zeile 9 / Zeile 15)        | Zeilen  25 | eigene Items   2 | Marke "Der Bauantrag ist bewilligt." Ziel 1x ALIAS -> TOT
+  beide haengen einen Aufgabenpunkt an — VERSCHIEDENE        | Zeilen  25 | eigene Items   1 | Marke "- [ ] Statik pruefen"       Ziel 1x ALIAS -> TOT
+  beide haengen DENSELBEN Aufgabenpunkt an                   | Zeilen  25 | eigene Items   1 | Marke "- [ ] Kran bestellen"       Ziel 2x EIGEN -> ueberlebt
+  Verlierer haengt einen neuen Abschnitt an (mit Leerzeilen) | Zeilen  28 | eigene Items   5 | Marke ""                           Ziel 11x EIGEN -> ueberlebt
+  beide setzen einen zweiten Codeblock                       | Zeilen  29 | eigene Items   2 | Marke "```"                        Ziel 2x ALIAS -> ueberlebt
+
+== D  Alltagsfall: zwei Menschen, je eine andere Zeile
+--- Alltagsfall (Gewinner Zeile 9, Verlierer Zeile 15)
+  winner : "---\ntags: [projekt]\nstatus: offen\n---\n\n# Projekt Uferbau\n\n## Stand\n\nDer Bauantrag ist bewilligt.\n\n## Aufgaben\n\n- [ ] Statik pruefen\n- [ ] Angebot einholen\n- [ ] Termin bestaetigen\n\n## Code\n\n```js\nconst x = 1;\n```\n\n"
+  local  : "---\ntags: [projekt]\nstatus: offen\n---\n\n# Projekt Uferbau\n\n## Stand\n\nDer Bauantrag liegt beim Amt.\n\n## Aufgaben\n\n- [ ] Statik pruefen\n- [ ] Angebot einholen\n- [x] Angebot einholen\n\n## Code\n\n```js\nconst x = 1;\n```\n\n"
+  ziel   : "---\ntags: [projekt]\nstatus: offen\n---\n\n# Projekt Uferbau\n\n## Stand\n\nDer Bauantrag ist bewilligt.\nDer Bauantrag liegt beim Amt.\n\n## Aufgaben\n\n- [ ] Statik pruefen\n- [ ] Angebot einholen\n- [ ] Termin bestaetigen\n- [x] Angebot einholen\n\n## Code\n\n```js\nconst x = 1;\n```\n\n"
+  Marke "- [x] Angebot einholen": Gewinner 0x, lokal 1x, Ziel 1x
+     Vorkommen an Zeile 17: EIGENES Item (Verlierer)
+  Besitzkarte des Verlierer-Docs (E = eigenes Item):
+     .  "---"
+     .  "tags: [projekt]"
+     .  "status: offen"
+     .  "---"
+     .  ""
+     .  "# Projekt Uferbau"
+     .  ""
+     .  "## Stand"
+     .  ""
+     .  "Der Bauantrag ist bewilligt."
+     E  "Der Bauantrag liegt beim Amt."
+     .  ""
+     .  "## Aufgaben"
+     .  ""
+     .  "- [ ] Statik pruefen"
+     .  "- [ ] Angebot einholen"
+     .  "- [ ] Termin bestaetigen"
+     E  "- [x] Angebot einholen"
+     .  ""
+     .  "## Code"
+     .  ""
+     .  "```js"
+     .  "const x = 1;"
+     .  "```"
+     .  ""
+  Gewinner loescht "- [x] Angebot einholen" auf seinem Doc -> Endstand:
+     "---\ntags: [projekt]\nstatus: offen\n---\n\n# Projekt Uferbau\n\n## Stand\n\nDer Bauantrag ist bewilligt.\nDer Bauantrag liegt beim Amt.\n\n## Aufgaben\n\n- [ ] Statik pruefen\n- [ ] Angebot einholen\n- [ ] Termin bestaetigen\n- [x] Angebot einholen\n\n## Code\n\n```js\nconst x = 1;\n```\n\n"
+  Beitrag UEBERLEBT
+
+   Grundtextzeile "- [ ] Statik pruefen" im selben Lauf:
+     Ziel 1x, ALIAS, nach Loeschung durch den Gewinner: TOT
+
+== F  Schadensformen woertlich
+--- F1  zweiter Codeblock auf beiden Seiten (Schlusszaun ```)
+  winner : "---\ntags: [projekt]\nstatus: offen\n---\n\n# Projekt Uferbau\n\n## Stand\n\nDer Bauantrag liegt beim Amt.\n\n## Aufgaben\n\n- [ ] Statik pruefen\n- [ ] Angebot einholen\n- [ ] Termin bestaetigen\n\n## Code\n\n```js\nconst x = 1;\n```\n```sh\nls -la\n```\n\n\n"
+  local  : "---\ntags: [projekt]\nstatus: offen\n---\n\n# Projekt Uferbau\n\n## Stand\n\nDer Bauantrag liegt beim Amt.\n\n## Aufgaben\n\n- [ ] Statik pruefen\n- [ ] Angebot einholen\n- [ ] Termin bestaetigen\n\n## Code\n\n```js\nconst x = 1;\n```\n```py\nprint(1)\n```\n\n\n"
+  ziel   : "---\ntags: [projekt]\nstatus: offen\n---\n\n# Projekt Uferbau\n\n## Stand\n\nDer Bauantrag liegt beim Amt.\n\n## Aufgaben\n\n- [ ] Statik pruefen\n- [ ] Angebot einholen\n- [ ] Termin bestaetigen\n\n## Code\n\n```js\nconst x = 1;\n```\n```sh\nls -la\n```py\nprint(1)\n```\n\n\n"
+  Marke "```": Gewinner 2x, lokal 2x, Ziel 2x
+     Vorkommen an Zeile 21: FREMDES Item (Gewinner) <- aliasiert
+     Vorkommen an Zeile 26: FREMDES Item (Gewinner) <- aliasiert
+  Besitzkarte des Verlierer-Docs (E = eigenes Item):
+     .  "---"
+     .  "tags: [projekt]"
+     .  "status: offen"
+     .  "---"
+     .  ""
+     .  "# Projekt Uferbau"
+     .  ""
+     .  "## Stand"
+     .  ""
+     .  "Der Bauantrag liegt beim Amt."
+     .  ""
+     .  "## Aufgaben"
+     .  ""
+     .  "- [ ] Statik pruefen"
+     .  "- [ ] Angebot einholen"
+     .  "- [ ] Termin bestaetigen"
+     .  ""
+     .  "## Code"
+     .  ""
+     .  "```js"
+     .  "const x = 1;"
+     .  "```"
+     .  "```sh"
+     .  "ls -la"
+     E  "```py"
+     E  "print(1)"
+     .  "```"
+     .  ""
+     .  ""
+  Gewinner loescht "```" auf seinem Doc -> Endstand:
+     "---\ntags: [projekt]\nstatus: offen\n---\n\n# Projekt Uferbau\n\n## Stand\n\nDer Bauantrag liegt beim Amt.\n\n## Aufgaben\n\n- [ ] Statik pruefen\n- [ ] Angebot einholen\n- [ ] Termin bestaetigen\n\n## Code\n\n```js\nconst x = 1;\n```sh\nls -la\n```py\nprint(1)\n```\n\n\n"
+  Beitrag UEBERLEBT
+
+--- F2  neuer Absatz in der Mitte, mit eigener Leerzeile
+  winner : "---\ntags: [projekt]\nstatus: laeuft\n---\n\n# Projekt Uferbau\n\n## Stand\n\nDer Bauantrag liegt beim Amt.\n\n## Aufgaben\n\n- [ ] Statik pruefen\n- [ ] Angebot einholen\n- [ ] Termin bestaetigen\n\n## Code\n\n```js\nconst x = 1;\n```\n\n"
+  local  : "---\ntags: [projekt]\nstatus: offen\n---\n\n# Projekt Uferbau\n\n## Stand\n\nDer Bauantrag liegt beim Amt.\n\nRueckfrage an das Amt.\n\n## Aufgaben\n\n- [ ] Statik pruefen\n- [ ] Angebot einholen\n- [ ] Termin bestaetigen\n\n## Code\n\n```js\nconst x = 1;\n```\n\n"
+  ziel   : "---\ntags: [projekt]\nstatus: laeuft\nstatus: offen\n---\n\n# Projekt Uferbau\n\n## Stand\n\nDer Bauantrag liegt beim Amt.\n\nRueckfrage an das Amt.\n\n## Aufgaben\n\n- [ ] Statik pruefen\n- [ ] Angebot einholen\n- [ ] Termin bestaetigen\n\n## Code\n\n```js\nconst x = 1;\n```\n\n"
+  Marke "": Gewinner 9x, lokal 10x, Ziel 10x
+     Vorkommen an Zeile 5: FREMDES Item (Gewinner) <- aliasiert
+     Vorkommen an Zeile 7: FREMDES Item (Gewinner) <- aliasiert
+     Vorkommen an Zeile 9: FREMDES Item (Gewinner) <- aliasiert
+     Vorkommen an Zeile 11: EIGENES Item (Verlierer)
+     Vorkommen an Zeile 13: FREMDES Item (Gewinner) <- aliasiert
+     Vorkommen an Zeile 15: FREMDES Item (Gewinner) <- aliasiert
+     Vorkommen an Zeile 19: FREMDES Item (Gewinner) <- aliasiert
+     Vorkommen an Zeile 21: FREMDES Item (Gewinner) <- aliasiert
+     Vorkommen an Zeile 25: FREMDES Item (Gewinner) <- aliasiert
+  Besitzkarte des Verlierer-Docs (E = eigenes Item):
+     .  "---"
+     .  "tags: [projekt]"
+     .  "status: laeuft"
+     E  "status: offen"
+     .  "---"
+     .  ""
+     .  "# Projekt Uferbau"
+     .  ""
+     .  "## Stand"
+     .  ""
+     .  "Der Bauantrag liegt beim Amt."
+     E  ""
+     E  "Rueckfrage an das Amt."
+     .  ""
+     .  "## Aufgaben"
+     .  ""
+     .  "- [ ] Statik pruefen"
+     .  "- [ ] Angebot einholen"
+     .  "- [ ] Termin bestaetigen"
+     .  ""
+     .  "## Code"
+     .  ""
+     .  "```js"
+     .  "const x = 1;"
+     .  "```"
+     .  ""
+  Gewinner loescht "" auf seinem Doc -> Endstand:
+     "---\ntags: [projekt]\nstatus: laeuft\nstatus: offen\n---\n# Projekt Uferbau\n\n## Stand\n\nDer Bauantrag liegt beim Amt.\n\nRueckfrage an das Amt.\n\n## Aufgaben\n\n- [ ] Statik pruefen\n- [ ] Angebot einholen\n- [ ] Termin bestaetigen\n\n## Code\n\n```js\nconst x = 1;\n```\n\n"
+  Beitrag UEBERLEBT
+
+--- F3  beide tippen dieselbe Zeile an derselben Stelle
+  winner : "---\ntags: [projekt]\nstatus: laeuft\n---\n\n# Projekt Uferbau\n\n## Stand\n\nDer Bauantrag liegt beim Amt.\n\n## Aufgaben\n\n- [ ] Statik pruefen\n- [ ] Angebot einholen\n- [ ] Termin bestaetigen\n- [ ] Kran bestellen\n\n## Code\n\n```js\nconst x = 1;\n```\n\n"
+  local  : "---\ntags: [projekt]\nstatus: offen\n---\n\n# Projekt Uferbau\n\n## Stand\n\nDer Bauantrag ist bewilligt.\n\n## Aufgaben\n\n- [ ] Statik pruefen\n- [ ] Angebot einholen\n- [ ] Termin bestaetigen\n- [ ] Kran bestellen\n\n## Code\n\n```js\nconst x = 1;\n```\n\n"
+  ziel   : "---\ntags: [projekt]\nstatus: laeuft\nstatus: offen\n---\n\n# Projekt Uferbau\n\n## Stand\n\nDer Bauantrag liegt beim Amt.\nDer Bauantrag ist bewilligt.\n\n## Aufgaben\n\n- [ ] Statik pruefen\n- [ ] Angebot einholen\n- [ ] Termin bestaetigen\n- [ ] Kran bestellen\n\n## Code\n\n```js\nconst x = 1;\n```\n\n"
+  Marke "- [ ] Kran bestellen": Gewinner 1x, lokal 1x, Ziel 1x
+     Vorkommen an Zeile 18: FREMDES Item (Gewinner) <- aliasiert
+  Besitzkarte des Verlierer-Docs (E = eigenes Item):
+     .  "---"
+     .  "tags: [projekt]"
+     .  "status: laeuft"
+     E  "status: offen"
+     .  "---"
+     .  ""
+     .  "# Projekt Uferbau"
+     .  ""
+     .  "## Stand"
+     .  ""
+     .  "Der Bauantrag liegt beim Amt."
+     E  "Der Bauantrag ist bewilligt."
+     .  ""
+     .  "## Aufgaben"
+     .  ""
+     .  "- [ ] Statik pruefen"
+     .  "- [ ] Angebot einholen"
+     .  "- [ ] Termin bestaetigen"
+     .  "- [ ] Kran bestellen"
+     .  ""
+     .  "## Code"
+     .  ""
+     .  "```js"
+     .  "const x = 1;"
+     .  "```"
+     .  ""
+  Gewinner loescht "- [ ] Kran bestellen" auf seinem Doc -> Endstand:
+     "---\ntags: [projekt]\nstatus: laeuft\nstatus: offen\n---\n\n# Projekt Uferbau\n\n## Stand\n\nDer Bauantrag liegt beim Amt.\nDer Bauantrag ist bewilligt.\n\n## Aufgaben\n\n- [ ] Statik pruefen\n- [ ] Angebot einholen\n- [ ] Termin bestaetigen\n\n## Code\n\n```js\nconst x = 1;\n```\n\n"
+  Beitrag TOT
+
+--- F4  nur der Verlierer tippt sie, Gewinner hat sie schon woanders
+  winner : "# Liste\n- Milch\n- Brot\nnur-W\n"
+  local  : "# Liste\n- Brot\n- Milch\nnur-L\n"
+  ziel   : "# Liste\n- Milch\n- Brot\nnur-W\n- Milch\nnur-L\n"
+  Marke "- Milch": Gewinner 1x, lokal 1x, Ziel 2x
+     Vorkommen an Zeile 1: FREMDES Item (Gewinner) <- aliasiert
+     Vorkommen an Zeile 4: EIGENES Item (Verlierer)
+  Besitzkarte des Verlierer-Docs (E = eigenes Item):
+     .  "# Liste"
+     .  "- Milch"
+     .  "- Brot"
+     .  "nur-W"
+     E  "- Milch"
+     E  "nur-L"
+  Gewinner loescht "- Milch" auf seinem Doc -> Endstand:
+     "# Liste\n- Brot\nnur-W\n- Milch\nnur-L\n"
+  Beitrag UEBERLEBT
+
+== G1  Vielfachheit: wie oft steht die Zeile auf jeder Seite?
+  Gewinner 1x, lokal 1x  ->  Ziel 1x, davon eigene Items 0   ALIAS
+  Gewinner 1x, lokal 2x  ->  Ziel 2x, davon eigene Items 1   EIGENE KOPIE
+  Gewinner 1x, lokal 3x  ->  Ziel 3x, davon eigene Items 2   EIGENE KOPIE
+  Gewinner 2x, lokal 1x  ->  Ziel 2x, davon eigene Items 0   ALIAS
+  Gewinner 2x, lokal 2x  ->  Ziel 2x, davon eigene Items 0   ALIAS
+  Gewinner 2x, lokal 3x  ->  Ziel 3x, davon eigene Items 1   EIGENE KOPIE
+  Gewinner 3x, lokal 1x  ->  Ziel 3x, davon eigene Items 0   ALIAS
+  Gewinner 3x, lokal 2x  ->  Ziel 3x, davon eigene Items 0   ALIAS
+  Gewinner 3x, lokal 3x  ->  Ziel 3x, davon eigene Items 0   ALIAS
+
+== G2  verschobener BLOCK (Liste umsortiert)
+--- G2  Verlierer sortiert die Aufgabenliste um
+  winner : "---\ntags: [projekt]\nstatus: laeuft\n---\n\n# Projekt Uferbau\n\n## Stand\n\nDer Bauantrag liegt beim Amt.\n\n## Aufgaben\n\n- [ ] Statik pruefen\n- [ ] Angebot einholen\n- [ ] Termin bestaetigen\n\n## Code\n\n```js\nconst x = 1;\n```\n\n"
+  local  : "---\ntags: [projekt]\nstatus: offen\n---\n\n# Projekt Uferbau\n\n## Stand\n\nDer Bauantrag liegt beim Amt.\n\n## Aufgaben\n\n- [ ] Statik pruefen\n- [ ] Termin bestaetigen\n- [ ] Statik pruefen\n- [ ] Angebot einholen\n## Code\n\n```js\nconst x = 1;\n```\n\n"
+  ziel   : "---\ntags: [projekt]\nstatus: laeuft\nstatus: offen\n---\n\n# Projekt Uferbau\n\n## Stand\n\nDer Bauantrag liegt beim Amt.\n\n## Aufgaben\n\n- [ ] Statik pruefen\n- [ ] Angebot einholen\n- [ ] Termin bestaetigen\n\n- [ ] Statik pruefen\n- [ ] Angebot einholen\n## Code\n\n```js\nconst x = 1;\n```\n\n"
+  Marke "- [ ] Termin bestaetigen": Gewinner 1x, lokal 1x, Ziel 1x
+     Vorkommen an Zeile 16: FREMDES Item (Gewinner) <- aliasiert
+  Besitzkarte des Verlierer-Docs (E = eigenes Item):
+     .  "---"
+     .  "tags: [projekt]"
+     .  "status: laeuft"
+     E  "status: offen"
+     .  "---"
+     .  ""
+     .  "# Projekt Uferbau"
+     .  ""
+     .  "## Stand"
+     .  ""
+     .  "Der Bauantrag liegt beim Amt."
+     .  ""
+     .  "## Aufgaben"
+     .  ""
+     .  "- [ ] Statik pruefen"
+     .  "- [ ] Angebot einholen"
+     .  "- [ ] Termin bestaetigen"
+     .  ""
+     E  "- [ ] Statik pruefen"
+     E  "- [ ] Angebot einholen"
+     .  "## Code"
+     .  ""
+     .  "```js"
+     .  "const x = 1;"
+     .  "```"
+     .  ""
+  Gewinner loescht "- [ ] Termin bestaetigen" auf seinem Doc -> Endstand:
+     "---\ntags: [projekt]\nstatus: laeuft\nstatus: offen\n---\n\n# Projekt Uferbau\n\n## Stand\n\nDer Bauantrag liegt beim Amt.\n\n## Aufgaben\n\n- [ ] Statik pruefen\n- [ ] Angebot einholen\n\n- [ ] Statik pruefen\n- [ ] Angebot einholen\n## Code\n\n```js\nconst x = 1;\n```\n\n"
+  Beitrag TOT
+
+== G3  grosse Notiz (1.000 Zeilen), beide aendern je EINE Zeile
+  Zeilen im Verlierer-Doc: 1002, davon eigene Items: 2
+  eigene Zeilen woertlich: ["zeile 100","zeile 700 — vom Verlierer geaendert"]
+  Grundtextzeile "zeile 500": Ziel 1x, ALIAS, nach Loeschung TOT
+
+== E  Wieviel des Verlierer-Docs traegt ueberhaupt eigene Items?
+  je eine ANDERE Zeile geaendert (Zeile 9 / Zeile 15)        eigen   2/ 25 =   8.0 %
+  beide haengen einen Aufgabenpunkt an — VERSCHIEDENE        eigen   1/ 25 =   4.0 %
+  beide haengen DENSELBEN Aufgabenpunkt an                   eigen   1/ 25 =   4.0 %
+  Verlierer haengt einen neuen Abschnitt an (mit Leerzeilen) eigen   5/ 28 =  17.9 %
+  beide setzen einen zweiten Codeblock                       eigen   2/ 29 =   6.9 %

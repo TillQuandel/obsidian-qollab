@@ -1,0 +1,11 @@
+== sweep  SPIKE_DET=42  Alphabet {a,b,c}  Laenge 1..4
+   120 Folgen je Seite -> 14400 Paare
+   Laufzeit 15.7 s
+
+   Paare gesamt                                   14400
+   V1 trifft zu (Verlierer-Folge ist Teilfolge)   5166
+   V1 VERLETZT                                    0
+   V2 VERLETZT                                    0
+
+   Paare, in denen KEINE gemeinsame Zeile ein eigenes Item hat: 5166 / 14400  = 35.9 %
+   gemeinsame Zeilen des Verlierers insgesamt: 38340, davon aliasiert: 25548  = 66.6 %
