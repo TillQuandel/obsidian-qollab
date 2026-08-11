@@ -31,7 +31,25 @@
 param(
     [Parameter(Mandatory)][ValidateSet('setup','basis','schlag','zeigen')][string]$Phase,
     [string]$Tag = 'lauf',
-    [double]$Pause = 1.0
+    [double]$Pause = 1.0,
+    # STRIKTE VARIANTE: B legt die Notiz nur per `app.vault.create` an und praegt
+    # damit KEINEN eigenen CRDT-State — gemessen erzeugt ein blosses `create`
+    # keine Sidecar, erst ein `modify` tut es (agent-t2b.ps1:87-89).
+    #
+    # Erst damit ist r11s Vorbedingung zeichengleich: dort hat B die Notiz "nie
+    # geoeffnet, hat keinen eigenen State". Im Normalmodus legt B sie selbst an
+    # und traegt eine eigene Inkarnation — der Doc-Vorlauf ist derselbe, die
+    # Erstkontakt-Lage nicht.
+    [switch]$BOhneState,
+    # GEGENTEST: Dieselbe Schrittfolge, aber EXTERN geschrieben
+    # ([IO.File]::WriteAllText bei laufendem Obsidian) — der Weg, den `r11`,
+    # `r13`, `r14`, `r15` ueber `H-EDIT` nehmen. Damit ist jeder Schreibvorgang
+    # fuer das Herkunftstor fremd und wird geparkt.
+    #
+    # Zweck: Wenn derselbe Aufbau ueber den Prozess-Weg sauber laeuft und ueber
+    # den externen Weg bricht, liegt es am SCHREIBWEG und nicht am Szenario. Das
+    # ist der A/B-Test zu den Batterie-Befunden vom 2026-08-12.
+    [switch]$Extern
 )
 
 $ErrorActionPreference = 'Stop'
@@ -54,6 +72,14 @@ function Cdp([string]$Hint, [string]$Js) {
     try { return ($t | ConvertFrom-Json) } catch { L "[CDP-ROH $Hint] $t"; return $null }
 }
 function Setze([string]$v, [string]$Text) {
+    if ($Extern) {
+        # Derselbe Weg wie `H-EDIT` in den Runnern: ein fremder Prozess schreibt
+        # in die Datei, waehrend Obsidian laeuft. Das Herkunftstor parkt das.
+        $p = Join-Path $Vp[$v] $NOTE
+        [IO.File]::WriteAllText($p, $Text, [Text.UTF8Encoding]::new($false))
+        L "[SETZE $v] EXTERN n=$($Text.Length)"
+        return
+    }
     $j = 'const p=' + ($NOTE | ConvertTo-Json) + '; const t=' + ($Text | ConvertTo-Json) + ';' +
          'let f=app.vault.getAbstractFileByPath(p);' +
          'if(!f){ await app.vault.create(p,t); return {weg:"create",n:t.length}; }' +
@@ -135,22 +161,46 @@ switch ($Phase) {
         Remove-Item -Force (Join-Path $Vp[$v] $NOTE) -EA 0
     }
     L '[B] Ausgangszustand geleert.'
-    foreach ($v in @('a','b')) {
-        Setze $v $BASIS
+    # A praegt immer: create + modify -> Sidecar entsteht.
+    Setze 'a' $BASIS
+    Start-Sleep -Seconds 3
+    Setze 'a' $BASIS
+    $null = Warte { (Side 'a').Count -ge 1 } 180 'A-Sidecar'
+
+    if ($BOhneState) {
+        # NUR create — kein modify, damit keine Sidecar und kein eigener State
+        # entsteht. Das ist r11s Vorbedingung.
+        Setze 'b' $BASIS
+        Start-Sleep -Seconds 20
+        $bSide = (Side 'b').Count
+        L "[B] STRIKT: b hat $bSide Sidecar(s) (soll 0)"
+        if ($bSide -ne 0) {
+            throw "B hat einen eigenen State ($bSide Sidecars) — die strikte Vorbedingung ist NICHT hergestellt."
+        }
+    } else {
+        Setze 'b' $BASIS
         Start-Sleep -Seconds 3
-        Setze $v $BASIS
+        Setze 'b' $BASIS
+        $null = Warte { (Side 'b').Count -ge 1 } 180 'B-Sidecar'
     }
-    $null = Warte { ((Side 'a').Count -ge 1) -and ((Side 'b').Count -ge 1) } 180 'Sidecars a+b'
     L "[B] a = $((Lies 'a') -replace $NL,'|')"
     L "[B] b = $((Lies 'b') -replace $NL,'|')"
+    L "[B] Sidecars: a=$((Side 'a').Count) b=$((Side 'b').Count)"
   }
 
   # DER SCHLAG. A editiert im Prozess, NUR die Sidecar reist, dann tippt B
   # zweimal kurz hintereinander.
   'schlag' {
+    # Beim externen Weg ist der Text sofort in der Datei, aber das Herkunftstor
+    # parkt ihn: die Sidecar folgt erst nach PARK_FRIST_TICKS(4) x
+    # SCAN_INTERVAL_MS(30_000) = 120 s. Ohne dieses Warten reiste eine Sidecar,
+    # die den Marker noch gar nicht kennt.
+    $parkWarten = if ($Extern) { 150 } else { 5 }
+    if ($Extern) { L "[S] EXTERNER Modus — nach jedem Schreiben ${parkWarten}s auf den Nachtrag warten." }
+
     Setze 'a' ($BASIS + $MA + $NL)
     $null = Warte { (Lies 'a') -match [regex]::Escape($MA) } 120 'A traegt seinen Marker'
-    Start-Sleep -Seconds 5
+    Start-Sleep -Seconds $parkWarten
     L "[S] a vor der Zustellung = $((Lies 'a') -replace $NL,'|')"
     L "[S] b vor der Zustellung = $((Lies 'b') -replace $NL,'|')"
 
@@ -166,7 +216,7 @@ switch ($Phase) {
     $bText2 = Lies 'b'
     Setze 'b' ($bText2 + $MB2 + $NL)
 
-    Start-Sleep -Seconds 30
+    Start-Sleep -Seconds (30 + $parkWarten)
     L "[S] nach den B-Edits:"
     L "[S] a = $((Lies 'a') -replace $NL,'|')"
     L "[S] b = $((Lies 'b') -replace $NL,'|')"

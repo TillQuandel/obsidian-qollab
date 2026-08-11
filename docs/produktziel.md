@@ -579,11 +579,45 @@ nach der Sidecar-Zustellung trug `b`s **Doc** ihn, seine `.md` nicht.
 ist `r11`s Rot **sehr wahrscheinlich ein Artefakt des Park-Pfades**, nicht ein Fehler des heutigen
 Erfassungspfades.
 
-**Eine Abweichung vom Original ist ausdrücklich zu nennen, sie schwächt den Schluss ab:** In `r11`
-hat B die Notiz *nie geöffnet und keinen eigenen State* — in diesem Lauf legt B sie selbst an und
-trägt damit eine eigene Inkarnation. Der Doc-Vorlauf ist derselbe, die Erstkontakt-Lage nicht.
-Ein schärferer Lauf, in dem B ohne eigenen State startet und die Notiz erst über die fremde
-Sidecar kennenlernt, steht aus. **Bis dahin gilt: entlastet, nicht freigesprochen.**
+**Die strikte Variante ist nachgefahren und bestätigt es** (`-BOhneState`, Lauf `t5`): B legt die
+Notiz nur per `app.vault.create` an und prägt damit **keinen** eigenen CRDT-State — im Lauf
+protokolliert als `b hat 0 Sidecar(s) (soll 0)`. Damit ist `r11`s Vorbedingung („B hat die `.md`,
+aber keinen eigenen State") zeichengleich hergestellt, und zwar **ohne** externen Schreibvorgang.
+Ergebnis erneut **`A-ZEILE-UEBERLEBT`**: alle drei Marker genau einmal, beide Vaults konvergent.
+
+Damit fällt die Einschränkung des ersten Laufs weg. **Über den Prozess-Schreibweg ist die Klasse
+sauber — in beiden Erstkontakt-Lagen.**
+
+#### Der Gegentest widerlegt die naheliegende Erklärung
+
+Um die Ursache festzunageln, wurde derselbe Aufbau mit **externem** Schreibweg gefahren
+(`-Extern`, Lauf `t6b`) — dem Weg, den `r11` über `H-EDIT` nimmt. Die Basis-Phase lief bewusst
+weiter über den Prozess, damit die Ausgangslage byte-gleich bleibt und **nur** der Schreibweg im
+kritischen Moment variiert.
+
+**Erwartet war ein Bruch. Eingetreten ist keiner:** Verdict erneut `A-ZEILE-UEBERLEBT`, alle drei
+Marker genau einmal, beide Vaults konvergent. Der einzige Unterschied zum Prozess-Lauf ist die
+**Reihenfolge** (`BBB1, BBB2, AAA` statt `AAA, BBB1, BBB2`) — die Sortierung der Union, kein
+Verlust.
+
+**Damit ist „der externe Schreibweg verursacht `r11`s Rot" widerlegt.** Die Erklärung, die für
+`r13`/`r14` (Duplikate) trägt, trägt für den Verlust in `r11`/`r15` **nicht**. Die Ursache ist
+offen.
+
+**Was den Gegentest von `r11` noch unterscheidet** — jede dieser Abweichungen ist ein Kandidat und
+keine ist geprüft:
+
+1. **Die Wartezeit.** Dieser Lauf wartet nach jedem externen Schreiben 150 s auf den Nachtrag.
+   `r11` tippt „zwei Edits in B kurz hintereinander, ohne dass dazwischen ein 30-s-Poll laeuft" —
+   also **mitten in der Park-Frist**. Die B-Edits lagen hier zwar 1 s auseinander, As Nachtrag war
+   aber bereits durch.
+2. **Wie B seine `.md` bekommt.** Hier per `app.vault.create` im Prozess (kein Parkplatz-Eintrag);
+   in `r11` per `H-WRITE-NOTE`, also **extern** — B trägt dann selbst einen geparkten Stand.
+3. **Drei Notizen mit gestaffelten Tastenpausen** (1,0 / 2,5 / 6,0 s) statt einer.
+
+Der nächste Diskriminator müsste Punkt 1 und 2 gezielt einführen, statt sie wie hier zu
+neutralisieren. **Dieser Lauf ist ein Lehrstück für `[[Messinstrument-Blindheit]]`: Er hat die
+Variable, die er prüfen sollte, durch seine eigenen Wartezeiten ausgeschaltet.**
 
 **Der vermutlich tiefere Grund für `r11`s Rot — und er betrifft mehr als diesen Runner:** Die
 Vorbedingung des Aufbaus lautet „B hat die `.md`, aber **keinen eigenen CRDT-State**". Genau die
