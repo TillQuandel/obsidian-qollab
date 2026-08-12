@@ -15,7 +15,7 @@
 | überholt | 2 | durch eine bessere Lösung ersetzt |
 | kein Urteil | 1 | Prüfung nicht zustande gekommen |
 
-**4 Einträge sind nicht nachrechenbar** — ihre Instrumente oder Berichte existieren nicht mehr: `K-01`, `K-07`, `K-13`, `K-15`. Vor Zitation außerhalb des Projekts prüfen.
+**5 Einträge sind nicht nachrechenbar** — ihre Instrumente oder Berichte existieren nicht mehr: `K-01`, `K-06`, `K-07`, `K-13`, `K-15`. Vor Zitation außerhalb des Projekts prüfen.
 
 ## Inkarnations-Kennung und Erstkontakt
 
@@ -26,7 +26,7 @@
 | `K-03` | clientID aus dem Texthash | gebrochen | 400/400 dupliziert unter realistischer Sync-Verzoegerung | nachlaufbar |
 | `K-04` | Update-Bytes direkt bauen | gebrochen | keine — semantisch identisch zu K-03 | nachlaufbar |
 | `K-05` | Deterministischer Genesis (Zed-Konstruktion) | leergelaufen | 8.640 Laeufe zahlengleich mit dem Bestand, in jeder Zelle beider Transportmodi | nachlaufbar |
-| `K-06` | Saat-Kennung (Inkarnationskennung per FNV-1a aus dem Grundtext) | leergelaufen | Vorbedingung 0/24 im Vorabtest, 0/720 je Zelle im Projekt-Harness | nachlaufbar |
+| `K-06` | Saat-Kennung (Inkarnationskennung per FNV-1a aus dem Grundtext) | leergelaufen | Vorbedingung 0/24 im Vorabtest, 0/720 je Zelle im Projekt-Harness | **kein Bericht** |
 | `K-07` | Kandidat A — Genesis-Blob mit Blob-Hash-Tie-Break | gebrochen | Verlust steigt (baselineRace 7 auf 10); Duplikate fallen in keinem Modus (16>16, 23>24, 15>19) | **Instrument weg** |
 | `K-08` | Note-Kennung zur Historien-Kennung ableiten | gebrochen | Verbesserung bei 2 Geraeten, vollstaendiger Zusammenbruch bei 3 | nachlaufbar |
 | `K-09` | Bibliothekswechsel (Loro, Automerge, Diamond Types, cola, json-joy, Peritext) | gebrochen | keines der sieben geprueften Systeme fuehrt inhaltsgleiche, unabhaengig erzeugte Einfuegungen zusammen | nachlaufbar |
@@ -111,7 +111,7 @@ Die Konstruktion traegt technisch — der Eingriff war aktiv (bit-identische Sta
 
 Faellt nicht, weil sie bricht, sondern weil ihre Vorbedingung nie eintritt. Der Praegemoment liegt HINTER dem Saattext (main.ts:1346 - der Start-Sweep ueberspringt Notizen ohne Hilfsdatei, die Kennung entsteht erst beim ersten echten Edit), der Saattext traegt die Kennung also schon, und zwei Menschen tippen nicht bytegleich. In allen acht gepaarten Zellen Spalte fuer Spalte identisch mit dem Bestand.
 
-*Beleg: Vault-Note, Nachtrag 2026-08-07; erstkontakt-2026-08-07.md — nachlaufbar*
+*Beleg: Vault-Note, Nachtrag 2026-08-07. Der dort genannte Sessionbericht `erstkontakt-2026-08-07.md` existiert nicht — weder im Doku-Repo noch sonstwo; am 2026-08-12 nachgesehen. Die Zahlen stehen nur in der Vault-Note selbst. — **kein Bericht***
 
 ### K-07 — Kandidat A — Genesis-Blob mit Blob-Hash-Tie-Break
 

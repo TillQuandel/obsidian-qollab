@@ -135,6 +135,28 @@ export function parse(quelle) {
       continue;
     }
 
+    // Mehrzeiliger Wert in Anfuehrungszeichen: `beleg: "erste Zeile` und die
+    // schliessende Anfuehrung erst weiter unten. Gueltiges YAML, und beim ersten
+    // laengeren Beleg sofort benutzt — ohne diesen Zweig wirft der Parser dort,
+    // wo der Schreibende alles richtig gemacht hat.
+    const anf = rest[0];
+    if ((anf === '"' || anf === "'") && !(rest.length > 1 && rest.endsWith(anf))) {
+      let text = rest.slice(1);
+      let j = i + 1;
+      let geschlossen = false;
+      for (; j < zeilen.length; j++) {
+        const w = zeilen[j].trim();
+        if (w.endsWith(anf)) { text += ' ' + w.slice(0, -1); geschlossen = true; break; }
+        text += ' ' + w;
+      }
+      if (!geschlossen) throw new Error(`Zeile ${i + 1}: Anfuehrungszeichen nie geschlossen`);
+      const wert = text.replace(/\s+/g, ' ').trim();
+      if (aktuell && inVersuchen) aktuell[schluessel] = wert;
+      else kopf[schluessel] = wert;
+      i = j;
+      continue;
+    }
+
     if (rest === '') {
       // Schluessel ohne Wert leitet eine Liste ein (nur im Kopf verwendet).
       if (aktuell && inVersuchen) throw new Error(`Zeile ${i + 1}: leerer Wert in einem Eintrag: ${schluessel}`);

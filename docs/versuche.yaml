@@ -154,8 +154,10 @@ versuche:
       echten Edit), der Saattext traegt die Kennung also schon, und zwei Menschen
       tippen nicht bytegleich. In allen acht gepaarten Zellen Spalte fuer Spalte
       identisch mit dem Bestand.
-    beleg: "Vault-Note, Nachtrag 2026-08-07; erstkontakt-2026-08-07.md"
-    beleg_lage: nachlaufbar
+    beleg: "Vault-Note, Nachtrag 2026-08-07. Der dort genannte Sessionbericht
+      `erstkontakt-2026-08-07.md` existiert nicht — weder im Doku-Repo noch sonstwo;
+      am 2026-08-12 nachgesehen. Die Zahlen stehen nur in der Vault-Note selbst."
+    beleg_lage: kein-bericht
 
   - id: K-07
     name: Kandidat A — Genesis-Blob mit Blob-Hash-Tie-Break
