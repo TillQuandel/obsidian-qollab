@@ -2,20 +2,19 @@
 
 ## Zuerst lesen
 
-**`.superpowers/sdd/folgeprompt-aktuell.md`** — der Übergabe-Prompt der letzten Session: Stand
-(Commit, Testzahl), der offene Auftrag, die **Sperrliste** (was gemessen gefallen ist, mit Zahl und
-Grund) und die Harness-Fallstricke. **Als Erstes lesen** — er verhindert, dass eine neue Session
-Kandidaten durchprobiert, die schon mehrfach gefallen sind. Ältere Stände liegen datiert daneben
-(`folgeprompt-<datum>.md`) und sind Historie. Wer eine Session abschließt, **überschreibt sie**
-(siehe deren Schlussabschnitt).
+**`obsidian-qollab-doku/sdd/folgeprompt-aktuell.md`** (privates Repo) — der Übergabe-Prompt der
+letzten Session: Stand (Commit, Testzahl), der offene Auftrag, die **Sperrliste** (was gemessen
+gefallen ist, mit Zahl und Grund) und die Harness-Fallstricke. **Als Erstes lesen** — er verhindert,
+dass eine neue Session Kandidaten durchprobiert, die schon mehrfach gefallen sind. Ältere Stände
+liegen datiert daneben (`folgeprompt-<datum>.md`) und sind Historie. Wer eine Session abschließt,
+**überschreibt sie** (siehe deren Schlussabschnitt).
 
-> **Achtung, Stand 2026-08-11: Diese Datei existiert auf dem aktuellen Rechner nicht.** Der Verweis
-> wurde um 21:05 eingetragen, `.superpowers/sdd/` war da bereits seit dem Umzug am selben Tag
-> verschwunden (siehe §Wo was steht) — der Ordner ist lokal und damit von keinem `git clone`
-> zurückzuholen. Wer die nächste Session übergeben will, legt den Folgeprompt ins private Doku-Repo
-> (`obsidian-qollab-doku/sdd/`), sonst ist die Pflichtlektüre nach dem nächsten Rechnerwechsel wieder
-> weg. Dass ausgerechnet die *erste* Pflichtlektüre am selben Tag denselben Weg genommen hat wie der
-> verlorene Harness, ist der Grund für die Regel unten.
+> **Der Verweis zeigte bis zum 2026-08-12 auf `.superpowers/sdd/folgeprompt-aktuell.md` — und damit
+> ins Leere.** Er wurde am 2026-08-11 um 21:05 eingetragen, als `.superpowers/sdd/` seit dem Umzug
+> am selben Tag bereits verschwunden war (siehe §Wo was steht): ein lokaler Ordner, von keinem
+> `git clone` zurückzuholen. Die Datei liegt jetzt im privaten Doku-Repo und überlebt damit den
+> nächsten Rechnerwechsel. Dass ausgerechnet die *erste* Pflichtlektüre denselben Weg genommen hat
+> wie der verlorene Harness, ist der Grund für die Regel unten.
 
 **[docs/produktziel.md](docs/produktziel.md)** — Zweck, K.o.-Kriterien, wiederkehrende
 Missverständnisse, offene Widersprüche. **Vor jeder inhaltlichen Aussage über das Projekt lesen.**

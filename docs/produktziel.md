@@ -398,12 +398,25 @@ Grundtextverlust. Das ist die Interleaving-Anomalie (Kleppmann et al., PaPoC '19
 am Produkt statt in der Simulation.
 
 **Was der Lauf NICHT zeigt:** eine Rate (ein Szenario, nicht 200 Seeds), `mdModus: 'ueberschreiben'`
-an echten Instanzen, den Sweep (kein Neustart im Lauf), N ≥ 5. Und: Für die behobene Klasse gibt es
-auf `master` weiterhin **keinen Unit-Test** — `tests/three-way-fuzz.test.ts` liegt nur auf
-`versuch/patch-apply-einbau` und ist dort an das nie eingebaute `MELDE_MARKE` gebunden. Bericht:
+an echten Instanzen, den Sweep (kein Neustart im Lauf), N ≥ 5. Bericht:
 `wirkungsnachweis-2026-08-12.md` — **beim Rechnerwechsel verloren** (s. u.), und anders als bei der
 Messung oben ist hier keine versionierte Rohdatei bekannt, aus der sich der Lauf rekonstruieren
 ließe. Die Aussagen dieses Abschnitts stehen damit ohne nachlesbaren Beleg.
+
+> **Korrektur 2026-08-12 (zweite Sitzung): Der Unit-Test existiert.** Hier stand, für die behobene
+> Klasse gebe es „auf `master` weiterhin **keinen** Unit-Test", `tests/three-way-fuzz.test.ts` liege
+> nur auf `versuch/patch-apply-einbau` und sei dort ans nie eingebaute `MELDE_MARKE` gebunden.
+> Nachgezählt: Die Datei liegt seit `e827520` auf `master`, hat 84 Zeilen und enthält `MELDE_MARKE`
+> **nicht** (`grep -rn MELDE_MARKE src/ tests/` → null Treffer). Sie fährt die Fixture aus
+> `spike/schnitt/probe-fuzz.mjs` Seed 3 und prüft drei Zusagen: Grundtext, den alle drei Stände
+> unverändert tragen, bleibt stehen; die lokale Ergänzung landet nicht an `n0-base-4`; und der
+> Alltagsfall behält beide Beiträge — die Gegenprobe dagegen, dass „nur noch exakt suchen" den
+> Grundtext gerettet und den Alltagsfall fallen gelassen hätte. Die Liste der geprüften Zeilen ist
+> aus der Fixture **abgeleitet** statt hart geschrieben, kann also nicht davon driften.
+>
+> Was an der alten Fassung richtig bleibt: Auf `versuch/patch-apply-einbau` liegt **ebenfalls** eine
+> Datei dieses Namens, und die ist an `MELDE_MARKE` gebunden. Zwei verschiedene Dateien unter einem
+> Namen — die Aussage stammt vom Branch-Stand und wurde beim Wechsel auf `master` nicht nachgezogen.
 
 **Nebenbefund:** Auch der Bestand ist nicht idempotent — rechnet ein zweites Gerät den Merge auf
 dem Ergebnis des ersten, steht das lokale Token danach zweimal da (64 → 72 → 80 Zeichen). Das ist
@@ -547,6 +560,22 @@ Befund, ein Infrastruktur-Hänger).
 | davon tot vor dem ersten Assert | 7 | **0** |
 
 **Die Batterie ist damit wieder aussagefähig** — was seit dem 2026-08-04 nicht mehr galt.
+
+> **`r31` ist verloren, nicht bloß ungefahren (festgestellt 2026-08-12, zweite Sitzung).** Die
+> Tabelle oben führt ihn als einen der neun Runner und als einen der zwei, die vor dem 2026-08-12
+> überhaupt maßen. Er existiert nicht mehr: `git rev-list --all --objects` liefert in **beiden**
+> Repos null Treffer auf `r31`, und im Dateisystem gibt es ihn ebenfalls nicht. Gerettet wurden nur
+> die Runner mit einer Kopie unter `spike/wirkung/` (`r01-discriminator`, `s00-disc`, `r11-disc`,
+> `r13-disc`, `r14-disc`, `r15-disc`, `r16-disc`) plus `r30-herkunftstor.ps1` im Doku-Repo. `r31`
+> hatte keine — er lag nur unter `C:\tmp\qollab-test\` und ist denselben Weg gegangen wie der
+> Harness.
+>
+> **Das wiegt schwerer als der Ausfall eines der externen Runner:** `r31` tippte laut dem Abschnitt
+> oben über CDP, war also einer der **zwei** Prozess-Schreiber — genau die Bauart, auf die die
+> übrigen jetzt umgestellt werden müssen. Von den zwei belegten Vorbildern ist nur noch `r30` da.
+> Die Zeile „`r31` weiterhin ungefahren" in der Tabelle ist damit irreführend: Er kann nicht
+> gefahren werden. Was er prüfte, ist aus keiner erhaltenen Quelle rekonstruierbar — die Aktenlage
+> nennt nur seine Laufzeit (31 min) und den Schreibweg.
 
 **Die Befunde zerfallen in zwei Gruppen, und nur eine hat eine Erklärung.** `r13`/`r14` zeigen
 Duplikate, kein Verlust — und sie haben eine naheliegende, aber
