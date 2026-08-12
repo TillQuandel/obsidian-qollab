@@ -30,6 +30,7 @@ dass jemand einen Server betreibt.*
 | Was | Wo |
 | --- | --- |
 | **Ziel**, K.o.-Kriterien, Missverständnisse | `docs/produktziel.md` (versioniert) |
+| **Was schon probiert wurde** — 40 Versuche mit Verdikt, Zahl, Zellbasis, Beleg | `docs/versuche.yaml` (SSoT) · Lesefassung `docs/versuche.md` |
 | **Ist-Zustand** mit Messzahlen, nutzerorientiert | `README.md` (englisch) |
 | Messhistorie bis 2026-08-04, Sessionberichte, Folgeprompts | `obsidian-qollab-doku/sdd/` (privates Repo) |
 | Messergebnisse seit 2026-08-09 | Rohdaten in `obsidian-crdt-sync/spike/`, Befunde in `docs/produktziel.md` |
@@ -63,6 +64,12 @@ sondern ein Betriebsort.**
 5. **Merge nach `master` und Rollout brauchen Tills ausdrückliches Go.** Ein Formatwechsel der
    Hilfsdateien zwingt alle Geräte zum gleichzeitigen Update — ein halb aktualisierter Vault
    verliert Hilfsdateien.
+
+**Vor jedem neuen Kandidaten `docs/versuche.md` lesen.** Dort steht, was gemessen gefallen ist —
+mit dem Unterschied zwischen *gebrochen* (aktiv schlechter) und *leergelaufen* (Vorbedingung trat
+nie ein). Wer einen Versuch nachträgt, editiert `versuche.yaml` und erzeugt die Ansicht neu
+(`node docs/versuche-ansicht.mjs`); `tests/versuche-registratur.test.ts` erzwingt Verdikt,
+Zellbasis und Beleg und prüft, dass beide Dateien übereinstimmen.
 
 ## Arbeitsweise (teuer gelernt)
 
