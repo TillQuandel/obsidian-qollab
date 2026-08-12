@@ -715,6 +715,39 @@ wurde. **Der Diskriminator dafür ist billig:** denselben Fall mit dem Prozess-S
 unter dem heutigen Erfassungspfad überlebt. Bis dahin gilt der Befund als **ungeklärt, nicht als
 entwarnt** — es ist K.o.-Kriterium 1, das hier zur Debatte steht.
 
+> **DER DISKRIMINATOR IST GEFAHREN, 2026-08-12 (zweite Sitzung): `r11`s Rot war ein Artefakt des
+> Park-Pfades.** Der oben verlangte Lauf existiert jetzt als `r11-cdp.ps1` — zeichengleich mit
+> `r11-disc`, geändert ist **nur** der Schreibweg bei laufender App (`H-EDIT-CDP` über
+> `app.vault.modify` statt `[IO.File]::WriteAllText`). Ergebnis an zwei echten Obsidian-Instanzen:
+>
+> | | `r11-disc` (extern) | `r11-cdp` (im Prozess) |
+> | --- | --- | --- |
+> | Verdict | FAIL, 8 Asserts rot | **PASS, 46 Asserts grün** |
+> | `A-A-zeile-1x-{0,1,2}` | 0 / 0 / 0 | **1 / 1 / 1** |
+> | `B-A-zeile-1x-{0,1,2}` | 0 / 0 / 0 | **1 / 1 / 1** |
+> | `kontrolle-merge-kommt-an` | False | **True** |
+> | Konvergenz | — | 1 Runde, beide Vaults byte-gleich |
+>
+> **Der Lauf trägt seinen eigenen Diskriminator:** `sidecar-ohne-park-frist` misst die Zeit vom
+> Schreibvorgang bis zur Hilfsdatei und verlangt < 30 s — über den Park-Pfad wären es mindestens
+> 120. Er ist grün, also misst dieser Lauf den Erfassungspfad und nicht den Nachtrag nach
+> Fristablauf. Ohne ihn wäre ein grünes Ergebnis nicht von „es lief gar nichts" zu unterscheiden.
+>
+> **Die Einschränkung, ausdrücklich:** Alle drei Versuche melden `leg=writeback`, keiner
+> `leg=vorlauf`. Geprüft ist damit **Hälfte 1** von Task 16 (der Write-Back im modify-Pfad feuert),
+> **nicht Hälfte 2** (der Doc läuft der Datei voraus). Der Grund ist strukturell: Im Prozess entsteht
+> die Sidecar in Millisekunden — gemessen 162 bis 209 ms zwischen Zustellung und erstem Edit —, und
+> so kurz hält der Vorlauf-Zustand nicht an. **Der Umbau hat den Runner grün gemacht und dabei einen
+> Teil seines Szenarios verschoben.** Wer Hälfte 2 prüfen will, braucht einen Aufbau, der den
+> Vorlauf künstlich offen hält.
+>
+> Zwei Funde am Apparat, beide beim ersten Lauf überhaupt: `Obsidian.exe` wurde nicht gefunden, weil
+> die Suche nur `%LOCALAPPDATA%\Obsidian` kannte und der Installer per-user unter
+> `%LOCALAPPDATA%\Programs\Obsidian` ablegt (behoben). Und die Kommandozeile an `node.exe` trug
+> Nicht-ASCII codepage-abhängig — vier Umlaute kamen als neun Zeichen an. Die Längenprüfung in
+> `H-EDIT-CDP` hat es gefangen; ohne sie hätte der Lauf einen Textfehler des Plugins gemeldet, den
+> es nicht gibt. Behoben durch `\uXXXX`-Escaping der gesamten Übergabe.
+
 **Bis die Wächter-Ursache gefunden oder die Timeouts der sieben alten Runner angehoben sind, sagt
 die Batterie über Regressionen nichts.**
 

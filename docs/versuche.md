@@ -4,13 +4,13 @@
 > Quelle ist `docs/versuche.yaml`. Neu erzeugen mit `node docs/versuche-ansicht.mjs`.
 > `tests/versuche-registratur.test.ts` prüft, dass beide übereinstimmen.
 
-**Stand:** 2026-08-12 · **48 Versuche**
+**Stand:** 2026-08-12 · **49 Versuche**
 
 | Verdikt | Anzahl | Bedeutung |
 | --- | --- | --- |
-| gebrochen | 34 | aktiv schlechter oder verletzt ein Kriterium |
-| offen | 5 | gemessen, aber nicht eingebaut |
-| eingebaut | 3 | im Produktivcode auf `master` |
+| gebrochen | 35 | aktiv schlechter oder verletzt ein Kriterium |
+| offen | 4 | gemessen, aber nicht eingebaut |
+| eingebaut | 4 | im Produktivcode auf `master` |
 | leergelaufen | 2 | Vorbedingung trat nie ein — Rückfall aufs Bestandsverhalten, kein Schaden |
 | kein Urteil | 2 | Prüfung nicht zustande gekommen |
 | überholt | 2 | durch eine bessere Lösung ersetzt |
@@ -677,7 +677,8 @@ Der Rest, der ohne Koordinator realistisch bleibt - den Fall sichtbar machen sta
 | ID | Versuch | Verdikt | Kennzahl | Beleglage |
 | --- | --- | --- | --- | --- |
 | `X-01` | Timeouts der Runner von 90 auf 240 s anheben | gebrochen | r01 FAIL mit 0 erreichten Asserts auf PASS mit 6; gemessene Wartezeit 118,6 s. Aber 4 von 9 Runnern bleiben rot | nachlaufbar |
-| `X-02` | Runner auf den Prozess-Schreibweg umstellen (H-EDIT-CDP) | offen | nicht gegen Obsidian gelaufen; Escaping-Kette 15/15, Aufrufgraph geschlossen, 0 externe Schreibvorgaenge bei laufender App | nachlaufbar |
+| `X-02` | Runner auf den Prozess-Schreibweg umstellen (H-EDIT-CDP) | eingebaut | r11-cdp an zwei echten Obsidian-Instanzen: PASS, 46 Asserts gruen gegen FAIL mit 8 roten beim externen Arm; A-A-zeile-1x 0/0/0 auf 1/1/1 | nachlaufbar |
+| `X-04` | r11s Rot als Produktfehler an K.o.-Kriterium 1 fuehren | gebrochen | in 5 kontrollierten Laeufen nicht reproduzierbar (t4, t5, t6b, t7, r11-cdp); ueber den Prozess-Schreibweg PASS mit 46 gruenen Asserts | nachlaufbar |
 | `X-03` | Messapparat ohne Herkunftstor (bis 2026-08-09) | überholt | zwei Drittel des Befunds 'Grundtextverlust ab drei Geraeten' waren Artefakt; N=3 Verlust 7,1 auf 0, Verdopplung 440 auf 58 | nachlaufbar |
 
 ### X-01 — Timeouts der Runner von 90 auf 240 s anheben
@@ -697,14 +698,27 @@ Behebt den Ausfall, misst danach aber den NACHTRAG NACH FRISTABLAUF statt des lo
 
 **Hypothese:** Ueber app.vault.modify im Renderer wird nichts geparkt; die Batterie misst wieder das Produkt.
 
-**Verdikt:** offen · **2026-08-12**
+**Verdikt:** eingebaut · **2026-08-12**
 
-**Kennzahl:** nicht gegen Obsidian gelaufen; Escaping-Kette 15/15, Aufrufgraph geschlossen, 0 externe Schreibvorgaenge bei laufender App  
-**Zellbasis:** statisch bzw. gegen eine Attrappe
+**Kennzahl:** r11-cdp an zwei echten Obsidian-Instanzen: PASS, 46 Asserts gruen gegen FAIL mit 8 roten beim externen Arm; A-A-zeile-1x 0/0/0 auf 1/1/1  
+**Zellbasis:** ein Lauf, drei Vorlauf-Versuche mit Tastenpausen 1,0 / 2,5 / 6,0 s
 
-Gebaut fuer r11, r13, r14, r15 plus den Aufbauhelfer. Die Regel dabei - umzustellen ist nur, was bei LAUFENDER App schreibt; drei Stellen bleiben bewusst extern, weil sie das Szenario sind und nicht sein Artefakt. Ein Waechter (pruefe-runner-schreibwege.ps1) setzt das maschinell durch.
+Gebaut fuer r11, r13, r14, r15 plus den Aufbauhelfer. Die Regel dabei - umzustellen ist nur, was bei LAUFENDER App schreibt; drei Stellen bleiben bewusst extern, weil sie das Szenario sind und nicht sein Artefakt. Ein Waechter (pruefe-runner-schreibwege.ps1) setzt das maschinell durch. Der Lauf traegt seinen eigenen Diskriminator - `sidecar-ohne-park-frist` verlangt die Hilfsdatei in unter 30 s, wo der Park-Pfad mindestens 120 braeuchte. Er ist gruen, also misst der Lauf den Erfassungspfad. EINSCHRAENKUNG - alle drei Versuche melden `leg=writeback`, keiner `leg=vorlauf`. Geprueft ist Haelfte 1 von Task 16, nicht Haelfte 2. Im Prozess entsteht die Sidecar in Millisekunden (162-209 ms), so kurz haelt der Vorlauf-Zustand nicht an. Der Umbau hat den Runner gruen gemacht und dabei einen Teil seines Szenarios verschoben.
 
-*Beleg: obsidian-qollab-doku, Commits 858135b und 1792188 — nachlaufbar*
+*Beleg: obsidian-qollab-doku, Commits 858135b, 1792188, 43fd38c; Lauf-Log runs/r11-cdp-lauf2.log — nachlaufbar*
+
+### X-04 — r11s Rot als Produktfehler an K.o.-Kriterium 1 fuehren
+
+**Hypothese:** Der in r11 gemessene Grundtextverlust ist ein echter Fehler des Plugins.
+
+**Verdikt:** gebrochen · **2026-08-12**
+
+**Kennzahl:** in 5 kontrollierten Laeufen nicht reproduzierbar (t4, t5, t6b, t7, r11-cdp); ueber den Prozess-Schreibweg PASS mit 46 gruenen Asserts  
+**Zellbasis:** vier Diskriminator-Varianten plus der umgebaute Runner selbst
+
+Die Signatur war ernst - As Zeile fehlte in BEIDEN Vaults, bei intakter Konvergenz, also der stille Fall. Widerlegt ist sie ueber den Schreibweg - derselbe Aufbau im Prozess statt extern laesst die Zeile in allen drei Versuchen ueberleben. Ursache war das Herkunftstor - extern geschriebener Inhalt wird 120 s geparkt und danach per unionMerge nachgetragen, ein anderer Pfad als der, auf dem die Zusage 2026-08-03 aufgestellt wurde. Der Runner mass seit dem 2026-08-04 am Produkt vorbei, nicht das Produkt falsch. Lehre - eine Signatur, die exakt wie K.o.-Kriterium 1 aussieht, kann vollstaendig aus dem Messapparat stammen. Ohne den Diskriminator waere hier ein Produktfehler in die Akten gegangen.
+
+*Beleg: docs/produktziel.md, Abschnitt 'Der Vorlauf-Diskriminator'; runs/r11-cdp-lauf2.log — nachlaufbar*
 
 ### X-03 — Messapparat ohne Herkunftstor (bis 2026-08-09)
 
