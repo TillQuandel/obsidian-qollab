@@ -65,6 +65,14 @@ sondern ein Betriebsort.**
    Hilfsdateien zwingt alle Geräte zum gleichzeitigen Update — ein halb aktualisierter Vault
    verliert Hilfsdateien.
 
+Die Belegprobe hält jede Zahl der Registratur gegen ihre Quellen (der Wissenspool wird nur
+durchsucht, wenn die Variable gesetzt ist — sonst melden Einträge falsch, deren Zahlen nur dort
+stehen):
+
+```bash
+QOLLAB_WIKI_DIR=<Wissenspool> node docs/versuche-belege.mjs
+```
+
 **Vor jedem neuen Kandidaten `docs/versuche.md` lesen.** Dort steht, was gemessen gefallen ist —
 mit dem Unterschied zwischen *gebrochen* (aktiv schlechter) und *leergelaufen* (Vorbedingung trat
 nie ein). Wer einen Versuch nachträgt, editiert `versuche.yaml` und erzeugt die Ansicht neu
