@@ -4,11 +4,11 @@
 > Quelle ist `docs/versuche.yaml`. Neu erzeugen mit `node docs/versuche-ansicht.mjs`.
 > `tests/versuche-registratur.test.ts` prüft, dass beide übereinstimmen.
 
-**Stand:** 2026-08-12 · **49 Versuche**
+**Stand:** 2026-08-12 · **50 Versuche**
 
 | Verdikt | Anzahl | Bedeutung |
 | --- | --- | --- |
-| gebrochen | 35 | aktiv schlechter oder verletzt ein Kriterium |
+| gebrochen | 36 | aktiv schlechter oder verletzt ein Kriterium |
 | offen | 4 | gemessen, aber nicht eingebaut |
 | eingebaut | 4 | im Produktivcode auf `master` |
 | leergelaufen | 2 | Vorbedingung trat nie ein — Rückfall aufs Bestandsverhalten, kein Schaden |
@@ -678,7 +678,8 @@ Der Rest, der ohne Koordinator realistisch bleibt - den Fall sichtbar machen sta
 | --- | --- | --- | --- | --- |
 | `X-01` | Timeouts der Runner von 90 auf 240 s anheben | gebrochen | r01 FAIL mit 0 erreichten Asserts auf PASS mit 6; gemessene Wartezeit 118,6 s. Aber 4 von 9 Runnern bleiben rot | nachlaufbar |
 | `X-02` | Runner auf den Prozess-Schreibweg umstellen (H-EDIT-CDP) | eingebaut | r11-cdp an zwei echten Obsidian-Instanzen: PASS, 46 Asserts gruen gegen FAIL mit 8 roten beim externen Arm; A-A-zeile-1x 0/0/0 auf 1/1/1 | nachlaufbar |
-| `X-04` | r11s Rot als Produktfehler an K.o.-Kriterium 1 fuehren | gebrochen | in 5 kontrollierten Laeufen nicht reproduzierbar (t4, t5, t6b, t7, r11-cdp); ueber den Prozess-Schreibweg PASS mit 46 gruenen Asserts | nachlaufbar |
+| `X-04` | r11s Rot als Produktfehler an K.o.-Kriterium 1 fuehren | gebrochen | in 6 kontrollierten Laeufen nicht reproduzierbar (t4, t5, t6b, t7, r11-cdp, r15-cdp); beide Verlust-Runner ueber den Prozess-Schreibweg PASS (46 bzw. 21 gruene Asserts) | nachlaufbar |
+| `X-05` | Serienlauf ohne Entflaggen der Testvaults | gebrochen | 2 von 3 Runnern sterben nach 3 Asserts (r14-cdp, r15-cdp); mit H-TESTVAULT-FLAGS-WEG davor 23 bzw. 21 Asserts erreicht | nachlaufbar |
 | `X-03` | Messapparat ohne Herkunftstor (bis 2026-08-09) | überholt | zwei Drittel des Befunds 'Grundtextverlust ab drei Geraeten' waren Artefakt; N=3 Verlust 7,1 auf 0, Verdopplung 440 auf 58 | nachlaufbar |
 
 ### X-01 — Timeouts der Runner von 90 auf 240 s anheben
@@ -713,12 +714,25 @@ Gebaut fuer r11, r13, r14, r15 plus den Aufbauhelfer. Die Regel dabei - umzustel
 
 **Verdikt:** gebrochen · **2026-08-12**
 
-**Kennzahl:** in 5 kontrollierten Laeufen nicht reproduzierbar (t4, t5, t6b, t7, r11-cdp); ueber den Prozess-Schreibweg PASS mit 46 gruenen Asserts  
-**Zellbasis:** vier Diskriminator-Varianten plus der umgebaute Runner selbst
+**Kennzahl:** in 6 kontrollierten Laeufen nicht reproduzierbar (t4, t5, t6b, t7, r11-cdp, r15-cdp); beide Verlust-Runner ueber den Prozess-Schreibweg PASS (46 bzw. 21 gruene Asserts)  
+**Zellbasis:** vier Diskriminator-Varianten plus die zwei umgebauten Runner selbst
 
 Die Signatur war ernst - As Zeile fehlte in BEIDEN Vaults, bei intakter Konvergenz, also der stille Fall. Widerlegt ist sie ueber den Schreibweg - derselbe Aufbau im Prozess statt extern laesst die Zeile in allen drei Versuchen ueberleben. Ursache war das Herkunftstor - extern geschriebener Inhalt wird 120 s geparkt und danach per unionMerge nachgetragen, ein anderer Pfad als der, auf dem die Zusage 2026-08-03 aufgestellt wurde. Der Runner mass seit dem 2026-08-04 am Produkt vorbei, nicht das Produkt falsch. Lehre - eine Signatur, die exakt wie K.o.-Kriterium 1 aussieht, kann vollstaendig aus dem Messapparat stammen. Ohne den Diskriminator waere hier ein Produktfehler in die Akten gegangen.
 
-*Beleg: docs/produktziel.md, Abschnitt 'Der Vorlauf-Diskriminator'; runs/r11-cdp-lauf2.log — nachlaufbar*
+*Beleg: docs/produktziel.md, Abschnitt 'Der Vorlauf-Diskriminator'; runs/r11-cdp-lauf2.log, runs/r15-cdp-lauf2.log — nachlaufbar*
+
+### X-05 — Serienlauf ohne Entflaggen der Testvaults
+
+**Hypothese:** Mehrere Runner nacheinander brauchen zwischen den Laeufen nichts weiter als eine Pause.
+
+**Verdikt:** gebrochen · **2026-08-12**
+
+**Kennzahl:** 2 von 3 Runnern sterben nach 3 Asserts (r14-cdp, r15-cdp); mit H-TESTVAULT-FLAGS-WEG davor 23 bzw. 21 Asserts erreicht  
+**Zellbasis:** eine Serie zu drei Runnern, danach ein Nachlauf zu zweien
+
+Nach einem Lauf steht vault-b in obsidian.json auf open:true (Obsidian schreibt das Flag beim Beenden). H-START-CDP startet ohne Vault-Argument und holt alle so vermerkten Vaults hoch — B lief also, BEVOR der Aufbau zustellen konnte, und praegt dann eine eigene Inkarnation statt zu adoptieren. H-GUARD-SICHERUNG hilft nicht: Es entflaggt nur Vaults AUSSERHALB der Testwurzel. Gefangen hat es die Vorbedingungspruefung in H-SETUP-SHARED-CDP, die derselbe Umbau eingefuehrt hat. Ohne sie haetten beide Runner mit einem falsch aufgebauten Zustand weitergemessen und Duplikate gemeldet, die aus dem Aufbau stammen — als Produktbefund nicht von einem echten zu unterscheiden.
+
+*Beleg: runs/batterie-cdp.log gegen runs/batterie-cdp2.log; harness-cdp.ps1 H-TESTVAULT-FLAGS-WEG — nachlaufbar*
 
 ### X-03 — Messapparat ohne Herkunftstor (bis 2026-08-09)
 

@@ -591,6 +591,42 @@ einmal sichtbar". **Diese Spannung ist ungelöst.** Entweder trifft die Park-Erk
 zu, oder die Zusage „verliert nie" gilt nicht in allen Lagen. Beides wäre wichtig zu wissen; beides
 ist ungemessen.
 
+> **AUFGELÖST am 2026-08-12 (zweite Sitzung): Die Park-Erklärung trifft zu — für beide.** Die vier
+> roten Runner sind über den Prozess-Schreibweg nachgefahren worden (`r11-cdp` … `r15-cdp`,
+> zeichengleich mit ihren `-disc`-Fassungen, geändert ist nur der Schreibweg bei laufender App).
+> Alle vier Läufe tragen `sidecar-ohne-park-frist` grün, messen also den Erfassungspfad und nicht
+> den Nachtrag nach Fristablauf:
+>
+> | Runner | extern (Bestand) | im Prozess | Klasse |
+> | --- | --- | --- | --- |
+> | `r11` | FAIL, 8 rot — **Verlust** | **PASS**, 46 grün | entkräftet |
+> | `r15` | FAIL, 3 rot — **Verlust** | **PASS**, 21 grün | entkräftet |
+> | `r13` | FAIL, 2 rot — Duplikate | FAIL, **1** rot (`alt-B-1x` 3 → 2) | halbiert, Rest offen |
+> | `r14` | FAIL, 1 rot — Duplikate | FAIL, 1 rot (`kontrolle2` 2/2/1 → **1**/2/1) | reduziert, Rest offen |
+>
+> **Die Zusage „verliert nie" hält.** Beide Verlust-Signaturen stammten aus dem Messapparat, nicht
+> aus dem Produkt: Extern geschriebener Inhalt wird 120 s geparkt und danach per `unionMerge`
+> nachgetragen — ein anderer Pfad als der, auf dem die Zusagen 2026-08-03 aufgestellt wurden. Bei
+> `r15` sind alle drei früher roten Asserts grün (`B-text-B-1x`, `A-erhaelt-B-edit`,
+> `A-text-B2-1x`), bei `r11` alle sechs.
+>
+> **Die Duplikate bleiben — und zeigen auf eine gemeinsame Stelle.** In beiden Runnern ist der
+> verbliebene Doppelgänger **derselbe Marker**: `mB`, den B im gemeinsamen Aufbau
+> (`H-SETUP-SHARED`) setzt. Bei `r13` ist es `alt-B-1x`, bei `r14` das mittlere Element von 1/2/1.
+> Das verschiebt den Verdacht vom geprüften Szenario auf den **Aufbauhelfer** — belegt ist es nicht.
+> Dagegen spricht nicht, dass beide Runner ihre tragenden Zusagen halten: `r13`s
+> `externe-aenderung-ueberlebt` und `r14`s komplette 0-Byte-Kette (`0byte-datei-nicht-geloescht`,
+> `keine-neue-inkarnation`, `text-A/B/B2`) sind grün. Es fehlt nichts, es steht doppelt da.
+>
+> **Was der Serienlauf über den Apparat lehrte, statt über das Produkt:** `r14` und `r15` starben im
+> ersten Durchgang nach drei Asserts, weil nach dem Vorgänger-Runner `vault-b` in `obsidian.json`
+> auf `open:true` stand und `H-START-CDP` beim Start ohne Vault-Argument alle so vermerkten Vaults
+> hochholt — B lief also, **bevor** der Aufbau zustellen konnte. Gefangen hat das die
+> Vorbedingungsprüfung in `H-SETUP-SHARED-CDP`, die derselbe Umbau eingeführt hat; der alte Helfer
+> behauptet dieselbe Bedingung seit Monaten nur im Kommentar. Ohne sie hätten beide Runner mit einem
+> falsch aufgebauten Zustand weitergemessen und Duplikate gemeldet, die aus dem Aufbau stammen.
+> Behoben mit `H-TESTVAULT-FLAGS-WEG` vor jedem Lauf.
+
 ### Der Vorlauf-Diskriminator: über den Prozess-Schreibweg überlebt die Zeile (2026-08-12)
 
 `agent-t4-vorlauf.ps1` fährt `r11`s Aufbau — A editiert, **nur die Sidecar** reist zu B, B tippt
