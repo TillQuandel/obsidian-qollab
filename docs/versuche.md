@@ -4,11 +4,11 @@
 > Quelle ist `docs/versuche.yaml`. Neu erzeugen mit `node docs/versuche-ansicht.mjs`.
 > `tests/versuche-registratur.test.ts` prüft, dass beide übereinstimmen.
 
-**Stand:** 2026-08-12 · **50 Versuche**
+**Stand:** 2026-08-12 · **51 Versuche**
 
 | Verdikt | Anzahl | Bedeutung |
 | --- | --- | --- |
-| gebrochen | 36 | aktiv schlechter oder verletzt ein Kriterium |
+| gebrochen | 37 | aktiv schlechter oder verletzt ein Kriterium |
 | offen | 4 | gemessen, aber nicht eingebaut |
 | eingebaut | 4 | im Produktivcode auf `master` |
 | leergelaufen | 2 | Vorbedingung trat nie ein — Rückfall aufs Bestandsverhalten, kein Schaden |
@@ -679,6 +679,7 @@ Der Rest, der ohne Koordinator realistisch bleibt - den Fall sichtbar machen sta
 | `X-01` | Timeouts der Runner von 90 auf 240 s anheben | gebrochen | r01 FAIL mit 0 erreichten Asserts auf PASS mit 6; gemessene Wartezeit 118,6 s. Aber 4 von 9 Runnern bleiben rot | nachlaufbar |
 | `X-02` | Runner auf den Prozess-Schreibweg umstellen (H-EDIT-CDP) | eingebaut | r11-cdp an zwei echten Obsidian-Instanzen: PASS, 46 Asserts gruen gegen FAIL mit 8 roten beim externen Arm; A-A-zeile-1x 0/0/0 auf 1/1/1 | nachlaufbar |
 | `X-04` | r11s Rot als Produktfehler an K.o.-Kriterium 1 fuehren | gebrochen | in 6 kontrollierten Laeufen nicht reproduzierbar (t4, t5, t6b, t7, r11-cdp, r15-cdp); beide Verlust-Runner ueber den Prozess-Schreibweg PASS (46 bzw. 21 gruene Asserts) | nachlaufbar |
+| `X-06` | Das Rest-Duplikat in r13/r14 dem Aufbauhelfer zuschreiben | gebrochen | AUFBAU-SAUBER in beiden Armen — alle vier Marker-Zaehler 1, CRDT-Sicht 1, GUID geteilt, Vaults byte-gleich | nachlaufbar |
 | `X-05` | Serienlauf ohne Entflaggen der Testvaults | gebrochen | 2 von 3 Runnern sterben nach 3 Asserts (r14-cdp, r15-cdp); mit H-TESTVAULT-FLAGS-WEG davor 23 bzw. 21 Asserts erreicht | nachlaufbar |
 | `X-03` | Messapparat ohne Herkunftstor (bis 2026-08-09) | überholt | zwei Drittel des Befunds 'Grundtextverlust ab drei Geraeten' waren Artefakt; N=3 Verlust 7,1 auf 0, Verdopplung 440 auf 58 | nachlaufbar |
 
@@ -720,6 +721,19 @@ Gebaut fuer r11, r13, r14, r15 plus den Aufbauhelfer. Die Regel dabei - umzustel
 Die Signatur war ernst - As Zeile fehlte in BEIDEN Vaults, bei intakter Konvergenz, also der stille Fall. Widerlegt ist sie ueber den Schreibweg - derselbe Aufbau im Prozess statt extern laesst die Zeile in allen drei Versuchen ueberleben. Ursache war das Herkunftstor - extern geschriebener Inhalt wird 120 s geparkt und danach per unionMerge nachgetragen, ein anderer Pfad als der, auf dem die Zusage 2026-08-03 aufgestellt wurde. Der Runner mass seit dem 2026-08-04 am Produkt vorbei, nicht das Produkt falsch. Lehre - eine Signatur, die exakt wie K.o.-Kriterium 1 aussieht, kann vollstaendig aus dem Messapparat stammen. Ohne den Diskriminator waere hier ein Produktfehler in die Akten gegangen.
 
 *Beleg: docs/produktziel.md, Abschnitt 'Der Vorlauf-Diskriminator'; runs/r11-cdp-lauf2.log, runs/r15-cdp-lauf2.log — nachlaufbar*
+
+### X-06 — Das Rest-Duplikat in r13/r14 dem Aufbauhelfer zuschreiben
+
+**Hypothese:** Der gemeinsame Aufbau (H-SETUP-SHARED-CDP) erzeugt Bs Marker doppelt, nicht das geprüfte Szenario.
+
+**Verdikt:** gebrochen · **2026-08-12**
+
+**Kennzahl:** AUFBAU-SAUBER in beiden Armen — alle vier Marker-Zaehler 1, CRDT-Sicht 1, GUID geteilt, Vaults byte-gleich  
+**Zellbasis:** zwei Arme: frisch angelegte Notiz (zweimal gefahren) und vorbestehende Notiz (die Lage von r13/r14/r15)
+
+Der Verdacht lag nahe - in r13 wie r14 ist der verbliebene Doppelgaenger DERSELBE Marker, naemlich der, den B im gemeinsamen Aufbau setzt. agent-t8-aufbau.ps1 faehrt nur den Aufbau und zaehlt unmittelbar danach: In beiden Armen sauber. Der Helfer erzeugt es nicht; das Duplikat entsteht im Szenario und ist ein Produktbefund. Der zweite Arm war noetig - der erste fuhr auf einer frisch angelegten Notiz, waehrend r13-r15 `Meetingprotokoll.md` nie cleanen und H-RESET nur die Hilfsdateien loescht. Ohne Kontrollarm haette der Lauf einen anderen Fall gemessen als den fraglichen. Nebenbefund am Helfer - ein blosses `app.vault.create` praegt keine Inkarnation, erst ein `modify` tut es. Der Aufbau lief in den Timeout, sobald ein Runner die Notiz vorher aufraeumte; in H-SETUP-SHARED-CDP behoben.
+
+*Beleg: runs/t8-aufbau.log und runs/t8-kontroll.log; sdd/agent-t8-aufbau.ps1 — nachlaufbar*
 
 ### X-05 — Serienlauf ohne Entflaggen der Testvaults
 

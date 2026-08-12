@@ -743,6 +743,31 @@ versuche:
     beleg: "docs/produktziel.md, Abschnitt 'Der Vorlauf-Diskriminator'; runs/r11-cdp-lauf2.log, runs/r15-cdp-lauf2.log"
     beleg_lage: nachlaufbar
 
+  - id: X-06
+    name: Das Rest-Duplikat in r13/r14 dem Aufbauhelfer zuschreiben
+    ebene: apparat
+    hypothese: Der gemeinsame Aufbau (H-SETUP-SHARED-CDP) erzeugt Bs Marker doppelt, nicht das geprüfte Szenario.
+    verdikt: gebrochen
+    kennzahl: "AUFBAU-SAUBER in beiden Armen — alle vier Marker-Zaehler 1, CRDT-Sicht 1, GUID geteilt, Vaults byte-gleich"
+    zellbasis: "zwei Arme: frisch angelegte Notiz (zweimal gefahren) und vorbestehende Notiz (die Lage von r13/r14/r15)"
+    datum: 2026-08-12
+    begruendung: >
+      Der Verdacht lag nahe - in r13 wie r14 ist der verbliebene Doppelgaenger
+      DERSELBE Marker, naemlich der, den B im gemeinsamen Aufbau setzt.
+      agent-t8-aufbau.ps1 faehrt nur den Aufbau und zaehlt unmittelbar danach:
+      In beiden Armen sauber. Der Helfer erzeugt es nicht; das Duplikat entsteht
+      im Szenario und ist ein Produktbefund.
+      Der zweite Arm war noetig - der erste fuhr auf einer frisch angelegten
+      Notiz, waehrend r13-r15 `Meetingprotokoll.md` nie cleanen und H-RESET nur
+      die Hilfsdateien loescht. Ohne Kontrollarm haette der Lauf einen anderen
+      Fall gemessen als den fraglichen.
+      Nebenbefund am Helfer - ein blosses `app.vault.create` praegt keine
+      Inkarnation, erst ein `modify` tut es. Der Aufbau lief in den Timeout,
+      sobald ein Runner die Notiz vorher aufraeumte; in H-SETUP-SHARED-CDP
+      behoben.
+    beleg: "runs/t8-aufbau.log und runs/t8-kontroll.log; sdd/agent-t8-aufbau.ps1"
+    beleg_lage: nachlaufbar
+
   - id: X-05
     name: Serienlauf ohne Entflaggen der Testvaults
     ebene: apparat

@@ -610,10 +610,33 @@ ist ungemessen.
 > `r15` sind alle drei früher roten Asserts grün (`B-text-B-1x`, `A-erhaelt-B-edit`,
 > `A-text-B2-1x`), bei `r11` alle sechs.
 >
-> **Die Duplikate bleiben — und zeigen auf eine gemeinsame Stelle.** In beiden Runnern ist der
+> **Die Duplikate bleiben — und der naheliegende Verdacht ist widerlegt.** In beiden Runnern ist der
 > verbliebene Doppelgänger **derselbe Marker**: `mB`, den B im gemeinsamen Aufbau
 > (`H-SETUP-SHARED`) setzt. Bei `r13` ist es `alt-B-1x`, bei `r14` das mittlere Element von 1/2/1.
-> Das verschiebt den Verdacht vom geprüften Szenario auf den **Aufbauhelfer** — belegt ist es nicht.
+> Das legte den **Aufbauhelfer** als Quelle nahe — und genau das ist gemessen und **gefallen**:
+>
+> `agent-t8-aufbau.ps1` fährt **nur** den Aufbau und zählt unmittelbar danach aus, in zwei Armen:
+>
+> | Arm | Aufbau auf | Ergebnis |
+> | --- | --- | --- |
+> | Normalfall (zweimal gefahren) | frisch angelegter Notiz | **AUFBAU-SAUBER** |
+> | `-NotizVorbestehend` | vorbestehender Notiz — die Lage von `r13`/`r14`/`r15` | **AUFBAU-SAUBER** |
+>
+> In beiden Armen stehen alle vier Marker-Zähler auf 1, die CRDT-Sicht (`markerCounts` aus den
+> Hilfsdateien) ebenfalls, die GUID ist geteilt und beide Vaults sind byte-gleich. **Der Helfer
+> erzeugt das Duplikat nicht.** Es entsteht im geprüften Szenario — und ist damit ein Produktbefund,
+> der einzeln zu verfolgen ist.
+>
+> **Der zweite Arm war nötig, nicht Zierde.** Der erste fuhr auf einer frisch angelegten Notiz;
+> `r13`–`r15` cleanen `Meetingprotokoll.md` nie, und `H-RESET` löscht nur die Hilfsdateien — ihr
+> Aufbau läuft also immer auf einer vorbestehenden `.md`. Ohne den Kontrollarm hätte der Lauf einen
+> anderen Fall gemessen als den fraglichen.
+>
+> **Nebenbefund am Helfer, dabei entdeckt:** Existiert die Notiz noch nicht, macht `H-EDIT-CDP` ein
+> `app.vault.create` — und ein bloßes `create` prägt **keine** Inkarnation, erst ein `modify` tut es
+> (belegt in `agent-t2b.ps1:87-89`). Der Aufbau lief deshalb in den Timeout, sobald ein Runner die
+> Notiz vorher aufräumte. In `H-SETUP-SHARED-CDP` behoben: Bleibt die Hilfsdatei aus, wird ein
+> zweites Mal gesetzt.
 > Dagegen spricht nicht, dass beide Runner ihre tragenden Zusagen halten: `r13`s
 > `externe-aenderung-ueberlebt` und `r14`s komplette 0-Byte-Kette (`0byte-datei-nicht-geloescht`,
 > `keine-neue-inkarnation`, `text-A/B/B2`) sind grün. Es fehlt nichts, es steht doppelt da.
