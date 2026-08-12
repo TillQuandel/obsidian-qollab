@@ -191,6 +191,7 @@ const EBENE_TITEL = {
   kennung: 'Inkarnations-Kennung und Erstkontakt',
   materialisierung: 'Materialisierung und Verdopplung',
   merge: 'Merge-Verfahren und Textverlust',
+  semantik: 'Lösch-, Rename- und Meldungs-Semantik',
   architektur: 'Architektur und Dateiformat',
   apparat: 'Messapparat',
 };

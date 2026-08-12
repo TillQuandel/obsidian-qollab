@@ -30,7 +30,7 @@ dass jemand einen Server betreibt.*
 | Was | Wo |
 | --- | --- |
 | **Ziel**, K.o.-Kriterien, Missverständnisse | `docs/produktziel.md` (versioniert) |
-| **Was schon probiert wurde** — 40 Versuche mit Verdikt, Zahl, Zellbasis, Beleg | `docs/versuche.yaml` (SSoT) · Lesefassung `docs/versuche.md` |
+| **Was schon probiert wurde** — jeder Versuch mit Verdikt, Zahl, Zellbasis, Beleg | `docs/versuche.yaml` (SSoT) · Lesefassung `docs/versuche.md` |
 | **Ist-Zustand** mit Messzahlen, nutzerorientiert | `README.md` (englisch) |
 | Messhistorie bis 2026-08-04, Sessionberichte, Folgeprompts | `obsidian-qollab-doku/sdd/` (privates Repo) |
 | Messergebnisse seit 2026-08-09 | Rohdaten in `obsidian-crdt-sync/spike/`, Befunde in `docs/produktziel.md` |

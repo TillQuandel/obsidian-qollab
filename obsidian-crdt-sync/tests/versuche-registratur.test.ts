@@ -23,7 +23,7 @@ const YAML_PFAD = join(WURZEL, 'docs', 'versuche.yaml');
 const YAML = readFileSync(YAML_PFAD, 'utf8');
 
 const VERDIKTE = ['gebrochen', 'leergelaufen', 'eingebaut', 'offen', 'kein-urteil', 'ueberholt'];
-const EBENEN = ['kennung', 'materialisierung', 'merge', 'architektur', 'apparat'];
+const EBENEN = ['kennung', 'materialisierung', 'merge', 'semantik', 'architektur', 'apparat'];
 const BELEGLAGEN = ['nachlaufbar', 'instrument-weg', 'kein-bericht'];
 // `id` steht bewusst NICHT in dieser Liste: Es lebt in der Listen-Marker-Zeile
 // (`- id: K-01`), die `feld()` per Konstruktion nicht liest — dort steht `- id:`
@@ -106,10 +106,13 @@ describe('Registratur der Versuche — Disziplin je Eintrag', () => {
     expect(fremd).toEqual([]);
   });
 
-  it('datiert im Format JJJJ-MM-TT', () => {
+  it('datiert im Format JJJJ-MM-TT oder sagt ausdruecklich "unbekannt"', () => {
+    // `unbekannt` ist zugelassen, weil die task-*-Berichte kein Datum tragen.
+    // Ein erfundenes Datum waere schlimmer als eine sichtbare Luecke — dieselbe
+    // Logik wie bei `beleg_lage`. Wer es benutzt, sagt im Beleg, warum.
     const schief = EINTRAEGE
       .map((e) => ({ id: e.id, d: feld(e.block, 'datum') }))
-      .filter((x) => !/^\d{4}-\d{2}-\d{2}$/.test(String(x.d)));
+      .filter((x) => !/^\d{4}-\d{2}-\d{2}$|^unbekannt$/.test(String(x.d)));
     expect(schief).toEqual([]);
   });
 });

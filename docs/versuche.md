@@ -4,16 +4,16 @@
 > Quelle ist `docs/versuche.yaml`. Neu erzeugen mit `node docs/versuche-ansicht.mjs`.
 > `tests/versuche-registratur.test.ts` prüft, dass beide übereinstimmen.
 
-**Stand:** 2026-08-12 · **40 Versuche**
+**Stand:** 2026-08-12 · **48 Versuche**
 
 | Verdikt | Anzahl | Bedeutung |
 | --- | --- | --- |
-| gebrochen | 27 | aktiv schlechter oder verletzt ein Kriterium |
+| gebrochen | 34 | aktiv schlechter oder verletzt ein Kriterium |
 | offen | 5 | gemessen, aber nicht eingebaut |
 | eingebaut | 3 | im Produktivcode auf `master` |
 | leergelaufen | 2 | Vorbedingung trat nie ein — Rückfall aufs Bestandsverhalten, kein Schaden |
+| kein Urteil | 2 | Prüfung nicht zustande gekommen |
 | überholt | 2 | durch eine bessere Lösung ersetzt |
-| kein Urteil | 1 | Prüfung nicht zustande gekommen |
 
 **5 Einträge sind nicht nachrechenbar** — ihre Instrumente oder Berichte existieren nicht mehr: `K-01`, `K-06`, `K-07`, `K-13`, `K-15`. Vor Zitation außerhalb des Projekts prüfen.
 
@@ -452,6 +452,123 @@ diffOps faellt oberhalb von 39.000 verschiedenen Zeilen ueber beide Texte (Absta
 
 *Beleg: Commit 04154d7 — nachlaufbar*
 
+## Lösch-, Rename- und Meldungs-Semantik
+
+| ID | Versuch | Verdikt | Kennzahl | Beleglage |
+| --- | --- | --- | --- | --- |
+| `S-01` | Konflikt-Vermerk als Zeile in den Text schreiben | gebrochen | konvergiert (konvergent=true, gleich=true) — faellt aber am zweiten Kontakt: vermerke=2 gegen 0 ohne | nachlaufbar |
+| `S-02` | Konfliktkopie statt Meldung | gebrochen | keine — beide Fassungen stehen bereits in der Note | nachlaufbar |
+| `S-03` | Tombstone-Index als guid -> Set<paths> statt path -> paths[] | gebrochen | faellt im Normalfall — Renames vor dem ersten Doc-Zugriff | nachlaufbar |
+| `S-04` | Pfad-Historie in data.json persistieren | gebrochen | keine — am Aufwand-Nutzen-Verhaeltnis verworfen | nachlaufbar |
+| `S-05` | Beim Delete .qollab/ nach allen Hilfsdateien mit dieser GUID durchsuchen | gebrochen | wirkungslos gegen den Zielfall | nachlaufbar |
+| `S-06` | Beim Rename einen Tombstone auf (oldPath, GUID) setzen | gebrochen | reisst die von Fix A geschlossene Luecke wieder auf | nachlaufbar |
+| `S-07` | Reine Pfadform als Klassifikator fuer Legacy-Hilfsdateien | gebrochen | 8 Tests in 4 Bestands-Suiten fallen | nachlaufbar |
+| `S-08` | Heuristik "Sync-Overwrite erkennen" (Fix-Richtung C) | kein Urteil | nicht gemessen — als Richtung ausgeschlossen, bevor gebaut wurde | nachlaufbar |
+
+### S-01 — Konflikt-Vermerk als Zeile in den Text schreiben
+
+**Hypothese:** Ein Vermerk im Text ("getrennt bearbeitet auf Geraet X") macht den Erstkontakt sichtbar.
+
+**Verdikt:** gebrochen · **unbekannt**
+
+**Kennzahl:** konvergiert (konvergent=true, gleich=true) — faellt aber am zweiten Kontakt: vermerke=2 gegen 0 ohne  
+**Zellbasis:** zwei Szenarien (zweites Geraet, drittes Geraet)
+
+Die Ausgangsannahme "ein Vermerk bricht die Konvergenz" wurde gebaut und ist WIDERLEGT — er konvergiert. Seine Kosten liegen woanders und sind ebenfalls gemessen: Der Vermerk ist Inhalt und bleibt. Eine Zeile je Konfliktereignis, dauerhaft, mit einer Geraete-ID, die der Nutzerin nichts sagt, von Hand zu entfernen — und er sagt nichts, was die Meldung nicht ohnehin sagt.
+
+*Beleg: task-19-report.md §4.4 — nachlaufbar*
+
+### S-02 — Konfliktkopie statt Meldung
+
+**Hypothese:** Eine zweite Datei bewahrt die unterlegene Fassung.
+
+**Verdikt:** gebrochen · **unbekannt**
+
+**Kennzahl:** keine — beide Fassungen stehen bereits in der Note  
+**Zellbasis:** analytisch, am gebauten Stand
+
+Dupliziert, was ohnehin dasteht, und erzeugt eine zweite zu synchronisierende Datei samt eigener Hilfsdatei. Deckt sich mit dem unabhaengig gemessenen Befund unter K-15.
+
+*Beleg: task-19-report.md §4.4 — nachlaufbar*
+
+### S-03 — Tombstone-Index als guid -> Set<paths> statt path -> paths[]
+
+**Hypothese:** Der Index an der Inkarnation statt am Pfad ist semantisch naeher am Tombstone.
+
+**Verdikt:** gebrochen · **unbekannt**
+
+**Kennzahl:** faellt im Normalfall — Renames vor dem ersten Doc-Zugriff  
+**Zellbasis:** analytisch am Kontrollfluss
+
+Die GUID ist zum Rename-Zeitpunkt oft unbekannt (lazy aus dem Sidecar-Header gelesen). Genau der haeufige Fall — Rename vor dem ersten Doc-Zugriff — faellt damit durch.
+
+*Beleg: task-15-report-runde2.md — nachlaufbar*
+
+### S-04 — Pfad-Historie in data.json persistieren
+
+**Hypothese:** Persistenz loest die Neustart-Grenze des Tombstone-Index.
+
+**Verdikt:** gebrochen · **unbekannt**
+
+**Kennzahl:** keine — am Aufwand-Nutzen-Verhaeltnis verworfen  
+**Zellbasis:** analytisch
+
+Loest die Neustart-Grenze, kostet aber ein neues persistiertes Format samt Migration und Pruning — fuer einen Fall, den Issue #11 (Loeschen als CRDT-Op) ohnehin richtig loest. Verstoesst gegen "schlicht halten".
+
+*Beleg: task-15-report-runde2.md — nachlaufbar*
+
+### S-05 — Beim Delete .qollab/ nach allen Hilfsdateien mit dieser GUID durchsuchen
+
+**Hypothese:** Ein Scan findet die zugehoerigen Hilfsdateien und raeumt sie mit ab.
+
+**Verdikt:** gebrochen · **unbekannt**
+
+**Kennzahl:** wirkungslos gegen den Zielfall  
+**Zellbasis:** analytisch am Kontrollfluss
+
+Vault-weiter Scan im Event-Handler UND wirkungslos gegen genau den Fall, um den es geht: Die fremde Hilfsdatei ist zum Delete-Zeitpunkt noch gar nicht angekommen.
+
+*Beleg: task-15-report-runde2.md — nachlaufbar*
+
+### S-06 — Beim Rename einen Tombstone auf (oldPath, GUID) setzen
+
+**Hypothese:** Der alte Pfad wird als beerdigt markiert, damit spaet ankommende Hilfsdateien ihn nicht wiederbeleben.
+
+**Verdikt:** gebrochen · **unbekannt**
+
+**Kennzahl:** reisst die von Fix A geschlossene Luecke wieder auf  
+**Zellbasis:** analytisch, vom Review belegt
+
+Entwertet `oldPath` fuer eine LEBENDE Inkarnation — sobald der Datei-Sync die .md dort zurueckspielt, ist die Luecke wieder offen. Vom Review ausdruecklich verworfen.
+
+*Beleg: task-15-report-runde2.md, task-16-review.md — nachlaufbar*
+
+### S-07 — Reine Pfadform als Klassifikator fuer Legacy-Hilfsdateien
+
+**Hypothese:** Der Dateiname allein entscheidet, ob eine Hilfsdatei aus v0.1 stammt.
+
+**Verdikt:** gebrochen · **unbekannt**
+
+**Kennzahl:** 8 Tests in 4 Bestands-Suiten fallen  
+**Zellbasis:** 4 Suiten (sync-handler, convergence, write-back-guard, concurrency)
+
+Gebaut und wieder verworfen. Die Fixtures legen headerlose, aber gueltige Yjs-Updates unter per-Client-Pfade — die Semantik, die state-file.ts seit jeher zusagt. Acht Bestandstests anzupassen, um eine Zusage zu brechen, die fuer den Fund gar nicht ursaechlich ist, waere der falsche Tausch gewesen. Ursaechlich sind ausschliesslich das Loeschen und das GUID-Praegen.
+
+*Beleg: task-17-report.md, task-17-review.md — nachlaufbar*
+
+### S-08 — Heuristik "Sync-Overwrite erkennen" (Fix-Richtung C)
+
+**Hypothese:** Eine Heuristik erkennt, ob eine .md vom Datei-Sync ueberschrieben wurde.
+
+**Verdikt:** kein Urteil · **unbekannt**
+
+**Kennzahl:** nicht gemessen — als Richtung ausgeschlossen, bevor gebaut wurde  
+**Zellbasis:** —
+
+Im Task-Brief ausdruecklich aus dem Scope genommen ("bewusst verworfen"), ohne Messung. Der spaetere Weg ueber die Schreibherkunft (WriteProvenance, siehe Vault-Note "Schreibherkunft ueber die Prozessgrenze") loest dieselbe Frage nicht heuristisch, sondern durch Umhuellung des DataAdapters — er ersetzt diese Richtung, statt sie zu widerlegen.
+
+*Beleg: task-11-brief.md §Nicht in diesem Task, task-11-review.md — nachlaufbar*
+
 ## Architektur und Dateiformat
 
 | ID | Versuch | Verdikt | Kennzahl | Beleglage |
@@ -610,9 +727,13 @@ Ausgewertet:
 - `Vault: CRDT-Erstkontakt-ohne-gemeinsame-Historie.md`
 - `obsidian-qollab-doku/sdd/erstkontakt-synthese-2026-08-03.md`
 - `obsidian-qollab-doku/sdd/spike-report.md`
+- `obsidian-qollab-doku/sdd/task-11-brief.md`
+- `obsidian-qollab-doku/sdd/task-15-report-runde2.md`
+- `obsidian-qollab-doku/sdd/task-17-report.md`
+- `obsidian-qollab-doku/sdd/task-19-report.md`
 - `README.md`
 
 **Nicht** ausgewertet — ein Versuch, der hier fehlt, ist nicht damit auch ungeprüft:
 
-- obsidian-qollab-doku/sdd/ — 166 Dateien; ausgewertet sind die oben genannten plus die aus produktziel.md und der Vault-Note verlinkten. Die task-*-report/-review-Reihe ist NICHT systematisch durchgesehen.
+- obsidian-qollab-doku/sdd/ — 166 Dateien. Am 2026-08-12 wurde die task-*-Reihe (50 Dateien) gezielt nach verworfenen Ansaetzen durchsucht statt vollstaendig gelesen; Treffer sind als S-01 bis S-08 aufgenommen. Ein Ansatz, der dort in Prosa steht, ohne eines der Suchmuster zu benutzen, kann weiterhin fehlen.
 - Die mess/*-Branches tragen Messlaeufe, die auf master nicht liegen.
