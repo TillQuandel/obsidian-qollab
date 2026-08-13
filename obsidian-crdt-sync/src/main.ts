@@ -1372,7 +1372,8 @@ export default class CrdtSyncPlugin extends Plugin {
             return;
           }
           // `true` = Aufruf aus dem Start-Sweep. Nur hier greift die Sweep-Schranke
-          // (SPIKE-SCHALTER, Standard 'aus'); der modify-Handler hat sein eigenes Tor.
+          // (Standard seit 2026-08-07: 'basis-signatur', NICHT 'aus' — siehe
+          // sync-handler.ts:132-135); der modify-Handler hat sein eigenes Tor.
           const merged = await this.syncHandler.applyLocalContent(notePath, content, true);
           if (this.unloaded || file.path !== notePath) return;
           await this.writeBackMerged(file, content, merged);

@@ -454,17 +454,23 @@ Messinstrument-Blindheit in diesem Projekt.**
 
 **Zwei Nebenbefunde derselben Untersuchung, beide offen:**
 
-- **Die Sweep-Schranke steht nicht auf `aus`.** `sync-handler.ts:132-135` initialisiert seit dem
-  2026-08-07 auf `'basis-signatur'`; der Kommentar an der Aufrufstelle (`main.ts:1375`) behauptet
-  weiterhin „SPIKE-SCHALTER, Standard 'aus'". Wer den Kommentar liest, hält einen aktiven Schalter
-  für tot. (Der Abschnitt „Was dieser Apparat NICHT misst" unten bleibt richtig: dort ging es um den
-  *Messapparat*, der keinen Neustart modelliert — nicht um das Produkt.)
-- **`r13` prüft womöglich eine Bedingung, die nicht mehr eintreten kann.** Sein Kopfkommentar führt
-  „der file-open-Trigger konnte den Startup-Sweep überholen" als die geprüfte Bedingung. Im Code ist
-  die Reihenfolge erzwungen: `onLayoutReady` → `await runStartupSweep()` → **erst danach**
-  `startSidecarWatcher()`, und der `file-open`-Listener wird ausschließlich dort registriert
-  (`main.ts:594-616`). Dieselbe Frage wie bei `r11` — nicht „ist das ein Bug", sondern „prüft der
-  Runner noch, was er zu prüfen vorgibt". Ungemessen.
+- **Die Sweep-Schranke steht nicht auf `aus`, und sie ist wirksam.** `sync-handler.ts:132-135`
+  initialisiert seit dem 2026-08-07 auf `'basis-signatur'`. Die Kommentare an beiden Stellen
+  behaupteten bis zum 2026-08-13 „SPIKE-SCHALTER, Standard 'aus'" — wer sie las, hielt einen
+  scharfen Schalter für tot; **korrigiert**. Dass sie wirkt, war die ganze Zeit gemessen und mir
+  nur entgangen: `sweep-schranke-basiswahl.test.ts:327` fährt den echten `runStartupSweep` aus
+  `main.ts` und vergleicht beide Standards — mit `'aus'` stirbt der eigene Edit und
+  `sweepSchrankeZaehler` bleibt 0, mit `'basis-signatur'` überlebt er, in Doc **und** Datei. Der
+  Abschnitt „Was dieser Apparat NICHT misst" unten bleibt richtig: dort ging es um den
+  *Messapparat*, der keinen Neustart modelliert — nicht um das Produkt.
+- **`r13` prüft eine Bedingung, die nicht mehr eintreten kann — belegt.** Sein Kopfkommentar führt
+  „der file-open-Trigger konnte den Startup-Sweep überholen" als die geprüfte Bedingung. Die
+  Reihenfolge ist erzwungen und **getestet**: `sweep-gate.test.ts:80` prüft, dass nach `onload`
+  nichts scharf ist und die Reihenfolge exakt `['sweep', 'start', 'poll']` lautet; `:197` prüft
+  zusätzlich, dass ein file-open-Scan *während* des Sweeps den nur in der `.md` lebenden Edit nicht
+  überschreibt. Zwei unabhängige Gates. Damit ist es dieselbe Lage wie bei `r11`: nicht „ist das ein
+  Bug", sondern „der Runner prüft nicht mehr, was er zu prüfen vorgibt". Was **offen** bleibt, ist
+  allein die Frage, ob `r13` deshalb umgebaut oder abgelöst gehört.
 
 ### Die Wirkung, an echten Instanzen belegt (2026-08-12)
 

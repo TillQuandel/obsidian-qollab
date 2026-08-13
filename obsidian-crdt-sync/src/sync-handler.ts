@@ -1782,7 +1782,14 @@ export class SyncHandler {
     const mergedText = this.crdtManager.getContent(notePath);
     if (content === mergedText) return mergedText;
 
-    // DIE SWEEP-SCHRANKE (SPIKE-SCHALTER, Standard 'aus').
+    // DIE SWEEP-SCHRANKE. Standard seit 2026-08-07: 'basis-signatur' (siehe
+    // `sweepSchrankeStandard` oben) — sie ist also im Auslieferungszustand AKTIV.
+    // Bis 2026-08-13 stand hier und an der Aufrufstelle in main.ts „SPIKE-SCHALTER,
+    // Standard 'aus'"; wer nur den Kommentar las, hielt einen scharfen Schalter für
+    // tot. Dass sie wirkt, ist gemessen: `sweep-schranke-basiswahl.test.ts` fährt
+    // den echten `runStartupSweep` und vergleicht 'aus' gegen 'basis-signatur' —
+    // mit 'aus' stirbt der eigene Edit und der Zähler bleibt 0, mit
+    // 'basis-signatur' überlebt er.
     //
     // Der Start-Sweep ruft `applyLocalContent` ohne das Herkunftstor aus
     // main.ts:326-334 — die Schreibspur ist nach einem Neustart leer. Der Beweis,
