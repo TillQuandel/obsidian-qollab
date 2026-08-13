@@ -773,10 +773,19 @@ versuche:
     hypothese: Ueber app.vault.modify im Renderer wird nichts geparkt; die Batterie misst wieder das Produkt.
     verdikt: eingebaut
     kennzahl: "r11-cdp an zwei echten Obsidian-Instanzen: PASS, 46 Asserts gruen gegen FAIL mit 8 roten beim externen Arm; A-A-zeile-1x 0/0/0 auf 1/1/1"
-    zellbasis: ein Lauf, drei Vorlauf-Versuche mit Tastenpausen 1,0 / 2,5 / 6,0 s
-    datum: 2026-08-12
+    zellbasis: sechs Runner an je zwei echten Obsidian-Instanzen; r11 mit drei Vorlauf-Versuchen (Tastenpausen 1,0 / 2,5 / 6,0 s)
+    datum: 2026-08-13
     begruendung: >
-      Gebaut fuer r11, r13, r14, r15 plus den Aufbauhelfer. Die Regel dabei -
+      Gebaut fuer r11, r13, r14, r15 plus den Aufbauhelfer; am 2026-08-13 um s00
+      und r16 ergaenzt, damit KEIN Runner mehr ueber den Park-Pfad misst.
+      s00-cdp: PASS, 10 Asserts (1 Stelle umgestellt). r16-cdp: PASS, 16 Asserts
+      (6 Stellen). Beide tragen `sidecar-ohne-park-frist` gruen, messen also den
+      Erfassungspfad. Bei r16 traf der Lauf die scharfe Konstellation - die alte
+      Inkarnation hatte die lexikografisch KLEINERE GUID (1f18... < e2b1...),
+      haette ohne Tombstone also den Tie-Break gewonnen; der Zombie-Schutz haelt.
+      Die Assert-Sets sind echte Obermengen der Vorlagen (10 aus 9, 16 aus 15,
+      nichts verloren); ergaenzt ist je nur der Diskriminator. Damit ist ein
+      Ergebnisunterschied dem Schreibweg zurechenbar. Die Regel dabei -
       umzustellen ist nur, was bei LAUFENDER App schreibt; drei Stellen bleiben
       bewusst extern, weil sie das Szenario sind und nicht sein Artefakt. Ein
       Waechter (pruefe-runner-schreibwege.ps1) setzt das maschinell durch.

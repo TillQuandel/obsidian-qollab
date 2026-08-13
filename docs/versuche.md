@@ -715,12 +715,12 @@ Behebt den Ausfall, misst danach aber den NACHTRAG NACH FRISTABLAUF statt des lo
 
 **Hypothese:** Ueber app.vault.modify im Renderer wird nichts geparkt; die Batterie misst wieder das Produkt.
 
-**Verdikt:** eingebaut · **2026-08-12**
+**Verdikt:** eingebaut · **2026-08-13**
 
 **Kennzahl:** r11-cdp an zwei echten Obsidian-Instanzen: PASS, 46 Asserts gruen gegen FAIL mit 8 roten beim externen Arm; A-A-zeile-1x 0/0/0 auf 1/1/1  
-**Zellbasis:** ein Lauf, drei Vorlauf-Versuche mit Tastenpausen 1,0 / 2,5 / 6,0 s
+**Zellbasis:** sechs Runner an je zwei echten Obsidian-Instanzen; r11 mit drei Vorlauf-Versuchen (Tastenpausen 1,0 / 2,5 / 6,0 s)
 
-Gebaut fuer r11, r13, r14, r15 plus den Aufbauhelfer. Die Regel dabei - umzustellen ist nur, was bei LAUFENDER App schreibt; drei Stellen bleiben bewusst extern, weil sie das Szenario sind und nicht sein Artefakt. Ein Waechter (pruefe-runner-schreibwege.ps1) setzt das maschinell durch. Der Lauf traegt seinen eigenen Diskriminator - `sidecar-ohne-park-frist` verlangt die Hilfsdatei in unter 30 s, wo der Park-Pfad mindestens 120 braeuchte. Er ist gruen, also misst der Lauf den Erfassungspfad. EINSCHRAENKUNG - alle drei Versuche melden `leg=writeback`, keiner `leg=vorlauf`. Geprueft ist Haelfte 1 von Task 16, nicht Haelfte 2. Im Prozess entsteht die Sidecar in Millisekunden (162-209 ms), so kurz haelt der Vorlauf-Zustand nicht an. Der Umbau hat den Runner gruen gemacht und dabei einen Teil seines Szenarios verschoben.
+Gebaut fuer r11, r13, r14, r15 plus den Aufbauhelfer; am 2026-08-13 um s00 und r16 ergaenzt, damit KEIN Runner mehr ueber den Park-Pfad misst. s00-cdp: PASS, 10 Asserts (1 Stelle umgestellt). r16-cdp: PASS, 16 Asserts (6 Stellen). Beide tragen `sidecar-ohne-park-frist` gruen, messen also den Erfassungspfad. Bei r16 traf der Lauf die scharfe Konstellation - die alte Inkarnation hatte die lexikografisch KLEINERE GUID (1f18... < e2b1...), haette ohne Tombstone also den Tie-Break gewonnen; der Zombie-Schutz haelt. Die Assert-Sets sind echte Obermengen der Vorlagen (10 aus 9, 16 aus 15, nichts verloren); ergaenzt ist je nur der Diskriminator. Damit ist ein Ergebnisunterschied dem Schreibweg zurechenbar. Die Regel dabei - umzustellen ist nur, was bei LAUFENDER App schreibt; drei Stellen bleiben bewusst extern, weil sie das Szenario sind und nicht sein Artefakt. Ein Waechter (pruefe-runner-schreibwege.ps1) setzt das maschinell durch. Der Lauf traegt seinen eigenen Diskriminator - `sidecar-ohne-park-frist` verlangt die Hilfsdatei in unter 30 s, wo der Park-Pfad mindestens 120 braeuchte. Er ist gruen, also misst der Lauf den Erfassungspfad. EINSCHRAENKUNG - alle drei Versuche melden `leg=writeback`, keiner `leg=vorlauf`. Geprueft ist Haelfte 1 von Task 16, nicht Haelfte 2. Im Prozess entsteht die Sidecar in Millisekunden (162-209 ms), so kurz haelt der Vorlauf-Zustand nicht an. Der Umbau hat den Runner gruen gemacht und dabei einen Teil seines Szenarios verschoben.
 
 *Beleg: obsidian-qollab-doku, Commits 858135b, 1792188, 43fd38c; Lauf-Log runs/r11-cdp-lauf2.log — nachlaufbar*
 
