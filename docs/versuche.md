@@ -4,13 +4,13 @@
 > Quelle ist `docs/versuche.yaml`. Neu erzeugen mit `node docs/versuche-ansicht.mjs`.
 > `tests/versuche-registratur.test.ts` prüft, dass beide übereinstimmen.
 
-**Stand:** 2026-08-12 · **51 Versuche**
+**Stand:** 2026-08-13 · **53 Versuche**
 
 | Verdikt | Anzahl | Bedeutung |
 | --- | --- | --- |
-| gebrochen | 37 | aktiv schlechter oder verletzt ein Kriterium |
+| gebrochen | 38 | aktiv schlechter oder verletzt ein Kriterium |
+| eingebaut | 5 | im Produktivcode auf `master` |
 | offen | 4 | gemessen, aber nicht eingebaut |
-| eingebaut | 4 | im Produktivcode auf `master` |
 | leergelaufen | 2 | Vorbedingung trat nie ein — Rückfall aufs Bestandsverhalten, kein Schaden |
 | kein Urteil | 2 | Prüfung nicht zustande gekommen |
 | überholt | 2 | durch eine bessere Lösung ersetzt |
@@ -360,6 +360,7 @@ Erzeugt die meisten Delete-Ops und damit den groessten Propagationsschaden.
 | `T-05` | diffModus zeile (Hebel A, zeilentreue Ops) | eingebaut | Grundtextverlust 0 bei N=2,3,4; Preis Verdopplung +1,0 bis +1,7 % | nachlaufbar |
 | `T-06` | diffModus roh | gebrochen | verdopp +0,03 %, kostet dafuer Grundtext (WEG 0 auf 50) | nachlaufbar |
 | `T-07` | Bibliotheksgrenze diff_linesToChars_ abfangen | eingebaut | 5.001 verdoppelte Grundtextzeilen auf 0 bei 45.000 Zeilen | nachlaufbar |
+| `T-08` | Zeilenende-Garantie in threeWayMerge (padLast wie in unionMerge) | eingebaut | am Produkt 217 auf 191 Zeichen, mB 2 auf 1; Suite 600 auf 608 gruen, kein Rueckschritt | nachlaufbar |
 
 ### T-01 — Fuzzy patch_apply in threeWayMerge (Bestand bis 2026-08-11)
 
@@ -451,6 +452,19 @@ Flach in der Wirkung auf die Verdopplung, teuer beim Grundtext.
 diffOps faellt oberhalb von 39.000 verschiedenen Zeilen ueber beide Texte (Abstand 999 zur Kante) auf semantisch zurueck. Die Schwelle misst auf VERSCHIEDENEN Zeilen - eine Schwelle auf split('\n').length haette in beiden Kalibrierungsfaellen denselben Wert gelesen.
 
 *Beleg: Commit 04154d7 — nachlaufbar*
+
+### T-08 — Zeilenende-Garantie in threeWayMerge (padLast wie in unionMerge)
+
+**Hypothese:** threeWayMerge klebt zwei Zeilen aneinander, wenn ein Stand nicht auf einem Zeilenumbruch endet — der Fall, den unionMerge seit Review C-1 abfaengt.
+
+**Verdikt:** eingebaut · **2026-08-13**
+
+**Kennzahl:** am Produkt 217 auf 191 Zeichen, mB 2 auf 1; Suite 600 auf 608 gruen, kein Rueckschritt  
+**Zellbasis:** zwei Realtest-Laeufe an je zwei echten Obsidian-Instanzen (r13-cdp-lokal, r14-cdp-lokal), 8 neue Unit-Tests, Idempotenz ueber 2000 gepaarte Faelle je Zelle
+
+diff_linesToChars_ tokenisiert INKLUSIVE Zeilenende. zeilenListe schneidet eine Schlusszeile ohne \n ohne Trennzeichen ab, dreiWegeZeilen fuegt mit join('') zusammen — die naechste Zeile klebt daran fest. unionMerge faengt das seit Review C-1 mit padLast ab (text-merge.ts:376-379) und beschreibt den Schaden woertlich; beim Wechsel auf den zeilenweisen Merge (T-04) wurde dieselbe Behandlung nicht mitgezogen. padLast hatte im ganzen Modul drei Aufrufstellen, alle drei in unionMerge. Kleinster Fall - threeWayMerge('a\nb','a\nb\nX','a\nb\nY') ergab 'a\nb\nXb\nY' statt 'a\nb\nX\nY'. AM PRODUKT GEMESSEN, nicht konstruiert - beide Runner endeten mit 'A2-<RunId>BBB-<RunId>' in einer Zeile; in r13 sind beide Vaults byte-gleich, also konvergenter und damit STILLER Schaden. Verletzt Gruppe 1 ("Der Text bleibt strukturell heil"), nicht K.o.-1 - kein Grundtext geht verloren. Warum es niemand sah - tests/three-way-line-endings.test.ts prueft CRLF, LF und BOM, aber alle 26 Fixtures endeten auf einem Zeilenumbruch. Genau der Fall, den unionMerges eigener Kommentar "in Obsidian der Normalfall" nennt, war fuer threeWayMerge nicht abgedeckt. DIE ERSTE FASSUNG DES FIXES WAR SELBST FALSCH und ist von der adversarialen Pruefung gefallen. Sie entfernte das angehaengte Zeilenende nur, wenn WEDER local NOCH other eines hatte — und las other damit als Beitrag, auch wenn other === base, die Gegenseite also gar nichts geaendert hat. Damit brach die Identitaet threeWayMerge(base, local, base) === local - der gewoehnliche lokale Edit am Dateiende (Obsidian schreibt dort keinen Umbruch) bekam einen angehaengt, und sync-handler.ts:1847 schrieb Datei und CRDT-Op fuer eine Aenderung, die niemand gemacht hat. Selbstverstaerkend, weil die Datei danach auf einem Umbruch endet. DIE TRAGENDE FASSUNG mergt das Umbruch-Bit selbst 3-Wege-artig - wer es gegenueber base geaendert hat, bestimmt es (zielNl = localNl === baseNl ? otherNl : localNl). Beide Richtungen sind als Test gepinnt. ZWEITE PRUEFRUNDE, zweiter Fehler - der Strip nahm pauschal EIN Zeichen zurueck. `mitNl` ist aber nicht umkehrbar - ein Text ohne Schluss-Umbruch und derselbe Text mit einem bilden beide auf dieselbe gepolsterte Fassung ab. Endete das Ergebnis auf einer LEERZEILE, loeschte der Strip diese Zeile und verfehlte die eigene Zusage trotzdem, weil danach immer noch ein Umbruch dastand. Eigene Messung: 481 von 19.959 gemergten Tripeln (2,4 %) betroffen - konvergent auf beiden Seiten und damit still. Behoben; ein Text mit leerer Schlusszeile kann das Bit `false` gar nicht erfuellen, dort ist Nichtstun richtig. DER PREIS, ausdruecklich - die Nicht-Idempotenz beim MEHRFACH-Merge steigt in den Ohne-Zeilenende-Zellen: 482 auf 741, 204 auf 751, 648 auf 750 von je 2000 gepaarten Faellen; die Mit-Zeilenende-Zelle bleibt bei 760 unveraendert. Das ist KEIN neues Verhalten, sondern eine Vereinheitlichung auf den Pfad, den der Mit-Zeilenende-Fall im Bestand schon nahm: Von den Faellen, in denen neu instabil und alt stabil ist, sind 305/305, 604/604 und 291/294 dort schon im Bestand instabil. Die drei Reste sind von Hand nachgesehen und ebenfalls Vereinheitlichung - eine Schwaeche der automatischen Kontrollfrage, nicht des Produkts (Beispiel im Quelltext von idempotenz.mjs). diff3 ist formal nicht idempotent (Khanna/Kunal/Pierce, FSTTCS 2007); der Fix verschiebt nur, welche Faelle in diesen bekannten Pfad fallen. DAS INSTRUMENT WAR SELBST BLIND und ist gehaertet - sein Alphabet enthielt keinen Leerstring, und es entfernte per Regex ALLE Schluss-Umbrueche statt nur einem - es konnte also nie einen Text mit leerer Schlusszeile erzeugen. Genau die Schadensklasse der zweiten Runde war damit strukturell unsichtbar, und seine Zahl wurde als Entlastung zitiert, die sie fuer diesen Fall nicht trug. Jetzt: 366/2000 der erzeugten Texte enden auf einer Leerzeile.
+
+*Beleg: spike/duplikat-mb/zeilenende.mjs und idempotenz.mjs (beide Fassungen gegeneinander); tests/three-way-line-endings.test.ts; obsidian-qollab-doku/sdd/runs/ — r13-lokal-lauf2.log, r14-lokal-lauf.log, suite-nach-t08.log (die 608), idempotenz-t08.log; leerzeile.mjs fuer die 481/19.959 — nachlaufbar*
 
 ## Lösch-, Rename- und Meldungs-Semantik
 
@@ -680,6 +694,7 @@ Der Rest, der ohne Koordinator realistisch bleibt - den Fall sichtbar machen sta
 | `X-02` | Runner auf den Prozess-Schreibweg umstellen (H-EDIT-CDP) | eingebaut | r11-cdp an zwei echten Obsidian-Instanzen: PASS, 46 Asserts gruen gegen FAIL mit 8 roten beim externen Arm; A-A-zeile-1x 0/0/0 auf 1/1/1 | nachlaufbar |
 | `X-04` | r11s Rot als Produktfehler an K.o.-Kriterium 1 fuehren | gebrochen | in 6 kontrollierten Laeufen nicht reproduzierbar (t4, t5, t6b, t7, r11-cdp, r15-cdp); beide Verlust-Runner ueber den Prozess-Schreibweg PASS (46 bzw. 21 gruene Asserts) | nachlaufbar |
 | `X-06` | Das Rest-Duplikat in r13/r14 dem Aufbauhelfer zuschreiben | gebrochen | AUFBAU-SAUBER in beiden Armen — alle vier Marker-Zaehler 1, CRDT-Sicht 1, GUID geteilt, Vaults byte-gleich | nachlaufbar |
+| `X-07` | Das Rest-Duplikat in r13/r14 dem unionMerge des Startup-Sweeps zuschreiben | gebrochen | unionMerge liefert in der gemessenen Lage 191 Zeichen und mB genau einmal; threeWayMerge liefert 217 und mB zweimal | nachlaufbar |
 | `X-05` | Serienlauf ohne Entflaggen der Testvaults | gebrochen | 2 von 3 Runnern sterben nach 3 Asserts (r14-cdp, r15-cdp); mit H-TESTVAULT-FLAGS-WEG davor 23 bzw. 21 Asserts erreicht | nachlaufbar |
 | `X-03` | Messapparat ohne Herkunftstor (bis 2026-08-09) | überholt | zwei Drittel des Befunds 'Grundtextverlust ab drei Geraeten' waren Artefakt; N=3 Verlust 7,1 auf 0, Verdopplung 440 auf 58 | nachlaufbar |
 
@@ -734,6 +749,19 @@ Die Signatur war ernst - As Zeile fehlte in BEIDEN Vaults, bei intakter Konverge
 Der Verdacht lag nahe - in r13 wie r14 ist der verbliebene Doppelgaenger DERSELBE Marker, naemlich der, den B im gemeinsamen Aufbau setzt. agent-t8-aufbau.ps1 faehrt nur den Aufbau und zaehlt unmittelbar danach: In beiden Armen sauber. Der Helfer erzeugt es nicht; das Duplikat entsteht im Szenario und ist ein Produktbefund. Der zweite Arm war noetig - der erste fuhr auf einer frisch angelegten Notiz, waehrend r13-r15 `Meetingprotokoll.md` nie cleanen und H-RESET nur die Hilfsdateien loescht. Ohne Kontrollarm haette der Lauf einen anderen Fall gemessen als den fraglichen. Nebenbefund am Helfer - ein blosses `app.vault.create` praegt keine Inkarnation, erst ein `modify` tut es. Der Aufbau lief in den Timeout, sobald ein Runner die Notiz vorher aufraeumte; in H-SETUP-SHARED-CDP behoben.
 
 *Beleg: runs/t8-aufbau.log und runs/t8-kontroll.log; sdd/agent-t8-aufbau.ps1 — nachlaufbar*
+
+### X-07 — Das Rest-Duplikat in r13/r14 dem unionMerge des Startup-Sweeps zuschreiben
+
+**Hypothese:** Der extern geschriebene Stand wird vom Startup-Sweep per unionMerge aufgeloest; unionMerge hat keinen gemeinsamen Vorfahren und kann per Konstruktion nicht deduplizieren.
+
+**Verdikt:** gebrochen · **2026-08-13**
+
+**Kennzahl:** unionMerge liefert in der gemessenen Lage 191 Zeichen und mB genau einmal; threeWayMerge liefert 217 und mB zweimal  
+**Zellbasis:** die Textlage der beiden Runner, byte-genau gegen die echten Merge-Funktionen gerechnet, plus zwei Realtest-Laeufe mit Messpunkten
+
+Der Kandidat stand seit dem 2026-08-12 als ausdrueckliche Vermutung in der Akte. Er faellt auf zwei unabhaengigen Wegen. ERSTENS laeuft unionMerge in diesem Pfad gar nicht - der unite-Zweig (sync-handler.ts:1837) haengt an `base === undefined` und damit an `adopted`; in r13 wie r14 hat B eigenen State, ensureDoc adoptiert nicht, der own-Branch endet auf threeWayMerge (:1847). ZWEITENS waere unionMerge dort die LOESUNG gewesen, nicht die Ursache - mit denselben Eingaben liefert es 191 Zeichen und mB genau einmal. Die tatsaechliche Ursache ist T-08 (fehlende Zeilenende-Garantie in threeWayMerge). Es war ueberdies nie ein Duplikat - der Endtext enthaelt `A2-<RunId>BBB-<RunId>` in EINER Zeile; H-COUNT zaehlt Regex-Treffer im Volltext (harness-ext.ps1:477), deshalb sah die verschmolzene Zeile wie eine Verdopplung aus. Zwei Nebenbefunde derselben Untersuchung, beide unabhaengig zu behandeln - die Sweep-Schranke steht seit 2026-08-07 auf 'basis-signatur', waehrend der Kommentar an der Aufrufstelle (main.ts:1375) weiterhin "Standard 'aus'" behauptet; und der file-open-Trigger kann den Startup-Sweep nicht mehr ueberholen, weil startSidecarWatcher erst hinter dem awaiteten Sweep registriert wird (main.ts:594-616) - r13 fuehrt genau das aber als seine geprueste Bedingung.
+
+*Beleg: obsidian-qollab-doku/sdd/runs/r13-lokal-lauf2.log (M6 gegen M7) und r14-lokal-lauf.log (M7 gegen M8); spike/duplikat-mb/zeilenende.mjs Abschnitt 3 — nachlaufbar*
 
 ### X-05 — Serienlauf ohne Entflaggen der Testvaults
 

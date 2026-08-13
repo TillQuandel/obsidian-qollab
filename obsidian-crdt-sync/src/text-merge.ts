@@ -259,7 +259,59 @@ export function threeWayMerge(base: string, local: string, other: string): strin
   const localLf = aufLf(localBody);
   const otherLf = aufLf(ohneBom(other));
 
-  const merged = dreiWegeZeilen(baseLf, localLf, otherLf);
+  // Zeilenende-Garantie — dieselbe wie in `unionMerge` (Review C-1), die hier
+  // beim Wechsel auf den zeilenweisen Merge fehlte.
+  //
+  // `zeilenListe` schneidet die Schlusszeile ohne `\n` ab, und `dreiWegeZeilen`
+  // fügt die Stücke mit `join('')` zusammen. Endet ein Stand nicht auf `\n` — in
+  // Obsidian der Normalfall —, hat seine letzte Zeile kein Trennzeichen, und die
+  // nächste Zeile klebt daran fest:
+  //     threeWayMerge('a\nb', 'a\nb\nX', 'a\nb\nY')  ->  'a\nb\nXb\nY'
+  // Am laufenden Produkt gemessen (Realtest r13/r14, 2026-08-13): Der Marker der
+  // Gegenseite stand danach als `A2-…BBB-…` in einer Zeile, in BEIDEN Vaults
+  // byte-gleich — struktureller Schaden, konvergent und damit still.
+  //
+  // Deshalb vor dem Diff beidseitig ein Zeilenende garantieren — und hinterher
+  // entscheiden, ob es im Ergebnis stehenbleibt.
+  //
+  // Diese Entscheidung ist selbst ein 3-Wege-Merge, über genau ein Bit: „endet
+  // der Text auf einem Zeilenumbruch". Wer das Bit gegenüber `base` geändert hat,
+  // bestimmt es; hat keine Seite es angefasst, bleibt es wie in `base`. Haben es
+  // beide geändert, sind sie zwangsläufig einig (beide auf dem Gegenwert von
+  // `base`), und `localNl` trägt dieselbe Antwort.
+  //
+  // Die naheliegende Kurzfassung „entfernen, wenn weder local noch other eines
+  // hat" ist FALSCH und war in der ersten Fassung dieses Fixes drin. Sie liest
+  // `other` als Beitrag, auch wenn `other === base` — also wenn die Gegenseite
+  // gar nichts geändert hat. Dann bricht die Identität
+  // `threeWayMerge(base, local, base) === local`: Der gewöhnliche lokale Edit am
+  // Dateiende (Obsidian schreibt dort kein Zeilenende) bekäme eines angehängt,
+  // und `sync-handler.ts:1847` schriebe Datei und CRDT-Op für eine Änderung, die
+  // niemand gemacht hat — selbstverstärkend, weil die Datei danach auf `\n`
+  // endet. Gefunden durch adversariale Prüfung des Fixes, 2026-08-13.
+  const mitNl = (s: string) => (s === '' || s.endsWith('\n') ? s : s + '\n');
+  const baseNl = baseLf.endsWith('\n');
+  const localNl = localLf.endsWith('\n');
+  const otherNl = otherLf.endsWith('\n');
+  const zielNl = localNl === baseNl ? otherNl : localNl;
+
+  let merged = dreiWegeZeilen(mitNl(baseLf), mitNl(localLf), mitNl(otherLf));
+  // Der Strip nimmt ausschließlich zurück, was `mitNl` angehängt hat — und das
+  // war höchstens ein Zeichen hinter einer NICHT leeren Schlusszeile.
+  //
+  // `mitNl` ist nicht umkehrbar: `'x'` und `'x\n'` bilden beide auf `'x\n'` ab.
+  // Endet `merged` auf `'\n\n'`, ist die letzte Zeile leer — dieses `\n` hat
+  // niemand angehängt, es ist Inhalt. Ein `slice(0, -1)` löschte dort eine
+  // Leerzeile UND verfehlte `zielNl` trotzdem, weil das Ergebnis danach immer
+  // noch auf `\n` endet. Ein Text mit leerer Schlusszeile kann `zielNl === false`
+  // gar nicht erfüllen; dort ist Nichtstun richtig.
+  //
+  // Zweite adversariale Prüfung, 2026-08-13. Eigene Messung dazu
+  // (`spike/duplikat-mb/leerzeile.mjs`, Seed 20260813): In 481 von 19.959
+  // gemergten Tripeln (2,4 %) hätte der Strip ohne diesen Guard eine Leerzeile
+  // gefressen — konvergent auf beiden Seiten und damit still.
+  const schlusszeileLeer = merged.endsWith('\n\n') || merged === '\n';
+  if (!zielNl && merged.endsWith('\n') && !schlusszeileLeer) merged = merged.slice(0, -1);
 
   const eol = localBody.includes('\r\n') ? '\r\n' : '\n';
   const out = eol === '\n' ? merged : merged.replace(/\n/g, eol);

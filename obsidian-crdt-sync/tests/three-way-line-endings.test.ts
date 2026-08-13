@@ -1,4 +1,4 @@
-import { threeWayMerge } from '../src/text-merge';
+import { threeWayMerge, unionMerge } from '../src/text-merge';
 
 // Zeilenenden und BOM beim 3-Wege-Merge
 //
@@ -225,5 +225,126 @@ describe('threeWayMerge — Kontrollen (muessen gruen bleiben)', () => {
     // dokumentierte Schwaeche von `patch_apply`, das nicht dedupliziert. Sie ist
     // mit dem Verfahren entfallen, nicht mit einer zusaetzlichen Pruefung.
     expect(zaehle(threeWayMerge('a\n', 'a\nFREMD\n', 'a\nFREMD\n'), 'FREMD')).toBe(1);
+  });
+});
+
+// ── OHNE abschliessendes Zeilenende ─────────────────────────────────────────
+//
+// Die Faelle oben enden ausnahmslos auf einem Zeilenumbruch — alle 26 Fixtures
+// dieser Datei, nachgezaehlt. Genau der Fall, den `unionMerge`s eigener Kommentar
+// „in Obsidian der Normalfall" nennt, war damit fuer `threeWayMerge` nicht
+// abgedeckt, und dort sass ein Fehler.
+//
+// WAS PASSIERTE: `zeilenListe` schneidet eine Schlusszeile ohne `\n` ohne
+// Trennzeichen ab, `dreiWegeZeilen` fuegt mit `join('')` zusammen — die naechste
+// Zeile klebte an der Schlusszeile fest. `unionMerge` faengt das seit Review C-1
+// mit `padLast` ab; beim Wechsel auf den zeilenweisen 3-Wege-Merge (2026-08-11)
+// wurde dieselbe Behandlung nicht mitgezogen.
+//
+// AM PRODUKT GEMESSEN, nicht konstruiert: Die Realtests `r13-cdp-lokal` und
+// `r14-cdp-lokal` (2026-08-13, zwei echte Obsidian-Instanzen) endeten mit
+// `A2-<RunId>BBB-<RunId>` in einer Zeile — in `r13` in BEIDEN Vaults byte-gleich,
+// also konvergent und damit still. Die Messpunkte unmittelbar davor waren sauber.
+describe('threeWayMerge — Staende ohne abschliessendes Zeilenende', () => {
+  it('klebt die naechste Zeile nicht an die Schlusszeile', () => {
+    // Der gemessene Schaden vor dem Fix: 'a\nb\nXb\nY' — das `b` der Basis klebt
+    // an der lokalen Ergaenzung `X` und wird dadurch ein zweites Mal gezaehlt.
+    const merged = threeWayMerge('a\nb', 'a\nb\nX', 'a\nb\nY');
+    expect(merged).toBe('a\nb\nX\nY');
+    expect(zaehle(merged, 'b')).toBe(1);
+  });
+
+  it('erfindet kein Zeilenende, wenn keine Seite eines hatte', () => {
+    // Gegenrichtung zum Test darueber: Der Fix haengt intern ein `\n` an; es darf
+    // im Ergebnis nicht stehenbleiben, sonst schriebe jeder Merge die Datei um.
+    expect(threeWayMerge('a\nb', 'a\nb\nX', 'a\nb\nY').endsWith('\n')).toBe(false);
+    expect(threeWayMerge('a', 'a\nX', 'a')).toBe('a\nX');
+  });
+
+  it('laesst den lokalen Stand unveraendert, wenn die Gegenseite nichts geaendert hat', () => {
+    // REGRESSION, gefunden bei der adversarialen Pruefung des Fixes (2026-08-13).
+    // Die erste Fassung entfernte das angehaengte Zeilenende nur, wenn WEDER local
+    // NOCH other eines hatte — und las `other` damit als Beitrag, auch wenn
+    // `other === base`, die Gegenseite also gar nichts geaendert hat.
+    //
+    // Der Ausloeser ist der Alltagsfall: Die Datei endet auf einem Zeilenumbruch,
+    // die Nutzerin setzt den Cursor ans Ende und tippt eine Zeile — Obsidian
+    // schreibt dort keinen Umbruch. Ohne Remote-Aenderung ist `base === other`,
+    // und der Merge haengte einen Umbruch an, den niemand getippt hat. Folge in
+    // `sync-handler.ts:1847`: `merged !== content`, also Write-Back und eine
+    // CRDT-Op fuer eine Aenderung, die es nicht gab — selbstverstaerkend, weil
+    // die Datei danach auf `\n` endet.
+    //
+    // Die Zusage ist deshalb die Identitaet: hat die Gegenseite nichts geaendert,
+    // ist das Ergebnis der lokale Stand, byteweise.
+    expect(threeWayMerge('a\nb\n', 'a\nb\nLokal', 'a\nb\n')).toBe('a\nb\nLokal');
+    expect(threeWayMerge('a\r\nb\r\n', 'a\r\nb\r\nLokal', 'a\r\nb\r\n')).toBe('a\r\nb\r\nLokal');
+    expect(threeWayMerge('a\nb', 'a\nb\nX', 'a\nb')).toBe('a\nb\nX');
+  });
+
+  it('frisst keine abschliessende Leerzeile', () => {
+    // ZWEITE REGRESSION, gefunden bei der adversarialen Pruefung (2026-08-13).
+    // `mitNl` ist nicht umkehrbar: 'x' und 'x\n' bilden beide auf 'x\n' ab. Ein
+    // pauschales `slice(0, -1)` nimmt deshalb nicht nur das angehaengte Zeichen
+    // zurueck — endet das Ergebnis auf '\n\n', ist die letzte Zeile LEER, und das
+    // zweite '\n' ist Inhalt, den niemand angehaengt hat.
+    //
+    // Der Schaden war doppelt: die Leerzeile verschwand, UND das Ergebnis endete
+    // danach immer noch auf '\n', verfehlte also die eigene Zusage. Ein Text mit
+    // leerer Schlusszeile kann `zielNl === false` gar nicht erfuellen.
+    //
+    // Eigene Messung (spike/duplikat-mb/leerzeile.mjs, Seed 20260813): 481 von
+    // 19.959 gemergten Tripeln (2,4 %) betroffen — konvergent auf beiden Seiten
+    // und damit still.
+    expect(threeWayMerge('# Notiz\n', '# Notiz\nZeile', '# Notiz\nZeile\n\n')).toBe('# Notiz\nZeile\n\n');
+    // Kantenfall: ein Text, der nur aus einem Zeilenumbruch besteht.
+    expect(threeWayMerge('\n', '\n', '\n')).toBe('\n');
+  });
+
+  it('uebernimmt das Entfernen des Schluss-Zeilenendes als lokale Aenderung', () => {
+    // Dieselbe Wurzel wie der Test darueber, andere Richtung: Entfernt local den
+    // Schluss-Umbruch und aendert other nichts, ist das ein echter lokaler Edit
+    // und darf nicht stillschweigend zurueckgenommen werden.
+    expect(threeWayMerge('a\nb\n', 'a\nb', 'a\nb\n')).toBe('a\nb');
+    // Spiegelbildlich: hat die Gegenseite ihn entfernt und local nichts geaendert,
+    // gewinnt die Gegenseite.
+    expect(threeWayMerge('a\nb\n', 'a\nb\n', 'a\nb')).toBe('a\nb');
+  });
+
+  it('behaelt das Zeilenende, wenn eine Seite eines hat', () => {
+    // Nur wenn BEIDE Beitraege ohne Umbruch enden, wird er wieder entfernt. Sonst
+    // wuerde der Merge ein vorhandenes Zeilenende verschlucken.
+    expect(threeWayMerge('a\nb\n', 'a\nb\nX\n', 'a\nb\nY\n')).toBe('a\nb\nX\nY\n');
+    expect(threeWayMerge('a\nb', 'a\nb\nX\n', 'a\nb\nY').endsWith('\n')).toBe(true);
+    expect(threeWayMerge('a\nb', 'a\nb\nX', 'a\nb\nY\n').endsWith('\n')).toBe(true);
+  });
+
+  it('traegt die Lage aus dem Realtest r13 unbeschaedigt', () => {
+    // Zeichengleich mit dem gemessenen Lauf (Messpunkte 132 / 165 / 158 Zeichen).
+    const BASIS = '# Meetingprotokoll\n\nPunkt 1: Ausgangslage\nPunkt 2: Beschluss\n\nEnde der Vorlage\n';
+    const aufbau = `${BASIS}AAA\nBBB`;
+    const lokal = `${aufbau}\nOFFLINE-B`;
+    const fremd = `${aufbau}\nA2`;
+    const merged = threeWayMerge(aufbau, lokal, fremd);
+
+    // Vor dem Fix stand hier 'A2BBB' in einer Zeile und BBB zaehlte zweimal.
+    expect(merged).not.toContain('A2BBB');
+    expect(zaehle(merged, 'BBB')).toBe(1);
+    // Positives Gegensignal: beide Beitraege ueberleben vollstaendig — der Test
+    // wuerde sonst auch dann gruen, wenn der Merge einfach Text weglaesst.
+    expect(zaehle(merged, 'OFFLINE-B')).toBe(1);
+    expect(zaehle(merged, 'A2')).toBe(1);
+    expect(zaehle(merged, 'AAA')).toBe(1);
+  });
+
+  it('verhaelt sich wie unionMerge, wo beide dieselbe Lage sehen', () => {
+    // `unionMerge` hatte die Behandlung schon; der Fix zieht `threeWayMerge`
+    // nach. In der Lage ohne gemeinsamen Beitrag muessen beide dasselbe liefern
+    // — vor dem Fix taten sie es nicht (217 gegen 191 Zeichen am Realtest).
+    const lokal = 'a\nb\nX';
+    const fremd = 'a\nb\nY';
+    expect(threeWayMerge('a\nb', lokal, fremd).split('\n').sort()).toEqual(
+      unionMerge(fremd, lokal).split('\n').sort()
+    );
   });
 });

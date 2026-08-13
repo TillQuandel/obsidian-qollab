@@ -371,6 +371,101 @@ Punkt 5, und `unionMerge` kann ihn nicht entfernen. Ungemessen. Ebenso ungemesse
 Fassung des Blocks, die die Verdopplung senken könnte. (Der Realtest ist am 2026-08-12 nachgeholt —
 siehe unten.)
 
+### Der Umbau brachte einen eigenen Fehler mit — behoben am 2026-08-13 (`T-08`)
+
+**`threeWayMerge` klebte zwei Zeilen aneinander, wenn ein Stand nicht auf einem Zeilenumbruch
+endet.** `diff_linesToChars_` tokenisiert *inklusive* Zeilenende; `zeilenListe` schneidet eine
+Schlusszeile ohne `\n` ohne Trennzeichen ab, und `dreiWegeZeilen` fügt mit `join('')` zusammen — die
+nächste Zeile klebt daran fest. `unionMerge` fängt genau das seit Review C-1 mit `padLast` ab
+(`text-merge.ts:376-379`) und beschreibt den Schaden wörtlich im Kommentar. Beim Wechsel auf den
+zeilenweisen Merge wurde dieselbe Behandlung **nicht mitgezogen**; `padLast` hatte im ganzen Modul
+drei Aufrufstellen, alle drei in `unionMerge`.
+
+Kleinster Fall — einziger Unterschied ist der Schluss-Umbruch:
+
+```
+threeWayMerge('a\nb',   'a\nb\nX',   'a\nb\nY')    →  "a\nb\nXb\nY"     ← b klebt an X
+threeWayMerge('a\nb\n', 'a\nb\nX\n', 'a\nb\nY\n')  →  "a\nb\nX\nY\n"    ← sauber
+```
+
+**Am Produkt gemessen, nicht konstruiert.** Die Realtests `r13-cdp-lokal` und `r14-cdp-lokal`
+(zwei echte Obsidian-Instanzen) ordnen den Schaden je einem Schritt zu, mit dem Messpunkt
+unmittelbar davor als positivem Gegensignal:
+
+| Runner | letzter sauberer Punkt | erster mit `mB` doppelt | dazwischen liegt |
+| --- | --- | --- | --- |
+| `r13` | M6 — App **zu**, 165 Zeichen | M7 — 217 Zeichen | der Startup-Sweep |
+| `r14` | M7 — 158 Zeichen | M8 — 210 Zeichen | die Zustellung von As Hilfsdatei |
+
+Der Endtext beider Läufe trägt `A2-<RunId>BBB-<RunId>` in **einer** Zeile; bei `r13` sind beide
+Vaults byte-gleich — konvergent und damit **still**. Verletzt ist Gruppe 1 („Der Text bleibt
+strukturell heil"), **nicht** K.o.-Kriterium 1: kein Grundtext geht verloren.
+
+**Es war nie ein Duplikat.** `H-COUNT` zählt Regex-Treffer im Volltext (`harness-ext.ps1:477`),
+deshalb sah die verschmolzene Zeile wie eine Verdopplung aus. Die CRDT-Sicht stand in beiden Läufen
+auf 1 — der Schaden sitzt im geschriebenen Text, nicht als zweites Item in der Historie.
+
+**Der Kandidat der Aktenlage ist damit gefallen** (`X-07`). Er lautete: „Der Startup-Sweep löst ihn
+per `unionMerge` auf, und der kann per Konstruktion nicht deduplizieren." Beide Hälften halten
+nicht — `unionMerge` läuft in diesem Pfad gar nicht (der `unite`-Zweig `sync-handler.ts:1837` hängt
+an `adopted`, und B hat eigenen State), und es wäre dort die **Lösung** gewesen: dieselben Eingaben
+ergeben 191 Zeichen und den Marker genau einmal. Nach dem Fix trifft `threeWayMerge` dieselben 191.
+
+**Warum es niemand sah:** `tests/three-way-line-endings.test.ts` prüfte CRLF, LF und BOM — 26
+Fixtures, und **alle 26** endeten auf einem Zeilenumbruch. Genau der Fall, den `unionMerge`s eigener
+Kommentar „in Obsidian der Normalfall" nennt, war für `threeWayMerge` nicht abgedeckt. Seit dem Fix
+steht dort ein eigener `describe`-Block mit acht Fällen; die Suite geht damit von **600 auf 608**,
+ohne Rückschritt in einer einzigen Zeile.
+
+**Die erste Fassung des Fixes war selbst falsch — gefallen an der adversarialen Prüfung.** Sie
+entfernte das angehängte Zeilenende nur, „wenn weder `local` noch `other` eines hatte", und las
+`other` damit als Beitrag, auch wenn `other === base` — die Gegenseite also gar nichts geändert hat.
+Damit brach die Identität `threeWayMerge(base, local, base) === local`: Der gewöhnliche lokale Edit
+am Dateiende bekam einen Umbruch angehängt, den niemand getippt hat, und `sync-handler.ts:1847`
+schrieb Datei **und** CRDT-Op für eine Änderung, die es nicht gab — selbstverstärkend, weil die Datei
+danach auf `\n` endet. Die tragende Fassung merged das Umbruch-Bit selbst 3-Wege-artig: wer es
+gegenüber `base` geändert hat, bestimmt es. Beide Richtungen sind als Test gepinnt.
+
+**Auch die zweite Fassung war noch falsch — gefallen an der zweiten Prüfrunde.** Der Strip nahm
+pauschal ein Zeichen zurück, aber `mitNl` ist nicht umkehrbar: Endete das Ergebnis auf einer
+**Leerzeile**, löschte er diese Zeile — und verfehlte sein Ziel trotzdem, weil danach immer noch ein
+Umbruch dastand. Eigene Messung mit versioniertem Instrument (`spike/duplikat-mb/leerzeile.mjs`,
+Seed 20260813): **481 von 19.959** gemergten Tripeln (2,4 %) betroffen, konvergent auf beiden Seiten
+und damit still. (Die Prüfung meldete dafür 7.578/65.952 aus einer anders gefilterten Population;
+ihr Skript liegt in keinem Repo und ist damit nicht nachlaufbar — deshalb neu erhoben.) Behoben: Ein Text mit
+leerer Schlusszeile kann das Bit `false` gar nicht erfüllen, dort ist Nichtstun richtig.
+
+**Der Preis, ausdrücklich:** Die Nicht-Idempotenz beim *Mehrfach*-Merge steigt in den
+Ohne-Zeilenende-Zellen — 482 → 741, 204 → 751, 648 → 750 von je 2.000 gepaarten Fällen; die
+Mit-Zeilenende-Zelle bleibt bei **760** unverändert. Das ist **kein neues Verhalten, sondern eine
+Vereinheitlichung** auf den Pfad, den der Mit-Zeilenende-Fall im Bestand schon nahm: Von den Fällen,
+in denen die neue Fassung instabil und die alte stabil ist, sind 305/305, 604/604 und 291/294 dort
+schon im Bestand instabil. Die drei Reste sind von Hand nachgesehen und ebenfalls Vereinheitlichung —
+eine Schwäche der automatischen Kontrollfrage, nicht des Produkts. diff3 ist formal nicht idempotent
+(Khanna/Kunal/Pierce, FSTTCS 2007); der Fix verschiebt nur, welche Fälle in diesen bekannten Pfad
+fallen. Gemessen mit festem Seed, `spike/duplikat-mb/idempotenz.mjs`.
+
+**Das Messinstrument war dabei selbst blind — und ist gehärtet.** Sein Alphabet enthielt keinen
+Leerstring, und es entfernte per Regex *alle* Schluss-Umbrüche statt nur einem; es konnte damit nie
+einen Text mit leerer Schlusszeile erzeugen. Genau die Schadensklasse der zweiten Runde war so
+strukturell unsichtbar, und seine Zahl wurde als Entlastung zitiert, die sie für diesen Fall nicht
+trug. Jetzt enden 366 von 2.000 erzeugten Texten auf einer Leerzeile. **Neunter Fall von
+Messinstrument-Blindheit in diesem Projekt.**
+
+**Zwei Nebenbefunde derselben Untersuchung, beide offen:**
+
+- **Die Sweep-Schranke steht nicht auf `aus`.** `sync-handler.ts:132-135` initialisiert seit dem
+  2026-08-07 auf `'basis-signatur'`; der Kommentar an der Aufrufstelle (`main.ts:1375`) behauptet
+  weiterhin „SPIKE-SCHALTER, Standard 'aus'". Wer den Kommentar liest, hält einen aktiven Schalter
+  für tot. (Der Abschnitt „Was dieser Apparat NICHT misst" unten bleibt richtig: dort ging es um den
+  *Messapparat*, der keinen Neustart modelliert — nicht um das Produkt.)
+- **`r13` prüft womöglich eine Bedingung, die nicht mehr eintreten kann.** Sein Kopfkommentar führt
+  „der file-open-Trigger konnte den Startup-Sweep überholen" als die geprüfte Bedingung. Im Code ist
+  die Reihenfolge erzwungen: `onLayoutReady` → `await runStartupSweep()` → **erst danach**
+  `startSidecarWatcher()`, und der `file-open`-Listener wird ausschließlich dort registriert
+  (`main.ts:594-616`). Dieselbe Frage wie bei `r11` — nicht „ist das ein Bug", sondern „prüft der
+  Runner noch, was er zu prüfen vorgibt". Ungemessen.
+
 ### Die Wirkung, an echten Instanzen belegt (2026-08-12)
 
 **Erstmals nicht nur Regressionsfreiheit, sondern Wirkung.** `r30` prüft das Herkunftstor an einem
