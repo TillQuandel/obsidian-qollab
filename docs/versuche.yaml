@@ -562,8 +562,8 @@ versuche:
       threeWayMerge klebt zwei Zeilen aneinander, wenn ein Stand nicht auf einem
       Zeilenumbruch endet — der Fall, den unionMerge seit Review C-1 abfaengt.
     verdikt: eingebaut
-    kennzahl: "am Produkt 217 auf 191 Zeichen, mB 2 auf 1; Suite 600 auf 608 gruen, kein Rueckschritt"
-    zellbasis: zwei Realtest-Laeufe an je zwei echten Obsidian-Instanzen (r13-cdp-lokal, r14-cdp-lokal), 8 neue Unit-Tests, Idempotenz ueber 2000 gepaarte Faelle je Zelle
+    kennzahl: "an r13s Textlage 217 auf 191 Zeichen, mB 2 auf 1; r13-cdp danach PASS (15 gruen). Suite 600 auf 608 gruen, kein Rueckschritt. NICHT wirksam bei r14 - siehe X-08"
+    zellbasis: zwei Realtest-Laeufe an je zwei echten Obsidian-Instanzen (r13-cdp-lokal, r14-cdp-lokal), 8 neue Unit-Tests, Idempotenz ueber 2000 gepaarte Faelle je Zelle; Wirkung am 2026-08-13 in der vollen Batterie nachgefahren
     datum: 2026-08-13
     begruendung: >
       diff_linesToChars_ tokenisiert INKLUSIVE Zeilenende. zeilenListe schneidet
@@ -880,6 +880,52 @@ versuche:
       registriert wird (main.ts:594-616) - r13 fuehrt genau das aber als seine
       geprueste Bedingung.
     beleg: "obsidian-qollab-doku/sdd/runs/r13-lokal-lauf2.log (M6 gegen M7) und r14-lokal-lauf.log (M7 gegen M8); spike/duplikat-mb/zeilenende.mjs Abschnitt 3"
+    beleg_lage: nachlaufbar
+
+  - id: X-08
+    name: Das verbliebene Rot in r14 mit T-08 als erklaert fuehren
+    ebene: apparat
+    hypothese: >
+      Der Zeilenende-Fix T-08 erklaert und behebt das Rot BEIDER verbliebener
+      Runner, r13 und r14 - so stand es im Folgeprompt vom 2026-08-13
+      ("ihr gemeinsames Rot ist aufgeklaert und behoben").
+    verdikt: gebrochen
+    kennzahl: "nach dem Fix gefahren: r13-cdp PASS (15 gruen), r14-cdp unveraendert FAIL - kontrolle2-keine-duplikate 1/2/1, byte-identisch zum Vorlauf; Endtext 210 Zeichen vorher wie nachher, gegen 158 bei A"
+    zellbasis: volle CDP-Batterie 2026-08-13 (8 Runner, 7 PASS), plus die Textlage byte-genau gegen beide Fassungen der echten Merge-Funktionen gerechnet
+    datum: 2026-08-13
+    begruendung: >
+      Der Fix wurde an r13s Textlage gemessen (217 auf 191 Zeichen, mB 2 auf 1)
+      und daraus auf BEIDE Runner geschlossen. r14 wurde nach dem Fix nie
+      gefahren; fuer ihn gibt es in der Registratur keine Nachher-Zahl. Beim
+      ersten Lauf danach ist er unveraendert rot, mit byte-identischem
+      Assert-Wert.
+      WAS GEMESSEN IST. Der Endtext von vault-b traegt
+      `B2-<RunId>BBB-<RunId>` in EINER Zeile - wieder eine Verklebung, kein
+      Duplikat. Der Schaden steht im CRDT, nicht nur im Dateitext: verify.js
+      liest die Zeile als eigenen Eintrag in markerCounts, textLen 210 gegen 158
+      bei A. Er ist damit propagierbar - sobald Bs Hilfsdatei in die
+      Gegenrichtung synct, erbt A ihn. Der Runner sieht ihn nur frueher, weil er
+      an dieser Stelle nur a->b synct.
+      UNTERSCHIED ZU r13, ausdruecklich - dort waren beide Vaults byte-gleich
+      beschaedigt (konvergent, still), hier ist nur B betroffen (divergent).
+      Beide GUIDs sind gleich (9400f357...), es ist also kein Erstkontakt,
+      sondern ein Merge-Problem innerhalb EINER geteilten Inkarnation.
+      Kein Grundtextverlust - AAA, BBB und A2 stehen alle mit Count 1. Verletzt
+      ist Gruppe 1 ("der Text bleibt strukturell heil"), nicht K.o.-1.
+      WAS NICHT GEKLAERT IST. Ein einstufiger threeWayMerge ueber die
+      naheliegende Basis erzeugt den gemessenen Text NICHT: mit Fix kommen 184
+      Zeichen (sauber), ohne Fix 210 mit der Verklebung an der SPIEGELVERKEHRTEN
+      Stelle (`A2-<RunId>BBB-<RunId>` statt `B2-...`). unionMerge liefert in
+      beiden Fassungen 184. Der Fix steckt nachweislich im gefahrenen Build
+      (zielNl 2x, padLast 4x im deployten main.js, alle drei Kopien byte-gleich).
+      Der tatsaechliche Entstehungsweg ist damit offen - mehrstufiger Merge,
+      eine andere Basis als die angenommene, oder eine Stelle ausserhalb
+      text-merge.ts. Das Instrument fuer den naechsten Anlauf liegt bereit.
+      DIE METHODISCHE LEHRE. Ein Fix, der an EINEM Fall gemessen wurde, ist
+      nicht fuer den zweiten belegt - auch dann nicht, wenn beide Faelle
+      dieselbe Signatur zeigen. Die Aktenlage hat aus einer gemessenen Wirkung
+      auf einen ungemessenen Fall geschlossen und ihn als erledigt gefuehrt.
+    beleg: "obsidian-qollab-doku/sdd/runs/r14-cdp-bat3-20260813-212759.log und batterie-bat3-20260813-212759.json; spike/duplikat-mb/r14-pfad.mjs (mit Selbsttest gegen die gemessenen Laengen und Gegenprobe auf Klebe-Blindheit)"
     beleg_lage: nachlaufbar
 
   - id: X-05
