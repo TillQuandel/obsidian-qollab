@@ -9,6 +9,7 @@
 node_modules/
 .worktrees/
 graphify-out/
+package-lock.json
 
 # Gebaute Bundles — main.js im Wurzelverzeichnis ist der Deploy-Artefakt,
 # real*.cjs sind die gebuendelten Messstaende des Spike-Apparats.
@@ -16,11 +17,21 @@ main.js
 **/real*.cjs
 **/*.cjs
 
+# ALTE CODE-KOPIE (ergaenzt 2026-08-13). `tests/_v040/` haelt den v0.4.0-Stand
+# von main.ts, sync-handler.ts und text-merge.ts als Vergleichsfassung fuer
+# Regressionstests. Im Graphen waeren das Doppelgaenger der echten Module — jede
+# God-Node-Zaehlung und jede Community-Zuordnung waere dadurch verfaelscht.
+obsidian-crdt-sync/tests/_v040/
+
 # Messergebnisse des Spike-Apparats: reine Zahlenkolonnen, kein Wissen ueber
 # die Architektur. Die Instrumente selbst (*.mjs, *.ts) bleiben drin — sie
 # tragen die Begruendung im Kopfkommentar.
-obsidian-crdt-sync/spike/**/ergebnis-*.txt
-obsidian-crdt-sync/spike/**/proseed-*.txt
+#
+# Breiter gefasst am 2026-08-13: Der Erstlauf gegen dieses Repo zog 48 .txt aus
+# spike/ in den Graphen, von denen die beiden alten Muster nur einen Teil
+# trafen. Die Zahlenkolonnen heissen dort auch `bilanz-*.txt`, `schnitt-*.txt`
+# und aehnlich.
+obsidian-crdt-sync/spike/**/*.txt
 obsidian-crdt-sync/spike/**/*.log
 
 # Sessionberichte und Messhistorie: lange deutsche Prosa, die sich sonst in die
