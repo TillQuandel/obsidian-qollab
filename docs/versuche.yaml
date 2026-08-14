@@ -625,6 +625,59 @@ versuche:
     beleg: "spike/duplikat-mb/zeilenende.mjs und idempotenz.mjs (beide Fassungen gegeneinander); tests/three-way-line-endings.test.ts; obsidian-qollab-doku/sdd/runs/ — r13-lokal-lauf2.log, r14-lokal-lauf.log, suite-nach-t08.log (die 608), idempotenz-t08.log; leerzeile.mjs fuer die 481/19.959"
     beleg_lage: nachlaufbar
 
+  - id: T-09
+    name: Ohne Schluss-Umbruch verdoppelt setContent die letzte Zeile
+    ebene: merge
+    hypothese: >
+      — (Produktbefund, kein Kandidat). Endet ein Text NICHT auf einem
+      Zeilenumbruch, ist seine letzte Zeile beim naechsten setContent keine
+      unberuehrte Zeile mehr, sondern eine geaenderte - `diff_linesToChars_`
+      tokenisiert inklusive Zeilenende, und "BBB" ist ein anderes Token als
+      "BBB\n". diffOps loest das als DELETE der alten plus INSERT der neuen
+      Zeile. Rechnen zwei Geraete das unabhaengig, verschmelzen die
+      DELETE-Haelften und die INSERT-Haelften stapeln sich.
+    verdikt: offen
+    kennzahl: "ohne Schluss-Umbruch steht die letzte Zeile 2x (210 Zeichen, byte-gleich mit dem Realtest r14cdp-20260813-213723); mit Schluss-Umbruch 1x (185 Zeichen)"
+    zellbasis: harness-freier Nachbau gegen den echten CrdtManager, zwei Replikate mit geteilter Inkarnation, gepaart gegen dieselbe Lage mit Schluss-Umbruch
+    datum: 2026-08-14
+    begruendung: >
+      Die Ursache des einen roten Runners der Batterie (X-08). GEFUNDEN ueber
+      die Itemkette, nicht ueber die Merge-Funktionen: verify.js meldet fuer die
+      verklebte Zeile ZWEI clientIDs, waehrend jede andere Zeile genau eine
+      traegt. r14-items.mjs loest das auf - zwei Insert-Ops fuehren BEIDE
+      `BBB-<RunId>` mit, und das urspruengliche BBB-Item steht in beiden Vaults
+      als Tombstone da.
+      DIE BEDINGUNG IST DER FEHLENDE SCHLUSS-UMBRUCH, NICHT DIE GERAETEZAHL.
+      Das ist die Korrektur an der Aktenlage: produktziel.md fuehrt dieselbe
+      Mechanik unter "Was ab vier Geraeten uebrig bleibt" und nennt N=2
+      "strukturell aus". Hier tritt sie bei N=2 auf. Nicht die Zahl der Geraete
+      entscheidet, sondern ob der gemeinsame Stand auf `\n` endet - und in
+      Obsidian ist das Fehlen der Normalfall.
+      REPRODUZIERT OHNE HARNESS. r14-ursache.mjs baut die Lage aus dem
+      konvergierten Ausgangsstand nach, laesst beide Seiten unabhaengig je eine
+      Zeile anhaengen und vereinigt. Ergebnis byte-gleich mit dem Endtext, den
+      der Realtest in vault-b hinterlassen hat. Kein Transport, kein
+      Herkunftstor, kein Sweep beteiligt - nur die Umrechnung Text -> Ops.
+      DIE GEGENPROBE TRAEGT, in beide Richtungen: dieselbe Lage MIT
+      Schluss-Umbruch bleibt sauber (1x statt 2x), und eine Kontrolllage, in der
+      beide Seiten denselben neuen Text schreiben, zeigt die Verdopplung
+      zuverlaessig - das Instrument ist nicht blind fuer die Schadensklasse.
+      WARUM ES BISHER NIEMAND SAH. probe-idempotenz.mjs, das Instrument fuer
+      genau diese Klasse, kann sie strukturell nicht erzeugen: seine Texte enden
+      ausnahmslos auf `\n` (`.join(NL) + NL`). Das ist der zehnte Fall eines
+      nachweislich blinden Messinstruments in diesem Projekt.
+      EINORDNUNG. Verletzt Gruppe 1 ("der Text bleibt strukturell heil"), nicht
+      K.o.-1 - es geht kein Grundtext verloren, die letzte Zeile steht doppelt.
+      Der Schaden steht im CRDT und ist damit propagierbar.
+      NOCH KEIN FIX. Der naheliegende Weg ist derselbe wie in T-08 - beide Texte
+      vor dem Diff auf `\n` polstern -, aber hier werden OPS erzeugt und kein
+      Text: die Op-Positionen muessten auf die ungepolsterten Texte
+      zurueckgerechnet werden. Der letzte Fix dieser Klasse ist an zwei
+      adversarialen Pruefrunden zunaechst gescheitert; dieser gehoert vor dem
+      Einbau genauso geprueft.
+    beleg: "spike/duplikat-mb/r14-ursache.mjs (mit Abgleich gegen den Realtest-Endtext und Blindheits-Gegenprobe) und r14-items.mjs; obsidian-qollab-doku/sdd/runs/r14-cdp-bat3-20260813-212759.log"
+    beleg_lage: nachlaufbar
+
   # ─── Ebene: Duplikat nachtraeglich entfernen ──────────────────────────────
   # Vier Verfahren gegen dieselbe Quelle, n = 576 je Zelle. Der Unterschied ist
   # fundamental, nicht graduell - Weglassen erzeugt keine delete-Op, Loeschen
@@ -912,15 +965,20 @@ versuche:
       sondern ein Merge-Problem innerhalb EINER geteilten Inkarnation.
       Kein Grundtextverlust - AAA, BBB und A2 stehen alle mit Count 1. Verletzt
       ist Gruppe 1 ("der Text bleibt strukturell heil"), nicht K.o.-1.
-      WAS NICHT GEKLAERT IST. Ein einstufiger threeWayMerge ueber die
+      DER MERGE WAR ES NICHT. Ein einstufiger threeWayMerge ueber die
       naheliegende Basis erzeugt den gemessenen Text NICHT: mit Fix kommen 184
       Zeichen (sauber), ohne Fix 210 mit der Verklebung an der SPIEGELVERKEHRTEN
       Stelle (`A2-<RunId>BBB-<RunId>` statt `B2-...`). unionMerge liefert in
       beiden Fassungen 184. Der Fix steckt nachweislich im gefahrenen Build
       (zielNl 2x, padLast 4x im deployten main.js, alle drei Kopien byte-gleich).
-      Der tatsaechliche Entstehungsweg ist damit offen - mehrstufiger Merge,
-      eine andere Basis als die angenommene, oder eine Stelle ausserhalb
-      text-merge.ts. Das Instrument fuer den naechsten Anlauf liegt bereit.
+      URSACHE GEKLAERT am 2026-08-14, siehe T-09. Die Itemkette von vault-b
+      (spike/duplikat-mb/r14-items.mjs) zeigt zwei Insert-Ops, die BEIDE
+      `BBB-<RunId>` mitfuehren - #4 client 2170101464 clock 53
+      "BBB-<RunId>\nB2-<RunId>" und #5 client 4220309557 clock 105
+      "BBB-<RunId>\nA2-<RunId>" -, waehrend das urspruengliche BBB-Item in beiden
+      Vaults als Tombstone dasteht. Der Schaden entsteht also in der Umrechnung
+      Text -> Ops (diffOps/setContent), nicht in text-merge.ts. Die Verklebung
+      ist die FOLGE: Item #4 endet ohne Zeilenumbruch, #5 schliesst direkt an.
       DIE METHODISCHE LEHRE. Ein Fix, der an EINEM Fall gemessen wurde, ist
       nicht fuer den zweiten belegt - auch dann nicht, wenn beide Faelle
       dieselbe Signatur zeigen. Die Aktenlage hat aus einer gemessenen Wirkung

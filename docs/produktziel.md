@@ -993,6 +993,26 @@ einziger Peer, keine unabhängige Mehrfachrechnung). **Bei N = 3 ist sie latent,
 ausgeschlossen** — beide Zutaten kommen einzeln vor, in 200 Seeds nur nie am selben Tripel.
 Strukturell sind drei Geräte das Minimum: eines läuft voraus, zwei rechnen dieselbe Rücknahme.
 
+> [!warning] Nachtrag 2026-08-14 — die Gerätezahl ist nicht die Bedingung (`T-09`)
+> **Der Satz „bei N = 2 strukturell aus" gilt für die hier gemessene Zelle, nicht für die
+> Schadensklasse.** Am Realtest `r14-cdp` tritt dieselbe Mechanik bei **N = 2** auf, und sie ist
+> harness-frei reproduzierbar (`spike/duplikat-mb/r14-ursache.mjs`, byte-gleich mit dem Endtext
+> des Laufs).
+>
+> Die eigentliche Bedingung ist, ob der gemeinsame Stand auf einem **Zeilenumbruch endet**.
+> `diff_linesToChars_` tokenisiert *inklusive* Zeilenende: `"BBB"` und `"BBB\n"` sind verschiedene
+> Tokens. Fehlt der Schluss-Umbruch, ist die letzte Zeile beim nächsten `setContent` keine
+> unberührte Zeile mehr, sondern eine **geänderte** — und `diffOps` löst sie als DELETE + INSERT
+> auf. Hängen zwei Geräte unabhängig je eine Zeile an, verschmelzen die DELETE-Hälften und die
+> INSERT-Hälften stapeln sich: Die letzte Zeile steht danach **zweimal**.
+>
+> Es braucht dafür **kein** vorauslaufendes drittes Gerät und keine Rücknahme — nur zwei Geräte,
+> die anhängen. **In Obsidian ist der fehlende Schluss-Umbruch der Normalfall.**
+>
+> Warum die Tabelle oben das nicht zeigt: `probe-idempotenz.mjs` kann die Lage strukturell nicht
+> erzeugen — seine Texte enden ausnahmslos auf `\n` (`.join(NL) + NL`). Zehnter Fall eines
+> nachweislich blinden Messinstruments in diesem Projekt.
+
 **Zwei Hebel wurden gebaut und gegeneinander gemessen** (je 200 Seeds, drei Seed-Familien):
 
 | N = 4, DET = 7 | Grundtext weg | Textverlust gesamt | Verdopplung |
