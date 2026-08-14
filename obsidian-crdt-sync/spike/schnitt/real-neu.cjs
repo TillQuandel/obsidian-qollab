@@ -29,9 +29,9 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// obsidian-stub.js
+// spike/schnitt/obsidian-stub.js
 var require_obsidian_stub = __commonJS({
-  "obsidian-stub.js"(exports2, module2) {
+  "spike/schnitt/obsidian-stub.js"(exports2, module2) {
     var TFile2 = class {
       constructor() {
         this.path = "";
@@ -53,7 +53,7 @@ var require_obsidian_stub = __commonJS({
   }
 });
 
-// entry-neu.ts
+// spike/schnitt/entry-neu.ts
 var entry_neu_exports = {};
 __export(entry_neu_exports, {
   CrdtManager: () => CrdtManager,
@@ -70,7 +70,7 @@ __export(entry_neu_exports, {
 });
 module.exports = __toCommonJS(entry_neu_exports);
 
-// ../../src/crdt-manager.ts
+// src/crdt-manager.ts
 var Y = __toESM(require("yjs"));
 var import_diff_match_patch = require("diff-match-patch");
 var istHoch = (c) => c >= 55296 && c <= 56319;
@@ -224,7 +224,7 @@ var CrdtManager = class {
       const a = this.dmp.diff_linesToChars_(current, content);
       const zeilenweise = this.dmp.diff_main(a.chars1, a.chars2, false);
       this.dmp.diff_charsToLines_(zeilenweise, a.lineArray);
-      return zeilenweise.filter((d) => d[1].length > 0);
+      return this.schlusszeileEntkleben(zeilenweise, current).filter((d) => d[1].length > 0);
     }
     if (this.diffModus === "ganz") {
       this.diffGeaendert++;
@@ -241,6 +241,60 @@ var CrdtManager = class {
     const gleich = vorher.length === roh.length && roh.every((d, i) => `${d[0]} ${d[1]}` === vorher[i]);
     if (!gleich) this.diffGeaendert++;
     return roh;
+  }
+  // T-09 — die Schlusszeile ohne Zeilenumbruch.
+  //
+  // `diff_linesToChars_` tokenisiert INKLUSIVE Zeilenende: `'BBB'` und `'BBB\n'`
+  // sind zwei verschiedene Tokens. Endet `current` nicht auf `\n` — in Obsidian
+  // der Normalfall —, ist seine letzte Zeile beim Anhaengen deshalb keine
+  // unberuehrte Zeile mehr, sondern eine GEAENDERTE:
+  //
+  //     DELETE 'BBB'   INSERT 'BBB\nA2'
+  //
+  // Fuer sich ist das textneutral. Der Schaden ist, dass zwei Geraete das
+  // unabhaengig rechnen: die DELETE-Haelften verschmelzen (gleiches Item), die
+  // INSERT-Haelften stapeln sich (verschiedene Items). `BBB` steht danach
+  // zweimal, und weil das erste Item ohne `\n` endet, klebt die Fortsetzung an
+  // ihm fest — am Produkt gemessen als `B2-<RunId>BBB-<RunId>` in EINER Zeile
+  // (Realtest r14-cdp, 210 statt 184 Zeichen).
+  //
+  // Behoben wird das durch Abspalten des gemeinsamen Praefixes: aus
+  // DELETE 'BBB' + INSERT 'BBB\nA2' wird EQUAL 'BBB' + INSERT '\nA2'. Die
+  // unberuehrte Zeile behaelt damit ihr Item, und es entsteht kein Tombstone.
+  //
+  // WARUM NICHT `diff_cleanupMerge`. Die Bibliotheksfunktion loest denselben
+  // Fall — sie zieht gemeinsame Affixe aber UEBERALL heraus, nicht nur an der
+  // Schlusszeile. Die Ops sind danach zeichen- statt zeilenweise, und damit ist
+  // T-05 unterlaufen: Zwei Replikate, die dieselbe Zeilenmitte aendern,
+  // erzeugen `'Punkt 2: Beschlossenossen'` — eine ZERRISSENE Zeile, also genau
+  // die Schadensklasse, die T-05 beseitigt hat. Gegeneinander gemessen in
+  // `spike/duplikat-mb/t09-varianten.mjs`, sieben Pruefungen.
+  //
+  // Die drei Bedingungen sind bewusst eng. Jede einzelne verhindert, dass der
+  // Eingriff mehr anfasst als den einen Fall:
+  //   - `current` endet nicht auf `\n`  — sonst gibt es das Token-Problem nicht.
+  //   - INSERT beginnt mit dem DELETE   — sonst ist die Zeile wirklich geaendert
+  //                                       (`BBB` -> `BBX`), und dann SOLL sie
+  //                                       ganz raus und ganz wieder rein.
+  //   - das DELETE deckt das ENDE von `current` — sonst steht die Aenderung
+  //                                       mitten im Text, wo Zeilentreue gilt.
+  schlusszeileEntkleben(diffs, current) {
+    if (current.endsWith("\n")) return diffs;
+    for (let i = 0; i < diffs.length - 1; i++) {
+      const [op1, entfernt] = diffs[i];
+      const [op2, eingefuegt] = diffs[i + 1];
+      if (op1 !== import_diff_match_patch.DIFF_DELETE || op2 !== import_diff_match_patch.DIFF_INSERT) continue;
+      if (!eingefuegt.startsWith(entfernt)) continue;
+      const ausCurrent = diffs.slice(0, i + 1).filter(([op]) => op !== import_diff_match_patch.DIFF_INSERT).reduce((n, [, t]) => n + t.length, 0);
+      if (ausCurrent !== current.length) continue;
+      const rest = eingefuegt.slice(entfernt.length);
+      const neu = diffs.slice(0, i);
+      neu.push([import_diff_match_patch.DIFF_EQUAL, entfernt]);
+      if (rest.length > 0) neu.push([import_diff_match_patch.DIFF_INSERT, rest]);
+      neu.push(...diffs.slice(i + 2));
+      return neu;
+    }
+    return diffs;
   }
   // Traegt der Zeilen-Modus fuer dieses Textpaar noch? Gemessen wird an der
   // Groesse, an der `diff_linesToChars_` bricht: der Zahl der VERSCHIEDENEN
@@ -317,7 +371,7 @@ var CrdtManager = class {
   }
 };
 
-// ../../src/state-file.ts
+// src/state-file.ts
 var MAGIC1 = new Uint8Array([81, 76, 66, 49]);
 var MAGIC2 = new Uint8Array([81, 76, 66, 50]);
 var MAGIC_BYTES = 4;
@@ -404,7 +458,7 @@ function decodeStateFile(bytes) {
   return { guid: null, update: bytes };
 }
 
-// ../../src/sidecar-io.ts
+// src/sidecar-io.ts
 function dirname(path) {
   const i = path.lastIndexOf("/");
   return i < 0 ? "" : path.slice(0, i);
@@ -499,7 +553,7 @@ async function listDirFiles(adapter, dir) {
   return (await adapter.list(dir)).files;
 }
 
-// ../../src/text-merge.ts
+// src/text-merge.ts
 var import_diff_match_patch2 = require("diff-match-patch");
 var BOM = "\uFEFF";
 var ohneBom = (text) => text.startsWith(BOM) ? text.slice(1) : text;
@@ -616,7 +670,14 @@ function threeWayMerge(base, local, other) {
   const baseLf = aufLf(ohneBom(base));
   const localLf = aufLf(localBody);
   const otherLf = aufLf(ohneBom(other));
-  const merged = dreiWegeZeilen(baseLf, localLf, otherLf);
+  const mitNl = (s) => s === "" || s.endsWith("\n") ? s : s + "\n";
+  const baseNl = baseLf.endsWith("\n");
+  const localNl = localLf.endsWith("\n");
+  const otherNl = otherLf.endsWith("\n");
+  const zielNl = localNl === baseNl ? otherNl : localNl;
+  let merged = dreiWegeZeilen(mitNl(baseLf), mitNl(localLf), mitNl(otherLf));
+  const schlusszeileLeer = merged.endsWith("\n\n") || merged === "\n";
+  if (!zielNl && merged.endsWith("\n") && !schlusszeileLeer) merged = merged.slice(0, -1);
   const eol = localBody.includes("\r\n") ? "\r\n" : "\n";
   const out = eol === "\n" ? merged : merged.replace(/\n/g, eol);
   return localBom ? BOM + out : out;
@@ -691,7 +752,7 @@ function unionMerge(other, local) {
   return localBom ? BOM + merged : merged;
 }
 
-// ../../src/sync-handler.ts
+// src/sync-handler.ts
 var QOLLAB_DIR = ".qollab";
 function erkennungVon(v) {
   switch (v) {
@@ -1790,7 +1851,7 @@ var SyncHandler = class _SyncHandler {
   }
 };
 
-// ../../src/write-provenance.ts
+// src/write-provenance.ts
 var UMHUELLTE = ["write", "process", "append", "writeBinary"];
 var MAX_STAENDE = 1;
 var FENSTER_MS = 200;
@@ -1921,7 +1982,7 @@ var WriteProvenance = class {
   }
 };
 
-// ../../tests/helpers/vault-mock.ts
+// tests/helpers/vault-mock.ts
 var import_obsidian = __toESM(require_obsidian_stub());
 function toArrayBuffer(data) {
   return data instanceof Uint8Array ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) : data;
