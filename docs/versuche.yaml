@@ -636,9 +636,9 @@ versuche:
       "BBB\n". diffOps loest das als DELETE der alten plus INSERT der neuen
       Zeile. Rechnen zwei Geraete das unabhaengig, verschmelzen die
       DELETE-Haelften und die INSERT-Haelften stapeln sich.
-    verdikt: offen
-    kennzahl: "ohne Schluss-Umbruch steht die letzte Zeile 2x (210 Zeichen, byte-gleich mit dem Realtest r14cdp-20260813-213723); mit Schluss-Umbruch 1x (185 Zeichen)"
-    zellbasis: harness-freier Nachbau gegen den echten CrdtManager, zwei Replikate mit geteilter Inkarnation, gepaart gegen dieselbe Lage mit Schluss-Umbruch
+    verdikt: eingebaut
+    kennzahl: "Stapelung der unberuehrten Schlusszeile 2743 von 4000 auf 0; am Nachbau 210 auf 184 Zeichen, BBB 2x auf 1x; Suite 608 auf 615 gruen, kein Rueckschritt"
+    zellbasis: 4.000 gepaarte Fuzzer-Runden je Fassung (Seed 20260814, Alphabet mit Surrogatpaaren, CRLF und Leerzeilen), plus harness-freier Nachbau der r14-Lage gegen beide Fassungen; 7 neue Unit-Tests
     datum: 2026-08-14
     begruendung: >
       Die Ursache des einen roten Runners der Batterie (X-08). GEFUNDEN ueber
@@ -669,13 +669,34 @@ versuche:
       EINORDNUNG. Verletzt Gruppe 1 ("der Text bleibt strukturell heil"), nicht
       K.o.-1 - es geht kein Grundtext verloren, die letzte Zeile steht doppelt.
       Der Schaden steht im CRDT und ist damit propagierbar.
-      NOCH KEIN FIX. Der naheliegende Weg ist derselbe wie in T-08 - beide Texte
-      vor dem Diff auf `\n` polstern -, aber hier werden OPS erzeugt und kein
-      Text: die Op-Positionen muessten auf die ungepolsterten Texte
-      zurueckgerechnet werden. Der letzte Fix dieser Klasse ist an zwei
-      adversarialen Pruefrunden zunaechst gescheitert; dieser gehoert vor dem
-      Einbau genauso geprueft.
-    beleg: "spike/duplikat-mb/r14-ursache.mjs (mit Abgleich gegen den Realtest-Endtext und Blindheits-Gegenprobe) und r14-items.mjs; obsidian-qollab-doku/sdd/runs/r14-cdp-bat3-20260813-212759.log"
+      DER FIX, eingebaut am 2026-08-14 (`schlusszeileEntkleben`): Aus
+      DELETE "BBB" + INSERT "BBB\nA2" wird EQUAL "BBB" + INSERT "\nA2" - der
+      gemeinsame Praefix wird abgespalten, die unberuehrte Zeile behaelt ihr
+      Item, es entsteht kein Tombstone. Drei enge Bedingungen halten den
+      Eingriff auf den einen Fall: `current` endet nicht auf `\n`, das INSERT
+      beginnt mit dem DELETE, und das DELETE deckt das ENDE von `current`.
+      DER NAHELIEGENDE WEG IST GEFALLEN. `diff_cleanupMerge` loest denselben
+      Fall, zieht gemeinsame Affixe aber UEBERALL heraus statt nur an der
+      Schlusszeile. Die Ops sind danach zeichen- statt zeilenweise, und damit
+      ist T-05 unterlaufen: zwei Replikate, die dieselbe Zeilenmitte aendern,
+      erzeugen "Punkt 2: Beschlossenossen" - eine ZERRISSENE Zeile, also genau
+      die Schadensklasse, die T-05 beseitigt hat. Gegeneinander gemessen in
+      t09-varianten.mjs ueber sieben Pruefungen; nur der enge Weg besteht alle.
+      ADVERSARIAL GEPRUEFT, weil T-08 nach zwei Runden noch falsch war. Ein
+      Fuzzer ueber 4.000 gepaarte Runden je Fassung (Alphabet mit
+      Surrogatpaaren, CRLF, Leerzeilen, praefixgleichen Zeilen) prueft zwei
+      Eigenschaften: die INVARIANTE (nach setContent(b) steht b im Doc) haelt in
+      beiden Fassungen 4.000/4.000 - der Eingriff bricht die Positionsrechnung
+      also nicht -, und die STAPELUNG faellt von 2.743 auf 0.
+      AUCH DIESES INSTRUMENT WAR ZUERST BLIND und hat es selbst gemeldet: Es
+      zaehlte exakte Zeilen und fand nie etwas, weil der Schaden die Zeile mit
+      der naechsten verklebt und sie danach ein anderer String ist. Gezaehlt
+      wird jetzt im Volltext, wie H-COUNT es tut. Die 2.743 sind die Rate in
+      diesem Alphabet, KEINE Feldrate.
+      NOCH NICHT AM PRODUKT BELEGT. Der Realtest r14-cdp steht aus - er braucht
+      ein Fenster mit geschlossenem Produktivvault. Erwartung: PASS mit 24
+      Asserts (23 gruene plus das bisher rote kontrolle2-keine-duplikate).
+    beleg: "spike/duplikat-mb/ — r14-items.mjs (Itemkette), r14-ursache.mjs (Nachbau gegen beide Fassungen), t09-varianten.mjs (die sieben Pruefungen), t09-adversarial.mjs (der Fuzzer), bauen-crdt.mjs (beide Fassungen mit Gegenprobe); tests/schlusszeile-ohne-umbruch.test.ts; obsidian-qollab-doku/sdd/runs/ — t09-adversarial.log (die 2743), t09-ursache.log, t09-varianten.log, suite-nach-t09.log (die 615), r14-cdp-bat3-20260813-212759.log"
     beleg_lage: nachlaufbar
 
   # ─── Ebene: Duplikat nachtraeglich entfernen ──────────────────────────────

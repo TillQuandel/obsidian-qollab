@@ -412,7 +412,7 @@ export class CrdtManager {
       const a = this.dmp.diff_linesToChars_(current, content);
       const zeilenweise = this.dmp.diff_main(a.chars1, a.chars2, false) as Diff[];
       this.dmp.diff_charsToLines_(zeilenweise, a.lineArray);
-      return zeilenweise.filter((d) => d[1].length > 0);
+      return this.schlusszeileEntkleben(zeilenweise, current).filter((d) => d[1].length > 0);
     }
     if (this.diffModus === 'ganz') {
       this.diffGeaendert++;
@@ -438,6 +438,66 @@ export class CrdtManager {
       roh.every((d, i) => `${d[0]} ${d[1]}` === vorher[i]);
     if (!gleich) this.diffGeaendert++;
     return roh;
+  }
+
+  // T-09 — die Schlusszeile ohne Zeilenumbruch.
+  //
+  // `diff_linesToChars_` tokenisiert INKLUSIVE Zeilenende: `'BBB'` und `'BBB\n'`
+  // sind zwei verschiedene Tokens. Endet `current` nicht auf `\n` — in Obsidian
+  // der Normalfall —, ist seine letzte Zeile beim Anhaengen deshalb keine
+  // unberuehrte Zeile mehr, sondern eine GEAENDERTE:
+  //
+  //     DELETE 'BBB'   INSERT 'BBB\nA2'
+  //
+  // Fuer sich ist das textneutral. Der Schaden ist, dass zwei Geraete das
+  // unabhaengig rechnen: die DELETE-Haelften verschmelzen (gleiches Item), die
+  // INSERT-Haelften stapeln sich (verschiedene Items). `BBB` steht danach
+  // zweimal, und weil das erste Item ohne `\n` endet, klebt die Fortsetzung an
+  // ihm fest — am Produkt gemessen als `B2-<RunId>BBB-<RunId>` in EINER Zeile
+  // (Realtest r14-cdp, 210 statt 184 Zeichen).
+  //
+  // Behoben wird das durch Abspalten des gemeinsamen Praefixes: aus
+  // DELETE 'BBB' + INSERT 'BBB\nA2' wird EQUAL 'BBB' + INSERT '\nA2'. Die
+  // unberuehrte Zeile behaelt damit ihr Item, und es entsteht kein Tombstone.
+  //
+  // WARUM NICHT `diff_cleanupMerge`. Die Bibliotheksfunktion loest denselben
+  // Fall — sie zieht gemeinsame Affixe aber UEBERALL heraus, nicht nur an der
+  // Schlusszeile. Die Ops sind danach zeichen- statt zeilenweise, und damit ist
+  // T-05 unterlaufen: Zwei Replikate, die dieselbe Zeilenmitte aendern,
+  // erzeugen `'Punkt 2: Beschlossenossen'` — eine ZERRISSENE Zeile, also genau
+  // die Schadensklasse, die T-05 beseitigt hat. Gegeneinander gemessen in
+  // `spike/duplikat-mb/t09-varianten.mjs`, sieben Pruefungen.
+  //
+  // Die drei Bedingungen sind bewusst eng. Jede einzelne verhindert, dass der
+  // Eingriff mehr anfasst als den einen Fall:
+  //   - `current` endet nicht auf `\n`  — sonst gibt es das Token-Problem nicht.
+  //   - INSERT beginnt mit dem DELETE   — sonst ist die Zeile wirklich geaendert
+  //                                       (`BBB` -> `BBX`), und dann SOLL sie
+  //                                       ganz raus und ganz wieder rein.
+  //   - das DELETE deckt das ENDE von `current` — sonst steht die Aenderung
+  //                                       mitten im Text, wo Zeilentreue gilt.
+  private schlusszeileEntkleben(diffs: Diff[], current: string): Diff[] {
+    if (current.endsWith('\n')) return diffs;
+    for (let i = 0; i < diffs.length - 1; i++) {
+      const [op1, entfernt] = diffs[i];
+      const [op2, eingefuegt] = diffs[i + 1];
+      if (op1 !== DIFF_DELETE || op2 !== DIFF_INSERT) continue;
+      if (!eingefuegt.startsWith(entfernt)) continue;
+      // Wieviel von `current` steht bis einschliesslich dieser DELETE-Op?
+      // INSERT-Ops zaehlen nicht mit — sie gehoeren zu `content`.
+      const ausCurrent = diffs
+        .slice(0, i + 1)
+        .filter(([op]) => op !== DIFF_INSERT)
+        .reduce((n, [, t]) => n + t.length, 0);
+      if (ausCurrent !== current.length) continue;
+      const rest = eingefuegt.slice(entfernt.length);
+      const neu = diffs.slice(0, i);
+      neu.push([DIFF_EQUAL, entfernt]);
+      if (rest.length > 0) neu.push([DIFF_INSERT, rest]);
+      neu.push(...diffs.slice(i + 2));
+      return neu;
+    }
+    return diffs;
   }
 
   // Traegt der Zeilen-Modus fuer dieses Textpaar noch? Gemessen wird an der

@@ -37,7 +37,13 @@ import { fileURLToPath } from 'node:url';
 
 const hier = path.dirname(fileURLToPath(import.meta.url));
 const require_ = createRequire(import.meta.url);
-const R = require_(path.join(hier, '..', 'schnitt', 'real-neu.cjs'));
+
+// BEIDE Fassungen, aus `bauen-crdt.mjs`. Ohne die kaputte daneben waere ein
+// sauberes Ergebnis nicht von „der Fall trat gar nicht ein" zu unterscheiden —
+// und genau so las sich dieses Instrument nach dem Einbau des Fixes einmal:
+// „Hypothese traegt nicht", obwohl sie trug und der Fix nur schon wirkte.
+const R = require_(path.join(hier, 'crdt.cjs'));
+const R_ALT = require_(path.join(hier, 'crdt-vor-fix.cjs'));
 
 const NL = String.fromCharCode(10);
 const ID = 'r14cdp-20260813-213723';
@@ -62,18 +68,18 @@ const zaehle = (text, marker) => text.split(marker).length - 1;
  *
  * @param mitSchlussUmbruch endet der Ausgangsstand auf `\n`?
  */
-function lauf(mitSchlussUmbruch) {
+function lauf(mitSchlussUmbruch, Fassung = R) {
   const basis = mitSchlussUmbruch ? RUMPF + NL : RUMPF;
   const anhang = (m) => (mitSchlussUmbruch ? basis + m + NL : basis + NL + m);
 
   // Gemeinsamer Ausgangsstand mit IDENTISCHEN Item-IDs auf beiden Seiten —
   // eine geteilte Inkarnation, genau wie in r14 (beide GUIDs 9400f357...).
-  const quelle = new R.CrdtManager();
+  const quelle = new Fassung.CrdtManager();
   quelle.setContent('n.md', basis);
   const saat = quelle.encodeState('n.md');
 
-  const a = new R.CrdtManager();
-  const b = new R.CrdtManager();
+  const a = new Fassung.CrdtManager();
+  const b = new Fassung.CrdtManager();
   a.applyUpdate('n.md', saat);
   b.applyUpdate('n.md', saat);
 
@@ -99,6 +105,8 @@ console.log('--- Die Frage: verdoppelt sich die letzte Zeile? ----------------')
 console.log('  Zwei Geraete haengen unabhaengig je eine Zeile an denselben Stand.');
 console.log(`  Letzte Zeile des Ausgangsstands: "BBB-${ID}"\n`);
 
+const ohneAlt = lauf(false, R_ALT);
+const mitAlt = lauf(true, R_ALT);
 const ohne = lauf(false);
 const mit = lauf(true);
 
@@ -111,6 +119,11 @@ const zeig = (name, r, sollBbb) => {
   console.log(`    Text        ${JSON.stringify(r.text.split(NL).slice(6).join('|'))}`);
 };
 
+console.log('  ===== OHNE den Fix (Stand vor dem Einbau) =====');
+zeig('OHNE Schluss-Umbruch (der Fall aus r14):', ohneAlt, 1);
+console.log('');
+zeig('MIT Schluss-Umbruch (die Gegenprobe):', mitAlt, 1);
+console.log('\n  ===== MIT dem Fix (Arbeitsbaum) =====');
 zeig('OHNE Schluss-Umbruch (der Fall aus r14):', ohne, 1);
 console.log('');
 zeig('MIT Schluss-Umbruch (die Gegenprobe):', mit, 1);
@@ -125,23 +138,25 @@ const GEMESSEN = [
   `A2-${ID}`,
 ].join(NL);
 console.log('\n--- Abgleich mit dem Realtest ----------------------------------');
-console.log(`  gemessen im Lauf : ${GEMESSEN.length} Zeichen`);
-console.log(`  hier gerechnet   : ${ohne.laenge} Zeichen`);
+console.log(`  gemessen im Lauf      : ${GEMESSEN.length} Zeichen`);
+console.log(`  ohne Fix gerechnet    : ${ohneAlt.laenge} Zeichen`);
 console.log(
-  `  byte-gleich      : ${ohne.text === GEMESSEN ? 'JA — der Schaden ist reproduziert' : 'nein'}`
+  `  byte-gleich           : ${ohneAlt.text === GEMESSEN ? 'JA — der Schaden ist reproduziert' : 'nein'}`
 );
+console.log(`  mit Fix gerechnet     : ${ohne.laenge} Zeichen`);
+console.log(`  Wirkung               : ${ohneAlt.laenge} -> ${ohne.laenge} Zeichen, BBB ${ohneAlt.bbb}x -> ${ohne.bbb}x`);
 
 console.log('\n--- Befund -----------------------------------------------------');
-if (ohne.text === GEMESSEN && mit.bbb === 1) {
-  console.log('  GEKLAERT. Der harness-freie Nachbau trifft den Endtext des Realtests');
-  console.log('  byte-genau. Die Bedingung ist der fehlende Schluss-Umbruch:');
-  console.log('  `diffOps` behandelt die letzte Zeile ohne `\\n` als GEAENDERT statt');
-  console.log('  als unberuehrt und loest sie als DELETE + INSERT auf. Rechnen zwei');
-  console.log('  Geraete das unabhaengig, verschmelzen die DELETE-Haelften und die');
-  console.log('  INSERT-Haelften stapeln sich — die letzte Zeile steht danach zweimal.');
+if (ohneAlt.text === GEMESSEN && ohne.bbb === 1 && !ohne.verklebt) {
+  console.log('  GEKLAERT UND BEHOBEN. Die Fassung ohne Fix trifft den Endtext des');
+  console.log('  Realtests byte-genau; mit Fix ist er sauber. Die Bedingung ist der');
+  console.log('  fehlende Schluss-Umbruch: `diffOps` behandelt die letzte Zeile ohne');
+  console.log('  `\\n` als GEAENDERT statt als unberuehrt und loest sie als');
+  console.log('  DELETE + INSERT auf. Rechnen zwei Geraete das unabhaengig,');
+  console.log('  verschmelzen die DELETE-Haelften und die INSERT-Haelften stapeln sich.');
   console.log('  Die Verklebung ist die FOLGE, nicht die Ursache: das erste Item endet');
   console.log('  ohne `\\n`, das zweite schliesst direkt an.');
-} else if (ohne.bbb > 1 && mit.bbb === 1) {
+} else if (ohneAlt.bbb > 1 && mitAlt.bbb === 1) {
   console.log('  BESTAETIGT. Ohne Schluss-Umbruch wird die letzte Zeile verdoppelt,');
   console.log('  mit Schluss-Umbruch nicht. Die Bedingung ist der fehlende `\\n` am');
   console.log('  Ende — nicht die Geraetezahl.');

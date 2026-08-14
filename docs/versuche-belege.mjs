@@ -47,7 +47,18 @@ const GEPRUEFT = ['K-02', 'K-05', 'K-06', 'M-01', 'M-02', 'T-04', 'K-14', 'A-01'
 
 function quellen() {
   const dateien = [join(REPO, 'docs', 'produktziel.md'), join(REPO, 'README.md')];
-  for (const [ordner, filter] of [[DOKU, (n) => n.endsWith('.md')], [VAULT, (n) => n.startsWith('CRDT-') || n.startsWith('Schreibherkunft') || n.startsWith('Nicht-idempotente')]]) {
+  for (const [ordner, filter] of [
+    [DOKU, (n) => n.endsWith('.md')],
+    // Seit dem 2026-08-13 liegen die Lauf-Belege unter `sdd/runs/`. Ohne diese
+    // Zeile ist JEDE Zahl, die nur aus einem Lauf stammt, strukturell „nicht
+    // auffindbar" — T-09 meldete genau deshalb, obwohl seine Laeufe gesichert
+    // waren. Bewusst nur die `.md` dort (die Lauf-Tabelle), NICHT die `.log`:
+    // `suite-nach-t09.log` allein traegt 250 KB Jest-Ausgabe mit Tausenden
+    // Zahlen und wuerde den Pruefer stumpf machen — er faende dann fast jedes
+    // Token irgendwo und meldete nichts mehr.
+    [join(DOKU, 'runs'), (n) => n.endsWith('.md')],
+    [VAULT, (n) => n.startsWith('CRDT-') || n.startsWith('Schreibherkunft') || n.startsWith('Nicht-idempotente')],
+  ]) {
     if (!existsSync(ordner)) continue;
     for (const n of readdirSync(ordner)) if (filter(n)) dateien.push(join(ordner, n));
   }
