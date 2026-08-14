@@ -496,15 +496,36 @@ versuche:
     ebene: merge
     hypothese: patch_apply ist fuer den Fall OHNE gemeinsamen Vorfahren gebaut — hier gibt es einen.
     verdikt: eingebaut
-    kennzahl: "Grundtext 23 auf 0, Gesamtverlust -18,3 %, Verdopplung -6,5 %, Divergenz 2 auf 1; 566/566 Tests gruen"
-    zellbasis: 8 Zellen a 200 Seeds x 10 Notizen; kein Rueckschritt in einer einzigen Zelle
+    kennzahl: "Grundtext 23 auf 0, Gesamtverlust -18,3 %, Verdopplung -6,5 %, Divergenz 2 auf 1; 566/566 Tests gruen. Die drei Achsen am 2026-08-14 nachgemessen: WEG 0 gegen 36"
+    zellbasis: 8 Zellen a 200 Seeds x 10 Notizen; kein Rueckschritt in einer einzigen Zelle. Achsen-Nachmessung 2026-08-14 - 8 Zellen a 200 Seeds, gepaart gegen den Stand vor T-05
     datum: 2026-08-11
     begruendung: >
       Weil auf ZEILEN gearbeitet wird, kann keine Operation mehr eine fremde
       Zeile aufbrechen — das war die Schadensmechanik des Zeichen-Diffs. Der
       Hinweis stand seit Wochen im eigenen Messapparat. Erledigt auch die drei
       Achsen, an denen der Fix vom 2026-08-10 nicht trug (N >= 5, grosse Notizen,
-      mdModus ueberschreiben). Bekannte Grenzen - diff3 ist formal nicht
+      mdModus ueberschreiben).
+      DIESER SATZ WAR BIS ZUM 2026-08-14 UNBELEGT und stand neben einer Tabelle
+      in produktziel.md, die das Gegenteil sagte ("Verlust in allen 8 Zellen").
+      Welche acht Zellen T-04 gemessen hat, steht nirgends - dasselbe Muster wie
+      X-08, wo eine an einem Fall gemessene Wirkung fuer einen zweiten
+      mitbehauptet wurde und dort NICHT trug. Nachgemessen mit
+      spike/schnitt/t04-achsen.mjs, 200 Seeds je Zelle, acht Zellen ueber genau
+      diese drei Achsen: WEG = 0 im heutigen Stand gegen 36 im Stand vor T-05
+      (N=6 elf, N=8 achtzehn, mdModus ueberschreiben vier, N=4 drei). Der Satz
+      haelt also - er war nur nie nachgerechnet.
+      Die Gegenprobe laeuft fest im Instrument mit: Es startet sich selbst mit
+      QOLLAB_DIFF_MODUS=semantisch und meldet BLIND, wenn auch die alte Fassung
+      nichts zeigt. Ohne sie waere "WEG = 0" von "der Apparat erzeugt die Lage
+      nicht" nicht zu unterscheiden - der erste Anlauf dieser Messung war genau
+      das, und der eingefrorene Kalibrierungsarm real.cjs half nicht: Er laesst
+      sich mit dem heutigen schnitte.mjs gar nicht mehr fahren (kein
+      parkedPaths), ist fuer solche Vergleiche also tot.
+      WAS DIE MESSUNG NICHT SAGT: Die Verdopplung bleibt und waechst mit N (839
+      auf 4.581 ueber N=4 bis N=8), und die Quote vollstaendig sauberer Laeufe
+      faellt von 198/200 bei N=2 auf 0/200 bei N=8. Grundtext haelt; "sauber"
+      ist etwas anderes.
+      Bekannte Grenzen - diff3 ist formal nicht
       idempotent (24,7 % der Faelle, Bestand 100 %), Konvergenz nicht garantiert
       (13,7 % der Merge-Reihenfolgen liefern verschiedene Texte).
     beleg: "Commit efae37a; Wirkungsnachweis an drei echten Obsidian-Instanzen 2026-08-12"
@@ -693,9 +714,11 @@ versuche:
       der naechsten verklebt und sie danach ein anderer String ist. Gezaehlt
       wird jetzt im Volltext, wie H-COUNT es tut. Die 2.743 sind die Rate in
       diesem Alphabet, KEINE Feldrate.
-      NOCH NICHT AM PRODUKT BELEGT. Der Realtest r14-cdp steht aus - er braucht
-      ein Fenster mit geschlossenem Produktivvault. Erwartung: PASS mit 24
-      Asserts (23 gruene plus das bisher rote kontrolle2-keine-duplikate).
+      AM PRODUKT BELEGT am 2026-08-14: r14-cdp meldet PASS mit 24 Asserts, und
+      `kontrolle2-keine-duplikate` ist gruen - genau das Assert, das seit dem
+      2026-08-12 mit 1/2/1 rot stand. Die vorhergesagte Zahl (23 gruene plus das
+      rote) ist eingetroffen. Damit ist die Batterie ERSTMALS vollstaendig
+      gruen: 8 von 8, Prod-Stempel vorher wie nachher gleich.
     beleg: "spike/duplikat-mb/ — r14-items.mjs (Itemkette), r14-ursache.mjs (Nachbau gegen beide Fassungen), t09-varianten.mjs (die sieben Pruefungen), t09-adversarial.mjs (der Fuzzer), bauen-crdt.mjs (beide Fassungen mit Gegenprobe); tests/schlusszeile-ohne-umbruch.test.ts; obsidian-qollab-doku/sdd/runs/ — t09-adversarial.log (die 2743), t09-ursache.log, t09-varianten.log, suite-nach-t09.log (die 615), r14-cdp-bat3-20260813-212759.log"
     beleg_lage: nachlaufbar
 
@@ -1005,6 +1028,47 @@ versuche:
       dieselbe Signatur zeigen. Die Aktenlage hat aus einer gemessenen Wirkung
       auf einen ungemessenen Fall geschlossen und ihn als erledigt gefuehrt.
     beleg: "obsidian-qollab-doku/sdd/runs/r14-cdp-bat3-20260813-212759.log und batterie-bat3-20260813-212759.json; spike/duplikat-mb/r14-pfad.mjs (mit Selbsttest gegen die gemessenen Laengen und Gegenprobe auf Klebe-Blindheit)"
+    beleg_lage: nachlaufbar
+
+  - id: X-09
+    name: Serienlauf ueber r13 hinaus - der Guard blockiert den Nachfolger
+    ebene: apparat
+    hypothese: >
+      Nach r13 kann die Serie ohne Weiteres weiterlaufen.
+    verdikt: gebrochen
+    kennzahl: "4 der 8 Runner brechen mit 0 Asserts in 1 s ab (r14, r15, r16, r30); im Nachlauf ohne r13 dieselben vier PASS, zusammen 70 gruene Asserts"
+    zellbasis: ein Serienlauf zu 8 Runnern, danach ein Nachlauf zu vieren
+    datum: 2026-08-14
+    begruendung: >
+      Der Guard verweigert den Kill mit "nicht als Testvault nachgewiesen: PID
+      ... (ohne Fenstertitel, keine Elternkette zu einem Testvault-Fenster)" -
+      und das ist richtig so. Ein Prozess, der sich nicht positiv einem
+      Testvault zuordnen laesst, darf nicht gekillt werden; genau diese
+      Schutzkette hat den produktiven Vault schon einmal gerettet. Der
+      Prod-Stempel blieb in beiden Durchgaengen gleich.
+      DER VERDACHT, ausdruecklich als solcher: r13 startet Obsidian ueber
+      `H-START-FILE`, also per `obsidian://open` OHNE Debug-Port. Nach dem Lauf
+      standen fuenf Prozesse offen, deren Wurzel
+      `obsidian://open/?path=C:\tmp\qollab-test\vault-b\Meetingprotokoll.md`
+      trug - eindeutig Testvault, aber ohne Fenstertitel und ohne Elternkette,
+      an der der Guard das festmachen kann. Dafuer spricht, dass der Nachlauf
+      OHNE r13 (nur r14, r15, r16, r30) glatt durchlief. Isoliert gemessen ist
+      es nicht; es waere ein eigener Diskriminator.
+      WAS DER FALL NICHT IST: kein Produktbefund. Die vier Runner haben nicht
+      gemessen und nichts gemeldet - 0 gruene, 0 rote Asserts in 1 Sekunde. Ein
+      FAIL ohne Asserts ist ein Apparat-Abbruch, kein Ergebnis. Wer die
+      Zusammenfassung "4 von 8 PASS" ohne die Assert-Zahlen liest, haelt es fuer
+      eine Regression.
+      ZWEI BEDIENFEHLER derselben Runde, beide gefangen und hier notiert, weil
+      sie Zeit kosten: (1) `H-STOP` von Hand nach dem Serienende scheitert - das
+      abschliessende `H-GUARD-AUFRAEUMEN` hat obsidian.json zurueckgeholt, der
+      produktive Vault steht wieder auf open:true, und der Guard verlangt
+      zuerst `H-GUARD-SICHERUNG`. Die Kette muss von vorn beginnen, dafuer ist
+      der Batterie-Treiber da. (2) `pwsh -File skript.ps1 -Nur a,b,c` uebergibt
+      EINEN String, kein Array - die Batterie sucht dann einen Runner namens
+      "a,b,c" und meldet "0 von 1". Mit `pwsh -Command "& skript.ps1 -Nur
+      @('a','b','c')"` stimmt es.
+    beleg: "obsidian-qollab-doku/sdd/runs/batterie-bat3-20260814-151843.json (4 von 8, die vier mit 0 Asserts) gegen batterie-bat3-20260814-153033.json (4 von 4)"
     beleg_lage: nachlaufbar
 
   - id: X-05

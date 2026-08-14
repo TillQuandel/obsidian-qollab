@@ -1,0 +1,7 @@
+# Vergleichs-Bundle von `bauen-vor-t04.mjs` — jederzeit neu erzeugbar, hat
+# deshalb im Repo nichts verloren.
+#
+# BEWUSST NICHT `*.cjs` wie in den anderen spike-Ordnern: `real.cjs` ist der
+# eingefrorene Kalibrierungsarm (Stand vor dem 05.08.) und `real-neu.cjs` der
+# getrackte heutige Stand. Beide müssen bleiben.
+real-vor-t04.cjs

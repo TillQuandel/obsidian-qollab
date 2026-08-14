@@ -244,6 +244,28 @@ Fehler** und ist mit `diffModus = 'zeile'` behoben (`src/crdt-manager.ts`, Commi
 
 ### Wo der Fix NICHT trägt (gemessen 2026-08-10)
 
+> [!warning] Überholt seit `T-04` — nachgemessen am 2026-08-14
+> **Die drei Achsen unten tragen inzwischen.** Die Tabelle beschreibt den Stand vor dem
+> zeilenweisen 3-Wege-Merge (`T-04`, 2026-08-11) und blieb danach ohne Nachtrag stehen. `T-04`
+> behauptete in der Registratur zwar, sie zu erledigen — belegt war das nie mit eigenen Zahlen.
+> Jetzt ist es gemessen (`spike/schnitt/t04-achsen.mjs`, **200 Seeds je Zelle**, acht Zellen):
+>
+> | Grundtextverlust `WEG` | heutiger Stand | Stand vor `T-05` |
+> | --- | --- | --- |
+> | N = 5 / 6 / 8 | **0 / 0 / 0** | 0 / 11 / 18 |
+> | 200 und 1.000 Zeilen, N = 4 | **0 / 0** | 0 / 0 |
+> | `mdModus: 'ueberschreiben'`, N = 4 | **0** | 4 |
+> | **Summe über alle acht Zellen** | **0** | **36** |
+>
+> Die Gegenprobe läuft fest im Instrument mit: Es startet sich selbst mit
+> `QOLLAB_DIFF_MODUS=semantisch` und meldet „BLIND", wenn auch die alte Fassung nichts zeigt —
+> ein Nullbefund ohne diesen Vergleich wäre von „der Apparat erzeugt die Lage nicht" nicht zu
+> unterscheiden.
+>
+> **Was das nicht heißt:** Die Verdopplung bleibt und wächst mit N (839 → 4.581 über N = 4 … 8),
+> und die Quote vollständig sauberer Läufe fällt von 198/200 bei N = 2 auf **0/200 bei N = 8**.
+> Grundtext hält — „sauber" ist etwas anderes.
+
 Die Tabelle oben gilt für die Lage, in der sie gemessen wurde: **bis vier Geräte, 8 Basiszeilen,
 `mdModus: 'kopie'`.** Über fünf Achsen nachgemessen (je 200 Läufe, mehrere Zufallsfamilien):
 
