@@ -1085,9 +1085,10 @@ voller Doc-Text (der Grund, aus dem `MAX_STAENDE = 1` gilt).
 > **Reihenfolge**, und die trägt der Doc-Stand nicht. **Damit erledigt sich auch die Hash-Frage:**
 > ein Hash ist dieselbe Vergleichsregel in billig.
 >
-> **Warum sie trotzdem nichts kostet:** 76–89 % der Parkvorgänge enden, indem die Historie
-> eintrifft und den geparkten Stand deckt (`resolveParked`, keine Op). **Nicht die Fehlparkung
-> kostet, sondern die abgelaufene Fehlparkung.**
+> **Sie kostet trotzdem nichts.** Ein geparkter Stand hat einen billigen Rückweg: 59,5–89,3 %
+> der Parkvorgänge enden, indem die Historie eintrifft und den Stand deckt (`resolveParked`,
+> keine Op). **Als Ursache ist das nicht belegt** — die Spanne widerspricht der einfachen
+> Lesart, sie ist bei kleiner Verzögerung am schlechtesten und in der Mitte am besten.
 >
 > **Was vor einem Einbau fehlt, ist genau eine Zahl:** die Umordnungsrate im Feld. Unter ~2 % ist
 > B klar im Plus, über 4 % nicht mehr. Sie hängt an Plattenlatenz, Notizgröße und Sync-Intervall
@@ -1095,7 +1096,9 @@ voller Doc-Text (der Grund, aus dem `MAX_STAENDE = 1` gilt).
 >
 > **Selbstkorrektur derselben Session:** Ein erster, frei laufender Arm (nichts wird je
 > abgewartet) zeigte B als gebrochen (328 → 345, Divergenz 8 → 33). Er hält nicht — er
-> verschlechtert den **Bestand** von 95 auf 328 und misst damit sich selbst. Voller Bericht:
+> verschlechtert den **Bestand** von 95 auf 328 und misst damit sich selbst. **Warum dort
+> zusätzlich Divergenz entsteht, ist offen**; die naheliegende Erklärung über abgelaufene
+> Parkvorgänge ist nachgerechnet und trägt nicht. Voller Bericht:
 > `obsidian-qollab-doku/sdd/m06-pathqueue-2026-08-15.md`.
 
 Die beiden früher gemessenen Untervarianten (verschobener Fuzzy-Hunk in `patch_apply`; DELETE-Op
