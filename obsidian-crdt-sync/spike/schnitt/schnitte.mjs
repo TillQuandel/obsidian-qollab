@@ -157,6 +157,13 @@ function insertLine(text, token, pos) {
 //           `m06-warteschlange-20260815.log`.
 //   'echt'  die ECHTE `PathQueue` an allen vier Stellen, Handler fire-and-forget
 //           wie im Plugin (Obsidian awaitet den modify-Handler nicht).
+//   'takt'  dieselbe Verdrahtung, aber an JEDER Tick-Grenze ausgetrudelt. Damit
+//           laeuft alles durch die Warteschlange, nebenlaeufig ist aber nichts
+//           mehr. DIAGNOSE-ARM, keine Produktaussage: Er trennt „meine
+//           Verdrahtung veraendert die Semantik" von „die Nebenlaeufigkeit tut
+//           es". Liegt 'takt' auf 'aus', ist die Verdrahtung inert und der
+//           Unterschied in 'echt' gehoert dem Rennen. Erwartung: 'takt' meldet
+//           BLIND, weil ohne Nebenlaeufigkeit nichts mehr ueberholt.
 //
 // WIE DIESER ARM ZU LESEN IST. Er verschiebt die ABSOLUTEN Zahlen beider Arme,
 // weil der Transport die `.md` verschicken kann, bevor der Handler fertig ist —
@@ -177,10 +184,27 @@ function insertLine(text, token, pos) {
 // Grundtext-Bestand verlor damit 352 statt 17 Zeilen (40 Seeds, DET=7), in BEIDEN
 // Armen. Eine obere Schranke, die den Bestand um Faktor 20 verschlechtert, misst
 // nicht mehr den Hebel.
+// `verzoegern` — DER REGLER (2026-08-15), nur mit `warteschlange: 'takt'`.
+//
+// DIE FRAGE, DIE ER BEANTWORTET: Wie lange braucht der modify-Handler, gemessen
+// in Transportschritten? Bei 0 ist er sofort fertig — die Annahme, unter der der
+// Apparat bis zum 2026-08-15 stillschweigend lief. Bei d > 0 laeuft der Tor-Task
+// erst d Ticks nach dem Schreibvorgang, der Transport kann die .md also
+// inzwischen verschickt und eine Fremdzustellung dazwischengeschoben haben.
+//
+// Das ist der Regler zwischen den beiden Armen dieser Session: d = 0 liegt auf
+// 'aus', grosses d naehert sich 'echt'. Er stellt keine zusaetzliche Arbeit an
+// und zieht nichts vor (das tat der entfernte 'zwang'-Arm, und er verschlechterte
+// damit beide Arme um Faktor 20) — er verschiebt nur, WANN der eigene Handler
+// fertig wird.
+//
+// EIN TICK ist ein Transportschritt; eine Zustellung braucht bei der
+// Standard-Konfiguration (settle 10, delay 20, jitter 10) rund 20 bis 30 davon.
+// d = 1 heisst also „der Handler braucht etwa ein Zwanzigstel der Sync-Latenz".
 export function makeS0real(
   transport,
   scenario,
-  { layout = 'sidecar', rollTicks = 900, warteschlange = 'aus' } = {}
+  { layout = 'sidecar', rollTicks = 900, warteschlange = 'aus', verzoegern = 0 } = {}
 ) {
   if (warteschlange !== 'aus' && !R.PathQueue)
     throw new Error('warteschlange verlangt R.PathQueue — Bundle ohne diesen Export (real.cjs)');
@@ -423,12 +447,15 @@ export function makeS0real(
         // er liest die Datei erst im Task (main.ts:312), und er teilt sich den
         // Schluessel mit jeder anderen Doc-Mutation dieses Pfades.
         const docBeimEinreihen = crdt.getContent(path);
-        einreihen(path, () =>
-          verarbeiteLokal(path, vault._textFiles.get(path) ?? '', {
-            text: neu,
-            doc: docBeimEinreihen,
-          })
-        );
+        const aufgabe = () =>
+          einreihen(path, () =>
+            verarbeiteLokal(path, vault._textFiles.get(path) ?? '', {
+              text: neu,
+              doc: docBeimEinreihen,
+            })
+          );
+        if (verzoegern > 0) this._spaeter.push({ faellig: transport.tick + verzoegern, aufgabe });
+        else aufgabe();
       },
       receiveFile(path, bytes) {
         if (path.endsWith('.md')) {
@@ -452,6 +479,9 @@ export function makeS0real(
           }
       },
       _sofort: [],
+      // Lokale Tor-Tasks, die bewusst hinter die Fremdzustellungen dieses Ticks
+      // zurueckgestellt sind (Regler `umordnen`).
+      _spaeter: [],
       // Alle eingereihten, noch nicht gelaufenen Tasks abwarten. Im Plugin tut das
       // niemand — die Ereignisschleife erledigt es. Der Apparat braucht den Punkt
       // nur vor dem Auswerten, sonst zaehlte er einen halb gelaufenen Zustand.
@@ -459,6 +489,7 @@ export function makeS0real(
         while (offen.size) await Promise.all([...offen]);
       },
       async onTick(t, final) {
+        if (warteschlange === 'takt') await this.austrudeln();
         while (this._sofort.length) {
           const p = this._sofort.shift();
           // Fremd geliefert: derselbe modify-Handler, dieselbe Warteschlange —
@@ -466,6 +497,14 @@ export function makeS0real(
           if (q === null) await verarbeiteLokal(p, vault._textFiles.get(p), undefined, true);
           else einreihen(p, () => verarbeiteLokal(p, vault._textFiles.get(p) ?? '', undefined, true));
         }
+        // Jetzt erst die faellig gewordenen lokalen Tasks — sie stehen damit in
+        // der Warteschlange HINTER den Zustellungen dieses Ticks. `final` gibt am
+        // Ende alles frei, sonst blieben Bearbeitungen unerfasst liegen.
+        for (let i = this._spaeter.length - 1; i >= 0; i--) {
+          if (!final && this._spaeter[i].faellig > t) continue;
+          this._spaeter.splice(i, 1)[0].aufgabe();
+        }
+        if (warteschlange === 'takt') await this.austrudeln();
         if (layout === 'segment' && (final || t - segStart >= rollTicks)) {
           segStart = t;
           if (segFrames.length) {
@@ -518,6 +557,7 @@ export function makeS0real(
           if (q === null) await uhrTask(note);
           else einreihen(note, () => uhrTask(note));
         }
+        if (warteschlange === 'takt') await this.austrudeln();
       },
       currentText: (path) => vault._textFiles.get(path) ?? '',
       stats: () => ({

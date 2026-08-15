@@ -1056,34 +1056,47 @@ Einbau zu klären: Im echten Plugin liegt zwischen `merke()` und `istEigen()` da
 real mehr Fehlparkungen erzeugen als gemessen.** Und die Doc-Marke müsste ein Hash sein, kein
 voller Doc-Text (der Grund, aus dem `MAX_STAENDE = 1` gilt).
 
-> [!warning] Nachtrag 2026-08-15 — der Absatz oben ist überholt, B ist **gefallen** (`M-06`)
+> [!warning] Nachtrag 2026-08-15 — der Absatz oben ist überholt (`M-06`)
 > **Die Tabelle darüber vergleicht gegen einen Bestand, den es nicht mehr gibt.** Ihre Zeile
 > „Bestand" ist `modus=zeichen` vom 2026-08-09, also vor `T-04`, `T-05`, `T-07`, `T-08` und
-> `T-09`. Am heutigen Bundle nachgemessen liefern `zeichen` und `zeile` **zahlengleiche Zeilen**
-> — Hebel A ist eingebaut, der Spike-Prototyp bewirkt nichts mehr. Und **WEG = 0 steht schon im
-> Bestand**, in allen drei Seed-Familien: der Satz „löst K.o.-1 nur in einer von drei" beschrieb
-> einen Bestand, der selbst 1/2/1 Zeilen verlor, und ist gegenstandslos.
+> `T-09`. Am heutigen Bundle liefern `zeichen` und `zeile` **zahlengleiche Zeilen** — Hebel A ist
+> eingebaut, der Spike-Prototyp bewirkt nichts mehr. Und **WEG = 0 steht schon im Bestand**, in
+> allen drei Seed-Familien: der Satz „löst K.o.-1 nur in einer von drei" beschrieb einen Bestand,
+> der selbst 1/2/1 Zeilen verlor, und ist gegenstandslos.
 >
-> **Der Vorbehalt war zu mild formuliert und ist jetzt gemessen.** Mit der **echten**
-> `PathQueue` zwischen `merke()` und `istEigen()` (200 Seeds × 3 Familien, N = 4, gepaart):
+> **Der Vorbehalt ist jetzt gemessen — mit der echten `PathQueue` zwischen `merke()` und
+> `istEigen()` und der Handler-Laufzeit als Regler** (200 Seeds × 3 Familien, N = 4, gepaart,
+> alles außer dem eigenen Handler läuft prompt):
 >
-> | | Textverlust | Divergenz | überholt | fehlgeparkt |
-> | --- | --- | --- | --- | --- |
-> | Bestand | 328 / 319 / 314 | 8 / 9 / 10 | 307 / 306 / 306 | **0** |
-> | Hebel B | **345 / 320 / 343** | **33 / 31 / 41** | 311 / 315 / 313 | **318 / 322 / 320** |
+> | Umordnungsrate | Verlust Bestand | Verlust Hebel B | Δ | Divergenz | fehlgeparkt |
+> | --- | --- | --- | --- | --- | --- |
+> | 0,4 % | 95 | 62 | **−34,7 %** | 0 | 31 |
+> | 2,1 % | 153 | 111 | −27,5 % | 0 | 152 |
+> | 4,0 % | 323 | 296 | −8,4 % | 0 | 270 |
+> | 7,0 % | 677 | 647 | −4,4 % | 0 | 429 |
 >
-> Der Gewinn ist **vollständig weg** — zweimal schlechter, einmal gleich —, die Divergenz
-> verdrei- bis vervierfacht sich, und es sind nicht „mehr" Fehlparkungen, sondern **praktisch
-> jede** überholte eigene Bearbeitung. Die Kopplung ist gemessen: von 25 Seeds mit mehr Divergenz
-> tragen 24 eine Fehlparkung, von 41 Seeds ohne Fehlparkung genau einer.
+> **Der Gewinn hält, er schrumpft nur** — und wird nie negativ. Grundtextverlust und Divergenz
+> bleiben 0 in allen 30 Zellen, auch bei 451 Fehlparkungen.
 >
-> **Warum die Regel nicht zu retten ist:** Tor-Kollision und Fehlparkung sind am Doc-Stand nicht
-> unterscheidbar — beide Male steht unser Text in der `.md` und der Doc ist seit unserem Write
-> vorausgelaufen. Verschieden ist nur die Reihenfolge von Zustellung und Vorlauf, und die trägt
-> der Doc-Stand nicht. **Die Hash-Frage erledigt sich damit**: ein Hash ist dieselbe
-> Vergleichsregel in billig, keine andere Entscheidung.
+> **Die Fehlparkung ist dabei vollständig**, nicht „mehr als gemessen": 31 von 31, 100 von 102,
+> 270 von 298 überholten eigenen Bearbeitungen. Das ist eine Eigenschaft der Regel —
+> Tor-Kollision und Fehlparkung sind am Doc-Stand nicht unterscheidbar, beide Male steht unser
+> Text in der `.md` und der Doc ist seit unserem Write vorausgelaufen. Verschieden ist allein die
+> **Reihenfolge**, und die trägt der Doc-Stand nicht. **Damit erledigt sich auch die Hash-Frage:**
+> ein Hash ist dieselbe Vergleichsregel in billig.
 >
-> Voller Bericht: `obsidian-qollab-doku/sdd/m06-pathqueue-2026-08-15.md`.
+> **Warum sie trotzdem nichts kostet:** 76–89 % der Parkvorgänge enden, indem die Historie
+> eintrifft und den geparkten Stand deckt (`resolveParked`, keine Op). **Nicht die Fehlparkung
+> kostet, sondern die abgelaufene Fehlparkung.**
+>
+> **Was vor einem Einbau fehlt, ist genau eine Zahl:** die Umordnungsrate im Feld. Unter ~2 % ist
+> B klar im Plus, über 4 % nicht mehr. Sie hängt an Plattenlatenz, Notizgröße und Sync-Intervall
+> und ist im Apparat nicht zu gewinnen.
+>
+> **Selbstkorrektur derselben Session:** Ein erster, frei laufender Arm (nichts wird je
+> abgewartet) zeigte B als gebrochen (328 → 345, Divergenz 8 → 33). Er hält nicht — er
+> verschlechtert den **Bestand** von 95 auf 328 und misst damit sich selbst. Voller Bericht:
+> `obsidian-qollab-doku/sdd/m06-pathqueue-2026-08-15.md`.
 
 Die beiden früher gemessenen Untervarianten (verschobener Fuzzy-Hunk in `patch_apply`; DELETE-Op
 über die Zeilengrenze) verschwinden mit dem Herkunftstor und sind an dieser dritten **nicht**

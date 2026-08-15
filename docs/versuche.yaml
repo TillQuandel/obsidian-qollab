@@ -423,70 +423,73 @@ versuche:
     name: Herkunftstor schaerfen (Hebel B, istEigen an den Doc-Stand binden)
     ebene: materialisierung
     hypothese: Ein schaerferes Eigen-Kriterium verhindert, dass eine per Sync gelieferte .md als eigener Edit durchgeht.
-    verdikt: gebrochen
-    kennzahl: "am echten pathQueue kein Gewinn mehr — Textverlust 328 auf 345, 319 auf 320, 314 auf 343; Divergenz 33 statt 8, 31 statt 9, 41 statt 10; 318 fehlgeparkte EIGENE Edits bei 311 Umordnungen, also praktisch jede"
-    zellbasis: 200 Seeds x 3 Seed-Familien (DET 7/42/99), N=4, je Arm gepaart; Kalibrierungsarm ohne Warteschlange zahlengleich mit der Messung vor dem Umbau
+    verdikt: offen
+    kennzahl: "am echten pathQueue haelt der Gewinn, schrumpft aber mit der Umordnungsrate: Textverlust 95 auf 62 bei 0,4 % Umordnungen, 323 auf 296 bei 4,00 %, 677 auf 647 bei 7,03 %. Divergenz und Grundtextverlust bleiben 0 - aber JEDE ueberholte eigene Bearbeitung wird geparkt"
+    zellbasis: 200 Seeds x 3 Seed-Familien (DET 7/42/99) x 5 Verzoegerungsstufen, N=4, gepaart; Kalibrierungsarm ohne Warteschlange zahlengleich mit der Messung vor dem Umbau
     datum: 2026-08-15
     begruendung: >
-      DER GEWINN LEBTE IM MESSAPPARAT. Die alte Zahl ist am 2026-08-15 am
-      heutigen Bundle nachgemessen und HAELT — solange der Vergleich synchron
-      folgt: Textverlust 86/103/88 auf 57/63/55 ueber die drei Seed-Familien,
-      also -33 bis -39 %, WEG=0 in beiden Armen. Legt man die ECHTE PathQueue
-      zwischen merke() und istEigen(), verschwindet er vollstaendig: 328/319/314
-      auf 345/320/343 — zweimal schlechter, einmal gleich. Gepaart gemessen,
-      beide Arme unter derselben Warteschlange.
+      DIE LUECKE IST GESCHLOSSEN, das Urteil bleibt offen - aber mit sehr viel
+      mehr Wissen als vorher. Der Apparat verglich bis zum 2026-08-15 synchron;
+      jetzt laeuft die ECHTE PathQueue aus src/ zwischen merke() und istEigen(),
+      und die Handler-Laufzeit ist als Regler gefuehrt (SPIKE_VERZOEGERN, in
+      Transportschritten).
 
-      DER PREIS IST NEU UND GROESSER. Die Divergenz verdreifacht bis
-      vervierfacht sich (8/9/10 auf 33/31/41), und sie haengt nachweislich an
-      der Fehlparkung: von 25 Seeds, in denen der Hebel mehr Divergenz erzeugt,
-      tragen 24 eine Fehlparkung; von 41 Seeds ganz ohne Fehlparkung ist genau
-      einer schlechter. K.o.-Kriterium 1 bleibt in allen Armen unberuehrt
-      (WEG=0) — der Schaden liegt in Gruppe 1, nicht beim Grundtext.
+      DER GEWINN HAELT, ER SCHRUMPFT NUR. Ueber alle drei Seed-Familien
+      gleichfoermig: bei 0,4 % Umordnungen -33 bis -35 %, bei 2 % -21 bis -32 %,
+      bei 4 % -8 bis -10 %, bei 7 % -3 bis -5 %. Er wird also nie negativ, ist
+      aber ab etwa 4 % das Risiko nicht mehr wert. Grundtextverlust bleibt 0 in
+      allen 30 Zellen, Divergenz ebenfalls 0 - auch bei 451 fehlgeparkten
+      Bearbeitungen.
 
-      DIE VORBEHALTS-ZEILE WAR ZU MILD. Die Akte fuehrte "B wuerde real MEHR
-      Fehlparkungen erzeugen als gemessen". Gemessen sind nicht mehr, sondern
-      ALLE: 318 von 311 bzw. 322 von 315 bzw. 320 von 313 ueberholten lokalen
-      Bearbeitungen werden geparkt, also praktisch jede. (Die kleine Ueberzahl
-      ist erklaert: die Diagnose schnappt den Doc-Stand NACH dem Write, der
-      Hebel nimmt seine Marke IM Write - dazwischen liegt eine Umordnung mehr.)
+      DIE FEHLPARKUNG IST REAL UND VOLLSTAENDIG. Nicht "mehr als gemessen", wie
+      die Akte vorsichtig formulierte, sondern praktisch JEDE ueberholte eigene
+      Bearbeitung - 31 von 31, 100 von 102, 270 von 298. Das ist kein Zufall,
+      sondern eine Eigenschaft der Regel: Tor-Kollision und Fehlparkung sind am
+      Doc-Stand nicht unterscheidbar. Beide Male steht unser Text in der .md und
+      der Doc ist seit unserem Write vorausgelaufen; verschieden ist allein die
+      Reihenfolge von Zustellung und Vorlauf, und die traegt der Doc-Stand nicht.
 
-      WARUM DIE REGEL NICHT ZU RETTEN IST. Tor-Kollision und Fehlparkung sind am
-      Doc-Stand NICHT unterscheidbar. Beide Male gilt: unser Text steht in der
-      .md, und der Doc ist seit unserem Write vorausgelaufen. Verschieden ist
-      allein die Reihenfolge - bei der Kollision liegt die Zustellung nach dem
-      Vorlauf, bei der Fehlparkung davor -, und die traegt der Doc-Stand nicht.
-      Ein Hebel, der nur den Doc-Stand befragt, muss beide gleich behandeln.
+      SIE KOSTET ABER NICHTS, SOLANGE DIE FRIST-UHR SIE AUFLOEST. Das ist der
+      eigentliche Befund. 451 Fehlparkungen bei Divergenz 0 - weil 76 bis 89 %
+      der Parkvorgaenge enden, indem die Historie eintrifft und den geparkten
+      Stand deckt (resolveParked, keine Op). Nur der Rest laeuft in den teuren
+      unionMerge-Nachtrag.
 
-      DIE HASH-FRAGE IST GEGENSTANDSLOS. Die Akte verlangte, die Doc-Marke
-      muesse ein Hash sein statt eines vollen Doc-Texts. Das ist eine Frage des
-      Speichers, nicht der Entscheidung - ein Hash ist dieselbe Vergleichsregel
-      in billiger. Er haette an keiner der gemessenen Zahlen etwas geaendert.
+      EINE EIGENE FEHLDEUTUNG DIESER SESSION, ausdruecklich. Ein erster, frei
+      laufender Arm (nichts wird je abgewartet) zeigte B als GEBROCHEN -
+      Textverlust 328 auf 345, Divergenz 8 auf 33 -, und das Verdikt stand einige
+      Stunden so in dieser Registratur. Es haelt nicht: In diesem Arm verzoegert
+      sich ALLES, auch die Frist-Uhr, und der Anteil abgelaufener Parkvorgaenge
+      steigt auf 37 % gegen 11 bis 24 % im kontrollierten Arm. Der Bestand
+      verliert dort ebenfalls das Vierfache (328 statt 95) - siehe X-10. Die dort
+      beobachtete Kopplung "Divergenz haengt an der Fehlparkung" (24 von 25
+      Seeds) war eine Korrelation INNERHALB dieses Arms; im kontrollierten Arm
+      gibt es 451 Fehlparkungen bei Divergenz 0.
 
-      EINE ZWEITE KORREKTUR AN DER AKTENLAGE. Der Satz "loest K.o.-1 nur in
-      einer von drei Seed-Familien" beschrieb einen Bestand, der selbst 1/2/1
+      DIE HASH-FRAGE IST GEGENSTANDSLOS. Die Akte verlangte, die Doc-Marke muesse
+      ein Hash sein statt eines vollen Doc-Texts. Das betrifft den Speicher, nicht
+      die Entscheidung - dieselbe Vergleichsregel in billig.
+
+      EINE ZWEITE KORREKTUR AN DER AKTENLAGE. Der Satz "loest K.o.-1 nur in einer
+      von drei Seed-Familien" beschrieb einen Bestand, der selbst 1/2/1
       Grundtextzeilen verlor - den Stand vor T-04 und T-05. Heute steht WEG=0
-      schon im Bestand, in allen drei Familien und in beiden Armen. Der Satz
-      ist damit gegenstandslos, nicht widerlegt.
+      schon im Bestand, in allen Familien und in jedem Arm.
 
-      WO DIE MARKE UEBERALL VERALTET. Nicht an einer Stelle, sondern an elf:
-      der Frist-Nachtrag (main.ts:1618 ohne Write-Back), der Parkplatz-Zweig
-      (sync-handler.ts:1730-1738, writeBackMerged steigt an main.ts:943 aus),
-      der nicht aufgeloeste Parkplatz in loadAndMerge (:1979-2002), der
-      SidecarReadError nach erfolgtem Merge (:1959-1965), die Sweep-Schranke im
-      Park-Modus (:1813-1825) und sechs Abbruchpfade. Alle liegen INNERHALB von
-      pathQueue.run(notePath) und teilen sich den Schluessel mit dem Tor-Task.
+      WAS VOR EINEM EINBAU FEHLT, und nur das: die UMORDNUNGSRATE IM FELD, also
+      wie oft der modify-Handler eines eigenen Edits hinter einer anderen
+      Doc-Mutation desselben Pfades landet. Unterhalb von etwa 2 % ist B klar im
+      Plus, oberhalb von 4 % nicht mehr. Diese Zahl ist im Apparat nicht zu
+      gewinnen - sie haengt an Plattenlatenz, Notizgroesse und Sync-Intervall und
+      gehoert an echtes Obsidian (r30).
 
-      DAS INSTRUMENT, mit Gegenprobe. schnitte.mjs fuehrt die Warteschlange als
-      Option (`warteschlange`), mehrfach.mjs als SPIKE_WARTESCHLANGE. Der
-      Kalibrierungsarm 'aus' liefert zahlengleiche Zeilen mit der Messung vor
-      dem Umbau (alle zwoelf Zellen). Der Arm 'echt' meldet BLIND, wenn der Doc
-      nie vorausgelaufen ist; er tat es 306 bis 315 Mal je Zelle, und im
-      Bestandsarm steht FEHLPARK bei 0 - das Instrument sieht die Lage und
-      unterscheidet die Arme. Benutzt wird die ECHTE PathQueue aus src/, kein
-      Nachbau. WAS DER ARM NICHT KANN: eine FELDRATE der Fehlparkung. Ob ein
-      onRemoteYjsUpdate laeuft, waehrend der Nutzer speichert, haengt an
-      Plattenlatenz und Sync-Intervall; gemessen ist die bedingte Groesse.
-    beleg: "obsidian-qollab-doku/sdd/runs/m06-warteschlange-20260815.log und m06-kalibrierung-20260815.log; spike/schnitt/schnitte.mjs (warteschlange), mehrfach.mjs (SPIKE_WARTESCHLANGE), hebel.mjs (installiereB)"
+      DAS INSTRUMENT, mit drei Gegenproben. schnitte.mjs fuehrt die Warteschlange
+      als Option und die Handler-Laufzeit als Regler; benutzt wird die ECHTE
+      PathQueue aus src/, kein Nachbau. Erstens liefert der Arm ohne
+      Warteschlange zahlengleiche Zeilen mit der Messung vor dem Umbau (alle
+      zwoelf Zellen). Zweitens liegt der Diagnose-Arm mit Warteschlange, aber
+      ohne Nebenlaeufigkeit mit 95 gegen 86 praktisch auf dem alten Arm - der
+      Umbau ist inert. Drittens meldet der Arm BLIND, wenn der Doc nie vorauslief.
+    beleg: "obsidian-qollab-doku/sdd/runs/m06-kipppunkt-20260815.log (die Kurve), m06-warteschlange-20260815.log (der frei laufende Arm), m06-takt-20260815.log (Inertheitsprobe), m06-kalibrierung-20260815.log; Bericht sdd/m06-pathqueue-2026-08-15.md"
     beleg_lage: nachlaufbar
 
   - id: M-07
@@ -1196,43 +1199,51 @@ versuche:
     beleg_lage: nachlaufbar
 
   - id: X-10
-    name: Den M-06-Gewinn aus dem synchronen Apparat als Produktwirkung fuehren
+    name: Einen Kandidaten in einem Arm bewerten, der beide Vergleichsseiten verschlechtert
     ebene: apparat
     hypothese: >
-      Der im Messapparat gemessene Textverlust-Gewinn von Hebel B (-33 bis
-      -39 %) ist eine Eigenschaft des Hebels und traegt im Plugin genauso.
+      Ein Messarm, der die fehlende Nebenlaeufigkeit endlich abbildet, ist damit
+      auch der bessere Arm - seine Zahlen sind naeher am Produkt als die des
+      synchronen Aufbaus.
     verdikt: gebrochen
-    kennzahl: "mit der echten PathQueue faellt der Gewinn auf null bis negativ — Textverlust 328 auf 345, 319 auf 320, 314 auf 343 — und die Divergenz steigt auf das Drei- bis Vierfache (33 statt 8)"
-    zellbasis: 200 Seeds x 3 Seed-Familien, N=4, gepaart; derselbe Apparat einmal mit und einmal ohne Warteschlange
+    kennzahl: "der frei laufende Arm verschlechtert den BESTAND von 95 auf 328 Zeilen Textverlust und dreht damit das Vorzeichen eines Kandidaten, der im kontrollierten Arm bei jeder gemessenen Umordnungsrate im Plus bleibt"
+    zellbasis: derselbe Apparat in drei Armen (synchron, kontrolliert verzoegert, frei laufend), 200 Seeds x 3 Seed-Familien, N=4
     datum: 2026-08-15
     begruendung: >
-      Der Apparat rief istEigen() UNMITTELBAR nach dem Write. Im Plugin liegt
-      dazwischen die PathQueue: der modify-Handler ist fire-and-forget
-      (main.ts:303), liest die Datei erst im Task (:312) und teilt sich den
-      Schluessel mit onRemoteYjsUpdate (:236, :1720), der Frist-Uhr (:1618) und
-      dem Startup-Sweep (:1356). Ein Hebel, der an den Doc-Stand bindet, KANN im
-      synchronen Aufbau per Konstruktion nicht danebenliegen — der Apparat hat
-      ihm die einzige Fehlerquelle weggenommen, die er hat. Das ist derselbe
-      Fehlertyp wie X-03: nicht eine falsche Messung, sondern eine Lage, die der
-      Apparat nicht erzeugen konnte. Zwoelfter Fall in diesem Projekt.
+      REAL BEZAHLT AM 2026-08-15, in derselben Session. Der Apparat rief
+      istEigen() bis dahin unmittelbar nach dem Write - ein Hebel, der an den
+      Doc-Stand bindet, KONNTE dort per Konstruktion nicht danebenliegen. Der
+      erste Arm, der das behob, liess jede Aufgabe frei laufen: modify-Task,
+      Fremdzustellung, Frist-Uhr, nichts wurde je abgewartet. In diesem Arm faellt
+      M-06 klar - Textverlust 328 auf 345, Divergenz 8 auf 33. Das Verdikt
+      "gebrochen" stand einige Stunden so in dieser Registratur.
 
-      Der Vorbehalt STAND in der Akte (M-06, seit 2026-08-09) und wurde sechs
-      Tage lang zitiert, ohne gemessen zu werden — waehrend der Hebel im
-      Folgeprompt als "der staerkste ungenutzte Hebel am Produkt" gefuehrt war.
-      Dieselbe Signatur wie X-08: eine an EINER Lage gemessene Wirkung wurde
-      fuer eine zweite, ungemessene mitbehauptet.
+      ES HAELT NICHT, und der Grund steht im Arm selbst: Er verschlechtert den
+      BESTAND von 95 auf 328 Zeilen. Ein Arm, der die Vergleichsseite
+      vervierfacht, misst nicht mehr den Kandidaten, sondern sich selbst. Mit
+      einem Regler statt eines Schalters - die Handler-Laufzeit in
+      Transportschritten, alles andere prompt - bleibt der Bestand kalibriert und
+      der Kandidat ueber den ganzen gemessenen Bereich im Plus (-34,7 % bei 0,4 %
+      Umordnungen bis -4,4 % bei 7,0 %), bei Divergenz 0 in allen 30 Zellen.
 
-      EIN DRITTER ARM WURDE GEBAUT UND WIEDER ENTFERNT. 'zwang' sollte die
-      obere Schranke liefern, indem es die anstehende Fremdzustellung vor JEDEN
-      Tor-Task einreiht. Er ordnet aber nicht nur um, er zieht alle anstehende
-      Fremdhistorie sofort vor und verschiebt damit das Szenario: der Bestand
-      verlor darunter 352 statt 17 Zeilen (40 Seeds, DET 7), in BEIDEN Armen.
-      Eine Schranke, die den Bestand um Faktor 20 verschlechtert, misst nicht
-      mehr den Hebel. Auch der verbliebene Arm 'echt' ist NUR GEPAART zu lesen:
-      er laesst den Transport die .md verschicken, bevor der Handler fertig ist,
-      und ueberzeichnet damit ein Rennen, das im Feld Sekunden gegen
-      Millisekunden steht.
-    beleg: "obsidian-qollab-doku/sdd/runs/m06-warteschlange-20260815.log (Kalibrierungsblock ws=aus gegen ws=echt); spike/schnitt/schnitte.mjs §warteschlange"
+      DIE URSACHE des Unterschieds ist gemessen und selbst der interessanteste
+      Teil: Im frei laufenden Arm verzoegert sich auch die FRIST-UHR, und der
+      Anteil der Parkvorgaenge, die in den teuren unionMerge-Nachtrag laufen,
+      steigt von 11 bis 24 % auf 37 %. Nicht die Fehlparkung kostet, sondern die
+      ABGELAUFENE Fehlparkung.
+
+      DIE REGEL DARAUS: Ein neuer Messarm gehoert zuerst gegen den alten
+      kalibriert. Weicht die VERGLEICHSSEITE ab, ist der Arm zu erklaeren, bevor
+      aus ihm ein Verdikt wird - sonst misst man die eigene Modellierung. Der
+      Diagnose-Arm mit Warteschlange, aber ohne Nebenlaeufigkeit leistet genau
+      das: er liegt mit 95 gegen 86 praktisch auf dem alten Arm.
+
+      EIN VIERTER ARM WURDE GEBAUT UND WIEDER ENTFERNT. Er sollte die obere
+      Schranke liefern, indem er die anstehende Fremdzustellung vor JEDEN
+      Tor-Task einreiht. Er ordnet aber nicht nur um, er zieht Fremdhistorie vor:
+      der Bestand verlor darunter 352 statt 17 Zeilen (40 Seeds, DET 7), in
+      beiden Armen. Dieselbe Krankheit, nur groeber.
+    beleg: "obsidian-qollab-doku/sdd/runs/m06-warteschlange-20260815.log (frei laufend) gegen m06-takt-20260815.log (Inertheitsprobe) gegen m06-kipppunkt-20260815.log (die Kurve); Bericht sdd/m06-pathqueue-2026-08-15.md"
     beleg_lage: nachlaufbar
 
   - id: X-03

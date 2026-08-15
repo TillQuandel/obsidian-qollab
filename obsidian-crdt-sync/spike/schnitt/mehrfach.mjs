@@ -67,6 +67,8 @@ const MODUS = process.argv[6] ?? 'zeichen';
 // und diese Null ist ein Artefakt, kein Messwert. Sie werden deshalb als `n/v`
 // gedruckt statt als Zahl.
 const WS = process.env.SPIKE_WARTESCHLANGE ?? 'aus';
+// Wie viele Transportschritte der modify-Handler braucht, siehe schnitte.mjs.
+const UM = Number(process.env.SPIKE_VERZOEGERN ?? 0);
 const NOTES = Number(process.env.SPIKE_NOTES ?? 10);
 const BASELINES = Number(process.env.SPIKE_BASELINES ?? 8);
 const EDITS = Number(process.env.SPIKE_EDITS ?? 1);
@@ -162,7 +164,7 @@ async function laufe(seed, detSeed) {
   const tr = new Transport({ settle: 10, delay: 20, jitter: 10, r, mdModus: MDMODUS });
   BASIS.clear();
   for (const n of sc.notes) BASIS.set(n.path, new Set(n.baseline.trim().split(NL)));
-  const devs = S.makeS0real(tr, sc, { warteschlange: WS });
+  const devs = S.makeS0real(tr, sc, { warteschlange: WS, verzoegern: UM });
   for (const d of devs) {
     const origTick = d.onTick.bind(d);
     d.onTick = async (t, f) => {
@@ -205,7 +207,8 @@ async function laufe(seed, detSeed) {
   // ein Stand hat den Lauf nie erreicht; `torFremd` ist die Zahl der Parkvorgaenge.
   let parkOffen = 0, torFremd = 0, torEigen = 0;
   let yjsBytes = 0, yjsDateien = 0, yjsItems = 0;
-  const ws = { lokalRuf: 0, lokalUeberholt: 0, fehlpark: 0, lokalUeberschrieben: 0, falschEigen: 0, falschEigenNutzer: 0, falschEigenWriteBack: 0 };
+  const ws = { lokalRuf: 0, lokalUeberholt: 0, fehlpark: 0, lokalUeberschrieben: 0, falschEigen: 0, falschEigenNutzer: 0, falschEigenWriteBack: 0,
+               uhrTicks: 0, uhrAufgeloest: 0, uhrNachtrag: 0 };
   for (const d of devs) {
     const s = d.stats();
     parkOffen += s.parkOffen;
@@ -241,7 +244,8 @@ let gWeg = 0, gMehr = 0, gMehrK = 0, gKreuz = 0, gErs = 0, gKoll = 0, gZu = 0;
 let gVerlust = 0, gVerdopp = 0, gDiv = 0, gTP = 0, gTPE = 0;
 let gPark = 0, gFremd = 0, gEigen = 0;
 let gYB = 0, gYD = 0, gYI = 0;
-const gWs = { lokalRuf: 0, lokalUeberholt: 0, fehlpark: 0, lokalUeberschrieben: 0, falschEigen: 0, falschEigenNutzer: 0, falschEigenWriteBack: 0 };
+const gWs = { lokalRuf: 0, lokalUeberholt: 0, fehlpark: 0, lokalUeberschrieben: 0, falschEigen: 0, falschEigenNutzer: 0, falschEigenWriteBack: 0,
+              uhrTicks: 0, uhrAufgeloest: 0, uhrNachtrag: 0 };
 const t0 = Date.now();
 for (let seed = VON; seed <= BIS; seed++) {
   const o = await laufe(seed, DET);
@@ -270,11 +274,15 @@ for (let seed = VON; seed <= BIS; seed++) {
 const nv = (v) => (WS === 'aus' ? v : 'n/v');
 console.log(
   `== N=${N} DET=${DET} Seeds ${VON}..${BIS} modus=${MODUS}` +
-  ` [notizen=${NOTES} basis=${BASELINES} edits=${EDITS} md=${MDMODUS} ws=${WS} diff=${process.env.QOLLAB_DIFF_MODUS ?? 'STANDARD'} patch=${process.env.SPIKE_PATCH ?? 'bestand'} s=${((Date.now() - t0) / 1000).toFixed(1)}]` +
+  ` [notizen=${NOTES} basis=${BASELINES} edits=${EDITS} md=${MDMODUS} ws=${WS} verz=${UM} diff=${process.env.QOLLAB_DIFF_MODUS ?? 'STANDARD'} patch=${process.env.SPIKE_PATCH ?? 'bestand'} s=${((Date.now() - t0) / 1000).toFixed(1)}]` +
   `: WEG=${gWeg} mehrfachKreuz=${gMehrK}` +
   ` mehrfach=${gMehr} kreuzend=${gKreuz} ersetzung=${gErs} torKollision=${nv(gKoll)} zustellungen=${gZu}` +
   ` | verlust=${gVerlust} verdopp=${gVerdopp} div=${gDiv} | torProbe=${nv(gTP)} davonEigen=${nv(gTPE)} parkOffen=${gPark} torFremd=${gFremd} torEigen=${gEigen}` +
   ` | falschEigen=${gWs.falschEigen} davonNutzer=${gWs.falschEigenNutzer} davonWriteBack=${gWs.falschEigenWriteBack}` +
+  // Wie enden die Parkvorgaenge? `uhrAufgeloest` = die Historie deckte den
+  // geparkten Stand (kein unionMerge, keine Op). `uhrNachtrag` = die Frist lief
+  // ab und der Stand wurde vereinigt — der teure Ausgang.
+  ` | uhr ticks=${gWs.uhrTicks} aufgeloest=${gWs.uhrAufgeloest} nachtrag=${gWs.uhrNachtrag}` +
   (WS === 'aus'
     ? ''
     : ` | fenster lokalRuf=${gWs.lokalRuf} ueberholt=${gWs.lokalUeberholt}` +
