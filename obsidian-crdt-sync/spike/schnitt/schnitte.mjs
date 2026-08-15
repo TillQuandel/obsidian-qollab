@@ -184,13 +184,23 @@ function insertLine(text, token, pos) {
 // Grundtext-Bestand verlor damit 352 statt 17 Zeilen (40 Seeds, DET=7), in BEIDEN
 // Armen. Eine obere Schranke, die den Bestand um Faktor 20 verschlechtert, misst
 // nicht mehr den Hebel.
-// `verzoegern` — DER REGLER (2026-08-15), nur mit `warteschlange: 'takt'`.
+// `verzoegern` — DER REGLER (2026-08-15), gedacht fuer `warteschlange: 'takt'`
+// (technisch auch mit 'echt' kombinierbar, dann aber nicht mehr isoliert).
 //
-// DIE FRAGE, DIE ER BEANTWORTET: Wie lange braucht der modify-Handler, gemessen
-// in Transportschritten? Bei 0 ist er sofort fertig — die Annahme, unter der der
-// Apparat bis zum 2026-08-15 stillschweigend lief. Bei d > 0 laeuft der Tor-Task
-// erst d Ticks nach dem Schreibvorgang, der Transport kann die .md also
-// inzwischen verschickt und eine Fremdzustellung dazwischengeschoben haben.
+// WAS ER GENAU VERSCHIEBT, praezisiert nach der Cross-Model-Gegenlesung: nicht
+// die LAUFZEIT eines schon eingereihten Handlers, sondern den Zeitpunkt des
+// EINREIHENS — also die Spanne zwischen dem eigenen `.md`-Write und dem Moment,
+// in dem der Tor-Task in der Warteschlange steht. Im Plugin setzt sich diese
+// Spanne zusammen aus Obsidians Ereignis-Verzoegerung (`vault.on('modify')`
+// feuert entprellt) und der Wartezeit vor dem `vault.read` im Task-Rumpf
+// (main.ts:312).
+//
+// Das ist genau die Groesse, die darueber entscheidet, ob eine andere
+// Doc-Mutation desselben Pfades VOR dem eigenen Tor-Task in der Schlange steht.
+// Eine laengere Handler-LAUFZEIT wirkt anders: sie laesst andere Aufgaben
+// HINTER sich warten und erzeugt keine Umordnung zum eigenen Nachteil.
+// Bei d = 0 ist die Spanne null — die Annahme, unter der der Apparat bis zum
+// 2026-08-15 stillschweigend lief.
 //
 // Das ist der Regler zwischen den beiden Armen dieser Session: d = 0 liegt auf
 // 'aus', grosses d naehert sich 'echt'. Er stellt keine zusaetzliche Arbeit an
@@ -200,7 +210,8 @@ function insertLine(text, token, pos) {
 //
 // EIN TICK ist ein Transportschritt; eine Zustellung braucht bei der
 // Standard-Konfiguration (settle 10, delay 20, jitter 10) rund 20 bis 30 davon.
-// d = 1 heisst also „der Handler braucht etwa ein Zwanzigstel der Sync-Latenz".
+// d = 1 heisst also „zwischen Write und Einreihen vergeht etwa ein
+// Zwanzigstel der Sync-Latenz".
 export function makeS0real(
   transport,
   scenario,
@@ -554,8 +565,12 @@ export function makeS0real(
           }
         };
         for (const note of handler.parkedPaths()) {
+          // main.ts:1616-1620 wartet JEDEN Uhr-Task einzeln ab — der Spike tat
+          // das im Warteschlangen-Betrieb zunaechst nicht und verschob damit die
+          // Reihenfolge zwischen verschiedenen Notizen (Cross-Model-Review
+          // 2026-08-15, Codex).
           if (q === null) await uhrTask(note);
-          else einreihen(note, () => uhrTask(note));
+          else await einreihen(note, () => uhrTask(note));
         }
         if (warteschlange === 'takt') await this.austrudeln();
       },
