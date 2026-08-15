@@ -4,11 +4,11 @@
 > Quelle ist `docs/versuche.yaml`. Neu erzeugen mit `node docs/versuche-ansicht.mjs`.
 > `tests/versuche-registratur.test.ts` prüft, dass beide übereinstimmen.
 
-**Stand:** 2026-08-13 · **56 Versuche**
+**Stand:** 2026-08-15 · **58 Versuche**
 
 | Verdikt | Anzahl | Bedeutung |
 | --- | --- | --- |
-| gebrochen | 40 | aktiv schlechter oder verletzt ein Kriterium |
+| gebrochen | 42 | aktiv schlechter oder verletzt ein Kriterium |
 | eingebaut | 6 | im Produktivcode auf `master` |
 | offen | 4 | gemessen, aber nicht eingebaut |
 | leergelaufen | 2 | Vorbedingung trat nie ein — Rückfall aufs Bestandsverhalten, kein Schaden |
@@ -213,7 +213,8 @@ Der gemessene Verlust (83 Faelle) verschwand nicht durch den Rueckzug, sondern s
 | `M-03` | unite selbst aendern | kein Urteil | keine — Prueflauf technisch gescheitert | nachlaufbar |
 | `M-04` | Tuer ensureDoc unterdruecken | gebrochen | 0 % Wirkung — verdopp bleibt 845, obwohl der Arm 11.950 Zeilen streicht | nachlaufbar |
 | `M-05` | Tuer applyLocalContent unterdruecken | gebrochen | +23,4 % Verdopplung und +33 % Verlust | nachlaufbar |
-| `M-06` | Herkunftstor schaerfen (Hebel B, istEigen) | offen | Textverlust -33 bis -55 % (101 auf 65 bei N=4); loest K.o.-1 aber nur in einer von drei Seed-Familien | nachlaufbar |
+| `M-06` | Herkunftstor schaerfen (Hebel B, istEigen an den Doc-Stand binden) | gebrochen | am echten pathQueue kein Gewinn mehr — Textverlust 328 auf 345, 319 auf 320, 314 auf 343; Divergenz 33 statt 8, 31 statt 9, 41 statt 10; 318 fehlgeparkte EIGENE Edits bei 311 Umordnungen, also praktisch jede | nachlaufbar |
+| `M-07` | Verbrauchsregel am Herkunftstor (Hebel C - ein gemerkter Stand gilt genau einmal als eigen) | offen | Tor-Fehlurteile 388 auf 285, 454 auf 317, 405 auf 278 (-27 bis -31 %), aber in den Ergebnisgroessen kein Gewinn: Textverlust 86 auf 89, 103 auf 101, 88 auf 86 | nachlaufbar |
 | `D-01` | Doc neu aufbauen (Weglassen) | offen | 0 % stiller Verlust | nachlaufbar |
 | `D-02` | Zieltext per setContent (Delete-Ops) | gebrochen | 0 bis 0,2 % stiller Verlust | nachlaufbar |
 | `D-03` | clock-Bereich gezielt loeschen | gebrochen | 2,8 bis 50,0 % stiller Verlust | nachlaufbar |
@@ -284,18 +285,31 @@ Unterdruecken schadet hier aktiv. "Alle drei" kostet Verlust 103 auf 235.
 
 *Beleg: spike/verdopplung/aufrufstelle.mjs — nachlaufbar*
 
-### M-06 — Herkunftstor schaerfen (Hebel B, istEigen)
+### M-06 — Herkunftstor schaerfen (Hebel B, istEigen an den Doc-Stand binden)
 
 **Hypothese:** Ein schaerferes Eigen-Kriterium verhindert, dass eine per Sync gelieferte .md als eigener Edit durchgeht.
 
-**Verdikt:** offen · **2026-08-09**
+**Verdikt:** gebrochen · **2026-08-15**
 
-**Kennzahl:** Textverlust -33 bis -55 % (101 auf 65 bei N=4); loest K.o.-1 aber nur in einer von drei Seed-Familien  
-**Zellbasis:** 200 Seeds x 3 Seed-Familien, N=4, DET 7
+**Kennzahl:** am echten pathQueue kein Gewinn mehr — Textverlust 328 auf 345, 319 auf 320, 314 auf 343; Divergenz 33 statt 8, 31 statt 9, 41 statt 10; 318 fehlgeparkte EIGENE Edits bei 311 Umordnungen, also praktisch jede  
+**Zellbasis:** 200 Seeds x 3 Seed-Familien (DET 7/42/99), N=4, je Arm gepaart; Kalibrierungsarm ohne Warteschlange zahlengleich mit der Messung vor dem Umbau
 
-Der staerkste ungenutzte Hebel. Zwei Dinge vor einem Einbau zu klaeren - im echten Plugin liegt zwischen merke() und istEigen() das pathQueue-Fenster (main.ts:302-344), im Messapparat folgt der Vergleich synchron, B wuerde real also MEHR Fehlparkungen erzeugen als gemessen. Und die Doc-Marke muesste ein Hash sein, kein voller Doc-Text.
+DER GEWINN LEBTE IM MESSAPPARAT. Die alte Zahl ist am 2026-08-15 am heutigen Bundle nachgemessen und HAELT — solange der Vergleich synchron folgt: Textverlust 86/103/88 auf 57/63/55 ueber die drei Seed-Familien, also -33 bis -39 %, WEG=0 in beiden Armen. Legt man die ECHTE PathQueue zwischen merke() und istEigen(), verschwindet er vollstaendig: 328/319/314 auf 345/320/343 — zweimal schlechter, einmal gleich. Gepaart gemessen, beide Arme unter derselben Warteschlange. DER PREIS IST NEU UND GROESSER. Die Divergenz verdreifacht bis vervierfacht sich (8/9/10 auf 33/31/41), und sie haengt nachweislich an der Fehlparkung: von 25 Seeds, in denen der Hebel mehr Divergenz erzeugt, tragen 24 eine Fehlparkung; von 41 Seeds ganz ohne Fehlparkung ist genau einer schlechter. K.o.-Kriterium 1 bleibt in allen Armen unberuehrt (WEG=0) — der Schaden liegt in Gruppe 1, nicht beim Grundtext. DIE VORBEHALTS-ZEILE WAR ZU MILD. Die Akte fuehrte "B wuerde real MEHR Fehlparkungen erzeugen als gemessen". Gemessen sind nicht mehr, sondern ALLE: 318 von 311 bzw. 322 von 315 bzw. 320 von 313 ueberholten lokalen Bearbeitungen werden geparkt, also praktisch jede. (Die kleine Ueberzahl ist erklaert: die Diagnose schnappt den Doc-Stand NACH dem Write, der Hebel nimmt seine Marke IM Write - dazwischen liegt eine Umordnung mehr.) WARUM DIE REGEL NICHT ZU RETTEN IST. Tor-Kollision und Fehlparkung sind am Doc-Stand NICHT unterscheidbar. Beide Male gilt: unser Text steht in der .md, und der Doc ist seit unserem Write vorausgelaufen. Verschieden ist allein die Reihenfolge - bei der Kollision liegt die Zustellung nach dem Vorlauf, bei der Fehlparkung davor -, und die traegt der Doc-Stand nicht. Ein Hebel, der nur den Doc-Stand befragt, muss beide gleich behandeln. DIE HASH-FRAGE IST GEGENSTANDSLOS. Die Akte verlangte, die Doc-Marke muesse ein Hash sein statt eines vollen Doc-Texts. Das ist eine Frage des Speichers, nicht der Entscheidung - ein Hash ist dieselbe Vergleichsregel in billiger. Er haette an keiner der gemessenen Zahlen etwas geaendert. EINE ZWEITE KORREKTUR AN DER AKTENLAGE. Der Satz "loest K.o.-1 nur in einer von drei Seed-Familien" beschrieb einen Bestand, der selbst 1/2/1 Grundtextzeilen verlor - den Stand vor T-04 und T-05. Heute steht WEG=0 schon im Bestand, in allen drei Familien und in beiden Armen. Der Satz ist damit gegenstandslos, nicht widerlegt. WO DIE MARKE UEBERALL VERALTET. Nicht an einer Stelle, sondern an elf: der Frist-Nachtrag (main.ts:1618 ohne Write-Back), der Parkplatz-Zweig (sync-handler.ts:1730-1738, writeBackMerged steigt an main.ts:943 aus), der nicht aufgeloeste Parkplatz in loadAndMerge (:1979-2002), der SidecarReadError nach erfolgtem Merge (:1959-1965), die Sweep-Schranke im Park-Modus (:1813-1825) und sechs Abbruchpfade. Alle liegen INNERHALB von pathQueue.run(notePath) und teilen sich den Schluessel mit dem Tor-Task. DAS INSTRUMENT, mit Gegenprobe. schnitte.mjs fuehrt die Warteschlange als Option (`warteschlange`), mehrfach.mjs als SPIKE_WARTESCHLANGE. Der Kalibrierungsarm 'aus' liefert zahlengleiche Zeilen mit der Messung vor dem Umbau (alle zwoelf Zellen). Der Arm 'echt' meldet BLIND, wenn der Doc nie vorausgelaufen ist; er tat es 306 bis 315 Mal je Zelle, und im Bestandsarm steht FEHLPARK bei 0 - das Instrument sieht die Lage und unterscheidet die Arme. Benutzt wird die ECHTE PathQueue aus src/, kein Nachbau. WAS DER ARM NICHT KANN: eine FELDRATE der Fehlparkung. Ob ein onRemoteYjsUpdate laeuft, waehrend der Nutzer speichert, haengt an Plattenlatenz und Sync-Intervall; gemessen ist die bedingte Groesse.
 
-*Beleg: docs/produktziel.md, 'Zwei Hebel wurden gebaut und gegeneinander gemessen' — nachlaufbar*
+*Beleg: obsidian-qollab-doku/sdd/runs/m06-warteschlange-20260815.log und m06-kalibrierung-20260815.log; spike/schnitt/schnitte.mjs (warteschlange), mehrfach.mjs (SPIKE_WARTESCHLANGE), hebel.mjs (installiereB) — nachlaufbar*
+
+### M-07 — Verbrauchsregel am Herkunftstor (Hebel C - ein gemerkter Stand gilt genau einmal als eigen)
+
+**Hypothese:** Ein eigener Write erzeugt GENAU EIN modify-Ereignis. Kommt fuer denselben gemerkten Stand ein zweites, kann es nicht mehr von unserem Write stammen - die Reihenfolge unterscheidet Tor-Kollision und Fehlparkung, wo der Doc-Stand es nicht kann (der Grund, an dem M-06 gefallen ist).
+
+**Verdikt:** offen · **2026-08-15**
+
+**Kennzahl:** Tor-Fehlurteile 388 auf 285, 454 auf 317, 405 auf 278 (-27 bis -31 %), aber in den Ergebnisgroessen kein Gewinn: Textverlust 86 auf 89, 103 auf 101, 88 auf 86  
+**Zellbasis:** 200 Seeds x 3 Seed-Familien (DET 7/42/99), N=4, gepaart, je einmal ohne und mit der echten PathQueue
+
+GEBAUT ALS NACHFOLGER VON M-06 und gemessen. Er ist der einzige Kandidat dieser Familie, der nicht am Doc-Stand haengt, sondern an der Reihenfolge - und genau daran ist M-06 gescheitert. ER SCHADET NICHT, und das unterscheidet ihn deutlich von M-06. Mit der echten PathQueue, gepaart: Textverlust 328 auf 313, 319 auf 313, 314 auf 324 (Summe 961 auf 950, -1,1 %), Divergenz 8 auf 9, 9 auf 11, 10 auf 8 - also unveraendert, waehrend M-06 sie auf 33, 31 und 41 trieb. Fehlparkungen 24, 29 und 26 gegen 318, 322 und 320 bei M-06: Faktor zwoelf weniger. WEG bleibt 0 in allen achtzehn Zellen. ER NUETZT ABER AUCH NICHT MESSBAR. Er senkt die Fehlurteile AM TOR um 27 bis 31 %, ohne dass das in den Ergebnisgroessen ankommt: Textverlust, Verdopplung und torKollision bleiben im Rauschen (torKollision 113 auf 116, 148 auf 140, 104 auf 98). Die Fehlurteile, die er blockiert, waren ueberwiegend die FOLGENLOSEN. Solange kein schaerferes Kriterium vorliegt, gibt es keinen Grund, ihn zu bauen. EINE VORAB-HYPOTHESE DIESER SESSION IST DABEI WIDERLEGT. Erwartet war, dass die Fehlurteile ueberwiegend an Staenden aus dem WRITE-BACK haengen - dessen modify-Ereignis unterdrueckt writingPaths (main.ts:951-970), sein Stand kann also nie verbraucht werden. Gemessen sind es 11 von 388, 11 von 454 und 11 von 405; 97 % stammen aus gewoehnlichen Nutzer-Writes. Warum die Verbrauchsregel davon nur rund ein Viertel erreicht, ist NICHT geklaert und bleibt offen. WOFUER DIESER APPARAT BLIND IST, ausdruecklich: Er erzeugt je Write genau EIN modify-Ereignis. Feuert Obsidian zwei, parkt die Regel das zweite - die einzige Schadensklasse des Kandidaten kann hier strukturell nicht auftreten. Diese Zahl gehoert an echtes Obsidian (r30), nicht in diesen Apparat. Wer M-07 ohne diese Messung baut, baut auf einer Null, die der Aufbau gar nicht anders liefern konnte.
+
+*Beleg: obsidian-qollab-doku/sdd/runs/m07-verbrauch-20260815.log; obsidian-qollab-doku/sdd/m06-pathqueue-2026-08-15.md §7; spike/schnitt/hebel.mjs installiereC — nachlaufbar*
 
 ### D-01 — Doc neu aufbauen (Weglassen)
 
@@ -712,6 +726,7 @@ Der Rest, der ohne Koordinator realistisch bleibt - den Fall sichtbar machen sta
 | `X-08` | Das verbliebene Rot in r14 mit T-08 als erklaert fuehren | gebrochen | nach dem Fix gefahren: r13-cdp PASS (15 gruen), r14-cdp unveraendert FAIL - kontrolle2-keine-duplikate 1/2/1, byte-identisch zum Vorlauf; Endtext 210 Zeichen vorher wie nachher, gegen 158 bei A | nachlaufbar |
 | `X-09` | Serienlauf ueber r13 hinaus - der Guard blockiert den Nachfolger | gebrochen | 4 der 8 Runner brechen mit 0 Asserts in 1 s ab (r14, r15, r16, r30); im Nachlauf ohne r13 dieselben vier PASS, zusammen 70 gruene Asserts | nachlaufbar |
 | `X-05` | Serienlauf ohne Entflaggen der Testvaults | gebrochen | 2 von 3 Runnern sterben nach 3 Asserts (r14-cdp, r15-cdp); mit H-TESTVAULT-FLAGS-WEG davor 23 bzw. 21 Asserts erreicht | nachlaufbar |
+| `X-10` | Den M-06-Gewinn aus dem synchronen Apparat als Produktwirkung fuehren | gebrochen | mit der echten PathQueue faellt der Gewinn auf null bis negativ — Textverlust 328 auf 345, 319 auf 320, 314 auf 343 — und die Divergenz steigt auf das Drei- bis Vierfache (33 statt 8) | nachlaufbar |
 | `X-03` | Messapparat ohne Herkunftstor (bis 2026-08-09) | überholt | zwei Drittel des Befunds 'Grundtextverlust ab drei Geraeten' waren Artefakt; N=3 Verlust 7,1 auf 0, Verdopplung 440 auf 58 | nachlaufbar |
 
 ### X-01 — Timeouts der Runner von 90 auf 240 s anheben
@@ -817,6 +832,19 @@ Der Guard verweigert den Kill mit "nicht als Testvault nachgewiesen: PID ... (oh
 Nach einem Lauf steht vault-b in obsidian.json auf open:true (Obsidian schreibt das Flag beim Beenden). H-START-CDP startet ohne Vault-Argument und holt alle so vermerkten Vaults hoch — B lief also, BEVOR der Aufbau zustellen konnte, und praegt dann eine eigene Inkarnation statt zu adoptieren. H-GUARD-SICHERUNG hilft nicht: Es entflaggt nur Vaults AUSSERHALB der Testwurzel. Gefangen hat es die Vorbedingungspruefung in H-SETUP-SHARED-CDP, die derselbe Umbau eingefuehrt hat. Ohne sie haetten beide Runner mit einem falsch aufgebauten Zustand weitergemessen und Duplikate gemeldet, die aus dem Aufbau stammen — als Produktbefund nicht von einem echten zu unterscheiden.
 
 *Beleg: runs/batterie-cdp.log gegen runs/batterie-cdp2.log; harness-cdp.ps1 H-TESTVAULT-FLAGS-WEG — nachlaufbar*
+
+### X-10 — Den M-06-Gewinn aus dem synchronen Apparat als Produktwirkung fuehren
+
+**Hypothese:** Der im Messapparat gemessene Textverlust-Gewinn von Hebel B (-33 bis -39 %) ist eine Eigenschaft des Hebels und traegt im Plugin genauso.
+
+**Verdikt:** gebrochen · **2026-08-15**
+
+**Kennzahl:** mit der echten PathQueue faellt der Gewinn auf null bis negativ — Textverlust 328 auf 345, 319 auf 320, 314 auf 343 — und die Divergenz steigt auf das Drei- bis Vierfache (33 statt 8)  
+**Zellbasis:** 200 Seeds x 3 Seed-Familien, N=4, gepaart; derselbe Apparat einmal mit und einmal ohne Warteschlange
+
+Der Apparat rief istEigen() UNMITTELBAR nach dem Write. Im Plugin liegt dazwischen die PathQueue: der modify-Handler ist fire-and-forget (main.ts:303), liest die Datei erst im Task (:312) und teilt sich den Schluessel mit onRemoteYjsUpdate (:236, :1720), der Frist-Uhr (:1618) und dem Startup-Sweep (:1356). Ein Hebel, der an den Doc-Stand bindet, KANN im synchronen Aufbau per Konstruktion nicht danebenliegen — der Apparat hat ihm die einzige Fehlerquelle weggenommen, die er hat. Das ist derselbe Fehlertyp wie X-03: nicht eine falsche Messung, sondern eine Lage, die der Apparat nicht erzeugen konnte. Zwoelfter Fall in diesem Projekt. Der Vorbehalt STAND in der Akte (M-06, seit 2026-08-09) und wurde sechs Tage lang zitiert, ohne gemessen zu werden — waehrend der Hebel im Folgeprompt als "der staerkste ungenutzte Hebel am Produkt" gefuehrt war. Dieselbe Signatur wie X-08: eine an EINER Lage gemessene Wirkung wurde fuer eine zweite, ungemessene mitbehauptet. EIN DRITTER ARM WURDE GEBAUT UND WIEDER ENTFERNT. 'zwang' sollte die obere Schranke liefern, indem es die anstehende Fremdzustellung vor JEDEN Tor-Task einreiht. Er ordnet aber nicht nur um, er zieht alle anstehende Fremdhistorie sofort vor und verschiebt damit das Szenario: der Bestand verlor darunter 352 statt 17 Zeilen (40 Seeds, DET 7), in BEIDEN Armen. Eine Schranke, die den Bestand um Faktor 20 verschlechtert, misst nicht mehr den Hebel. Auch der verbliebene Arm 'echt' ist NUR GEPAART zu lesen: er laesst den Transport die .md verschicken, bevor der Handler fertig ist, und ueberzeichnet damit ein Rennen, das im Feld Sekunden gegen Millisekunden steht.
+
+*Beleg: obsidian-qollab-doku/sdd/runs/m06-warteschlange-20260815.log (Kalibrierungsblock ws=aus gegen ws=echt); spike/schnitt/schnitte.mjs §warteschlange — nachlaufbar*
 
 ### X-03 — Messapparat ohne Herkunftstor (bis 2026-08-09)
 

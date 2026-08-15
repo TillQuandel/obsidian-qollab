@@ -4,8 +4,10 @@
 //
 // modus: 'zeichen' (Standard, = Produktivcode) | 'zeile' (HEBEL A: der Diff in
 //        `setContent` wird an Zeilengrenzen ausgerichtet) | 'tor' (HEBEL B:
-//        `istEigen` zusaetzlich an den Doc-Stand gebunden) | 'zeile+tor' (beide).
-//        Die Hebel selbst liegen in `hebel.mjs`.
+//        `istEigen` zusaetzlich an den Doc-Stand gebunden — am 2026-08-15 an der
+//        echten PathQueue GEFALLEN, siehe M-06) | 'verbrauch' (HEBEL C: ein
+//        gemerkter Stand darf genau einmal als eigen gelten). Kombinierbar mit
+//        '+'. Die Hebel selbst liegen in `hebel.mjs`.
 //
 // GEMESSEN WIRD, je Lauf und ueber alle Notizen:
 //   torKollision  ein per Transport GELIEFERTES .md passiert das Herkunftstor als
@@ -53,6 +55,18 @@ const MODUS = process.argv[6] ?? 'zeichen';
 // gesetzte Variablen misst also unveraendert die Lage aus `ergebnis-einbau-
 // 2026-08-10.txt`. Belegt durch Nachmessung derselben Zellen (siehe
 // `ergebnis-achsen-2026-08-10.txt`, Block „KALIBRIERUNG").
+// DIE WARTESCHLANGE (2026-08-15, `M-06`). 'aus' ist der bisherige Stand und
+// liefert zahlengleiche Zeilen — belegt im Kalibrierungsblock von
+// `m06-warteschlange-20260815.log`. 'echt' legt die echte `PathQueue` zwischen
+// `merke()` und `istEigen()` — nur GEPAART lesen, siehe schnitte.mjs.
+//
+// ACHTUNG, in beiden Warteschlangen-Modi NICHT VERWERTBAR: `torProbe`,
+// `davonEigen` und `torKollision` haengen an einem Flag, das um den TICK gesetzt
+// wird (`drainAktiv`, `ausSofort` unten). Der Tor-Task laeuft dort aber nicht
+// mehr im Tick, sondern in der Warteschlange — die Zaehler lesen sich dann als 0,
+// und diese Null ist ein Artefakt, kein Messwert. Sie werden deshalb als `n/v`
+// gedruckt statt als Zahl.
+const WS = process.env.SPIKE_WARTESCHLANGE ?? 'aus';
 const NOTES = Number(process.env.SPIKE_NOTES ?? 10);
 const BASELINES = Number(process.env.SPIKE_BASELINES ?? 8);
 const EDITS = Number(process.env.SPIKE_EDITS ?? 1);
@@ -67,6 +81,9 @@ const SEP = String.fromCharCode(0);
 const HEBEL = new Set(MODUS.split('+'));
 if (HEBEL.has('zeile')) H.installiereA(R, DMP);
 if (HEBEL.has('tor')) H.installiereB(R);
+// 'verbrauch' ist HEBEL C (siehe hebel.mjs). Er schliesst 'tor' nicht aus, aber
+// die Kombination ist nicht gemessen — wer sie faehrt, misst zwei Aenderungen.
+if (HEBEL.has('verbrauch')) H.installiereC(R);
 
 // --- Zaehlwerk --------------------------------------------------------------
 let z;
@@ -145,7 +162,7 @@ async function laufe(seed, detSeed) {
   const tr = new Transport({ settle: 10, delay: 20, jitter: 10, r, mdModus: MDMODUS });
   BASIS.clear();
   for (const n of sc.notes) BASIS.set(n.path, new Set(n.baseline.trim().split(NL)));
-  const devs = S.makeS0real(tr, sc);
+  const devs = S.makeS0real(tr, sc, { warteschlange: WS });
   for (const d of devs) {
     const origTick = d.onTick.bind(d);
     d.onTick = async (t, f) => {
@@ -179,16 +196,22 @@ async function laufe(seed, detSeed) {
     for (let k = 0; k < 35; k++) tr.step(devs);
     for (const d of devs) await d.poll();
   }
+  // Erst austrudeln lassen, dann werten: in den Warteschlangen-Modi ist der
+  // Tor-Task fire-and-forget, ein sofortiges `score` saehe einen halb gelaufenen
+  // Zustand. Ohne Warteschlange ist der Aufruf ein No-op.
+  for (const d of devs) await d.austrudeln?.();
   const rr = score(sc, devs);
   // Gegenprobe zum Tor-Hebel: parkt er am Ende alles weg? `parkOffen` > 0 hiesse,
   // ein Stand hat den Lauf nie erreicht; `torFremd` ist die Zahl der Parkvorgaenge.
   let parkOffen = 0, torFremd = 0, torEigen = 0;
   let yjsBytes = 0, yjsDateien = 0, yjsItems = 0;
+  const ws = { lokalRuf: 0, lokalUeberholt: 0, fehlpark: 0, lokalUeberschrieben: 0, falschEigen: 0, falschEigenNutzer: 0, falschEigenWriteBack: 0 };
   for (const d of devs) {
     const s = d.stats();
     parkOffen += s.parkOffen;
     torFremd += s.pfad.torFremd;
     torEigen += s.pfad.torEigen;
+    for (const k of Object.keys(ws)) ws[k] += s.pfad[k] ?? 0;
     yjsBytes += s.yjs?.bytes ?? 0;
     yjsDateien += s.yjs?.dateien ?? 0;
     yjsItems += s.yjs?.items ?? 0;
@@ -211,13 +234,14 @@ async function laufe(seed, detSeed) {
       console.log(`    nach = ${JSON.stringify(nachT).split('\\n').join('|')}`);
     }
   }
-  return { fehlend, rr, mehrfach, mehrfachKreuz, z, parkOffen, torFremd, torEigen, yjsBytes, yjsDateien, yjsItems };
+  return { fehlend, rr, mehrfach, mehrfachKreuz, z, parkOffen, torFremd, torEigen, yjsBytes, yjsDateien, yjsItems, ws };
 }
 
 let gWeg = 0, gMehr = 0, gMehrK = 0, gKreuz = 0, gErs = 0, gKoll = 0, gZu = 0;
 let gVerlust = 0, gVerdopp = 0, gDiv = 0, gTP = 0, gTPE = 0;
 let gPark = 0, gFremd = 0, gEigen = 0;
 let gYB = 0, gYD = 0, gYI = 0;
+const gWs = { lokalRuf: 0, lokalUeberholt: 0, fehlpark: 0, lokalUeberschrieben: 0, falschEigen: 0, falschEigenNutzer: 0, falschEigenWriteBack: 0 };
 const t0 = Date.now();
 for (let seed = VON; seed <= BIS; seed++) {
   const o = await laufe(seed, DET);
@@ -227,8 +251,14 @@ for (let seed = VON; seed <= BIS; seed++) {
   gTP += o.z.torProbe; gTPE += o.z.torProbeEigen;
   gPark += o.parkOffen; gFremd += o.torFremd; gEigen += o.torEigen;
   gYB += o.yjsBytes; gYD += o.yjsDateien; gYI += o.yjsItems;
+  for (const k of Object.keys(gWs)) gWs[k] += o.ws[k];
   if (o.z.kreuzend && process.env.ZEIGE_KREUZ)
     console.log(`  [kreuz] seed=${seed} kreuzend=${o.z.kreuzend} mehrfachKreuz=${o.mehrfachKreuz} WEG=${o.fehlend.length}`);
+  // Je-Seed-Ausgabe fuer die Kopplungsfrage „haengt Divergenz an der
+  // Fehlparkung?" — ohne sie waere die Gleichzeitigkeit beider Zahlen im
+  // Summenblock nicht von einer Kopplung zu unterscheiden.
+  if (process.env.ZEIGE_SEED)
+    console.log(`[seed] ${seed} div=${o.rr.divergent} fehlpark=${o.ws.fehlpark} ueberholt=${o.ws.lokalUeberholt} verlust=${o.rr.verlust}`);
   if (o.fehlend.length || o.mehrfachKreuz)
     console.log(
       `seed=${seed} WEG=${o.fehlend.length} mehrfachKreuz=${o.mehrfachKreuz} mehrfach=${o.mehrfach}` +
@@ -236,15 +266,30 @@ for (let seed = VON; seed <= BIS; seed++) {
       (o.fehlend.length ? `  ${o.fehlend.join(' ')}` : '')
     );
 }
+// Tick-gebundene Zaehler sind in den Warteschlangen-Modi Artefakte (siehe oben).
+const nv = (v) => (WS === 'aus' ? v : 'n/v');
 console.log(
   `== N=${N} DET=${DET} Seeds ${VON}..${BIS} modus=${MODUS}` +
-  ` [notizen=${NOTES} basis=${BASELINES} edits=${EDITS} md=${MDMODUS} diff=${process.env.QOLLAB_DIFF_MODUS ?? 'STANDARD'} patch=${process.env.SPIKE_PATCH ?? 'bestand'} s=${((Date.now() - t0) / 1000).toFixed(1)}]` +
+  ` [notizen=${NOTES} basis=${BASELINES} edits=${EDITS} md=${MDMODUS} ws=${WS} diff=${process.env.QOLLAB_DIFF_MODUS ?? 'STANDARD'} patch=${process.env.SPIKE_PATCH ?? 'bestand'} s=${((Date.now() - t0) / 1000).toFixed(1)}]` +
   `: WEG=${gWeg} mehrfachKreuz=${gMehrK}` +
-  ` mehrfach=${gMehr} kreuzend=${gKreuz} ersetzung=${gErs} torKollision=${gKoll} zustellungen=${gZu}` +
-  ` | verlust=${gVerlust} verdopp=${gVerdopp} div=${gDiv} | torProbe=${gTP} davonEigen=${gTPE} parkOffen=${gPark} torFremd=${gFremd} torEigen=${gEigen}` +
+  ` mehrfach=${gMehr} kreuzend=${gKreuz} ersetzung=${gErs} torKollision=${nv(gKoll)} zustellungen=${gZu}` +
+  ` | verlust=${gVerlust} verdopp=${gVerdopp} div=${gDiv} | torProbe=${nv(gTP)} davonEigen=${nv(gTPE)} parkOffen=${gPark} torFremd=${gFremd} torEigen=${gEigen}` +
+  ` | falschEigen=${gWs.falschEigen} davonNutzer=${gWs.falschEigenNutzer} davonWriteBack=${gWs.falschEigenWriteBack}` +
+  (WS === 'aus'
+    ? ''
+    : ` | fenster lokalRuf=${gWs.lokalRuf} ueberholt=${gWs.lokalUeberholt}` +
+      ` FEHLPARK=${gWs.fehlpark} ueberschrieben=${gWs.lokalUeberschrieben}` +
+      // Die Gegenprobe im Instrument: hat die Warteschlange ueberhaupt je
+      // umgeordnet? Ohne sie waere „FEHLPARK=0" von „das Fenster tritt hier gar
+      // nicht auf" nicht zu unterscheiden — der elfte blinde Messaufbau dieses
+      // Projekts waere sonst genau hier entstanden.
+      (gWs.lokalUeberholt === 0 ? ' [BLIND: Doc lief NIE vor]' : '')) +
   ` | yjsKB=${(gYB / 1024).toFixed(1)} yjsDateien=${gYD} yjsItems=${gYI}` +
   ` | ${PS.sondeZeile()}` +
   (HEBEL.has('tor')
     ? ` | hebelB ${Object.entries(H.bZaehler).map(([k, v]) => `${k}=${v}`).join(' ')}`
+    : '') +
+  (HEBEL.has('verbrauch')
+    ? ` | hebelC ${Object.entries(H.cZaehler).map(([k, v]) => `${k}=${v}`).join(' ')}`
     : '')
 );

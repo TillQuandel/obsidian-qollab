@@ -57,6 +57,7 @@ var require_obsidian_stub = __commonJS({
 var entry_neu_exports = {};
 __export(entry_neu_exports, {
   CrdtManager: () => CrdtManager,
+  PathQueue: () => PathQueue,
   SyncHandler: () => SyncHandler,
   WriteProvenance: () => WriteProvenance,
   decodeStateFile: () => decodeStateFile,
@@ -1982,6 +1983,76 @@ var WriteProvenance = class {
   }
 };
 
+// src/path-queue.ts
+var PathQueue = class {
+  constructor() {
+    this.tails = /* @__PURE__ */ new Map();
+  }
+  run(key, fn) {
+    const prev = this.tails.get(key) ?? Promise.resolve();
+    const result = prev.then(fn);
+    const tail = result.then(
+      () => {
+      },
+      () => {
+      }
+    );
+    this.tails.set(key, tail);
+    void tail.then(() => {
+      if (this.tails.get(key) === tail) this.tails.delete(key);
+    });
+    return result;
+  }
+  // Serialisiert über MEHRERE Keys gleichzeitig (Task 15 Fix C: der rename-Handler
+  // mutiert newPath-Zustand, muss aber auch oldPath halten, damit ein dort
+  // geparkter Task nicht parallel läuft).
+  //
+  // Alle Tails werden in EINEM Schritt genommen und gesetzt. Verschachtelte
+  // run-Aufrufe (`run(a, () => run(b, fn))`) leisten das NICHT: den zweiten Key
+  // belegen sie erst, wenn der Body startet — ein zwischenzeitlich eingereihter
+  // Task auf diesem Key zieht vorbei. Genau das ist der rename+delete-Race
+  // (Befund 4/7), und genau deshalb reicht Verschachteln hier nicht.
+  //
+  // Deadlock-frei — aber NICHT, weil es kein Hold-and-Wait gäbe (Review M-1). Das
+  // gibt es sehr wohl: der eigene Tail wird unten synchron auf allen Keys
+  // veröffentlicht, während oben noch auf die Vorgänger-Tails gewartet wird. Ein
+  // danach eingereihter Task blockiert also hinter einem Lock, dessen Halter es
+  // selbst noch nicht erworben hat — genau das ist hier gewollt (es schließt den
+  // rename+delete-Race).
+  //
+  // Tragfähig ist eine andere Begründung: Snapshot und Publikation der Tails
+  // liegen im SELBEN Tick, ohne dazwischenliegendes await. Deshalb zeigt jede
+  // Wartekante ausschließlich auf strikt FRÜHER gestartete Aufrufe; der
+  // Wait-for-Graph ist nach Aufrufzeit topologisch sortiert und kann keinen
+  // Zyklus enthalten. Wer hier ein `await` vor die `tails.set`-Schleife zieht,
+  // zerstört genau diese Eigenschaft.
+  //
+  // Sortiert wird für eine deterministische Reihenfolge, dedupliziert, damit ein
+  // doppelter Key nicht auf sich selbst wartet.
+  runAll(keys, fn) {
+    const unique = [...new Set(keys)].sort();
+    const prev = Promise.all(unique.map((k) => this.tails.get(k) ?? Promise.resolve()));
+    const result = prev.then(fn);
+    const tail = result.then(
+      () => {
+      },
+      () => {
+      }
+    );
+    for (const k of unique) this.tails.set(k, tail);
+    void tail.then(() => {
+      for (const k of unique) {
+        if (this.tails.get(k) === tail) this.tails.delete(k);
+      }
+    });
+    return result;
+  }
+  // Anzahl aktuell verfolgter Keys — nur für Leak-Assertions in Tests.
+  get size() {
+    return this.tails.size;
+  }
+};
+
 // tests/helpers/vault-mock.ts
 var import_obsidian = __toESM(require_obsidian_stub());
 function toArrayBuffer(data) {
@@ -2094,6 +2165,7 @@ function makeVaultMock() {
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   CrdtManager,
+  PathQueue,
   SyncHandler,
   WriteProvenance,
   decodeStateFile,

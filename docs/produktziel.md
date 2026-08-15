@@ -1056,6 +1056,35 @@ Einbau zu klären: Im echten Plugin liegt zwischen `merke()` und `istEigen()` da
 real mehr Fehlparkungen erzeugen als gemessen.** Und die Doc-Marke müsste ein Hash sein, kein
 voller Doc-Text (der Grund, aus dem `MAX_STAENDE = 1` gilt).
 
+> [!warning] Nachtrag 2026-08-15 — der Absatz oben ist überholt, B ist **gefallen** (`M-06`)
+> **Die Tabelle darüber vergleicht gegen einen Bestand, den es nicht mehr gibt.** Ihre Zeile
+> „Bestand" ist `modus=zeichen` vom 2026-08-09, also vor `T-04`, `T-05`, `T-07`, `T-08` und
+> `T-09`. Am heutigen Bundle nachgemessen liefern `zeichen` und `zeile` **zahlengleiche Zeilen**
+> — Hebel A ist eingebaut, der Spike-Prototyp bewirkt nichts mehr. Und **WEG = 0 steht schon im
+> Bestand**, in allen drei Seed-Familien: der Satz „löst K.o.-1 nur in einer von drei" beschrieb
+> einen Bestand, der selbst 1/2/1 Zeilen verlor, und ist gegenstandslos.
+>
+> **Der Vorbehalt war zu mild formuliert und ist jetzt gemessen.** Mit der **echten**
+> `PathQueue` zwischen `merke()` und `istEigen()` (200 Seeds × 3 Familien, N = 4, gepaart):
+>
+> | | Textverlust | Divergenz | überholt | fehlgeparkt |
+> | --- | --- | --- | --- | --- |
+> | Bestand | 328 / 319 / 314 | 8 / 9 / 10 | 307 / 306 / 306 | **0** |
+> | Hebel B | **345 / 320 / 343** | **33 / 31 / 41** | 311 / 315 / 313 | **318 / 322 / 320** |
+>
+> Der Gewinn ist **vollständig weg** — zweimal schlechter, einmal gleich —, die Divergenz
+> verdrei- bis vervierfacht sich, und es sind nicht „mehr" Fehlparkungen, sondern **praktisch
+> jede** überholte eigene Bearbeitung. Die Kopplung ist gemessen: von 25 Seeds mit mehr Divergenz
+> tragen 24 eine Fehlparkung, von 41 Seeds ohne Fehlparkung genau einer.
+>
+> **Warum die Regel nicht zu retten ist:** Tor-Kollision und Fehlparkung sind am Doc-Stand nicht
+> unterscheidbar — beide Male steht unser Text in der `.md` und der Doc ist seit unserem Write
+> vorausgelaufen. Verschieden ist nur die Reihenfolge von Zustellung und Vorlauf, und die trägt
+> der Doc-Stand nicht. **Die Hash-Frage erledigt sich damit**: ein Hash ist dieselbe
+> Vergleichsregel in billig, keine andere Entscheidung.
+>
+> Voller Bericht: `obsidian-qollab-doku/sdd/m06-pathqueue-2026-08-15.md`.
+
 Die beiden früher gemessenen Untervarianten (verschobener Fuzzy-Hunk in `patch_apply`; DELETE-Op
 über die Zeilengrenze) verschwinden mit dem Herkunftstor und sind an dieser dritten **nicht**
 beteiligt: `mergeForLocalDiff` liefert hier exakt den `.md`-Text zurück, es gibt keinen verschobenen

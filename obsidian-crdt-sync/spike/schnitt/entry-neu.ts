@@ -10,4 +10,10 @@ export { unionMerge, threeWayMerge, insertedTexts } from '../../src/text-merge';
 // dieser Klasse. Der Spike bildet das Tor nicht nach, sondern fuehrt denselben
 // Code — sonst misst man eine Nachbildung des Tors statt des Tors.
 export { WriteProvenance } from '../../src/write-provenance';
+// Die Warteschlange, die im Plugin ZWISCHEN `merke()` und `istEigen()` liegt
+// (main.ts:310 gegen die Umhuellung in write-provenance.ts:171-245). Der Apparat
+// hat sie bis 2026-08-15 nicht gefuehrt und verglich synchron — genau dort sitzt
+// der Unterschied, den `M-06` als ungeklaert fuehrt. Auch hier: dieselbe Klasse,
+// kein Nachbau.
+export { PathQueue } from '../../src/path-queue';
 export { makeVaultMock, toArrayBuffer } from '../../tests/helpers/vault-mock';

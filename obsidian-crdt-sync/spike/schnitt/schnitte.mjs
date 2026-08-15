@@ -140,7 +140,50 @@ function insertLine(text, token, pos) {
 // aendert sich nur, in welcher Datei ein Yjs-Update reist und wann diese Datei
 // zur Ruhe kommt. Jeder Unterschied im Ergebnis IST der Schnitt.
 // ===========================================================================
-export function makeS0real(transport, scenario, { layout = 'sidecar', rollTicks = 900 } = {}) {
+// `warteschlange` — DIE LUECKE, die `M-06` seit dem 2026-08-09 als ungeklaert
+// fuehrt. Im Plugin liegt zwischen `merke()` (write-provenance.ts:171-245, laeuft
+// im Adapter-Write) und `istEigen()` (main.ts:330) die `PathQueue`: der
+// modify-Handler ist fire-and-forget (main.ts:303, Obsidian awaitet ihn nicht),
+// liest die Datei erst INNERHALB der Warteschlange (main.ts:312) und teilt sich
+// den Schluessel mit `onRemoteYjsUpdate` (:236, :1720), der Frist-Uhr (:1618) und
+// dem Startup-Sweep (:1356). Jede dieser Aufgaben laesst den Doc vorlaufen; bei
+// `resolveParked` (sync-handler.ts:440-446) sogar OHNE .md-Write, die Schreibspur
+// erfaehrt davon also nichts. Im Apparat folgte der Vergleich bis hierher
+// synchron — ein Hebel, der an den Doc-Stand bindet, konnte dort per Konstruktion
+// nicht danebenliegen.
+//
+//   'aus'   (Standard) unveraenderte Reihenfolge. Die veroeffentlichten Zahlen
+//           bleiben reproduzierbar; belegt im Kalibrierungsblock von
+//           `m06-warteschlange-20260815.log`.
+//   'echt'  die ECHTE `PathQueue` an allen vier Stellen, Handler fire-and-forget
+//           wie im Plugin (Obsidian awaitet den modify-Handler nicht).
+//
+// WIE DIESER ARM ZU LESEN IST. Er verschiebt die ABSOLUTEN Zahlen beider Arme,
+// weil der Transport die `.md` verschicken kann, bevor der Handler fertig ist —
+// im Feld braucht ein Datei-Sync Sekunden und der Handler Millisekunden, das
+// Rennen ist hier also ueberzeichnet. Verwertbar ist er deshalb nur GEPAART:
+// beide Arme laufen unter derselben Ueberzeichnung, der Unterschied zwischen
+// ihnen gehoert dem Hebel. Genau so misst dieses Projekt seit `M-01`.
+//
+// Eine FELDRATE der Fehlparkung ist hier nicht zu gewinnen und wird nicht
+// behauptet: ob ein `onRemoteYjsUpdate` gerade laeuft, wenn der Nutzer speichert,
+// haengt an Plattenlatenz und Sync-Intervall. Gemessen wird die BEDINGTE Groesse
+// — wenn eine Umordnung eintritt, was tut der Hebel dann? Eine erfundene
+// Feldrate waere der zwoelfte blinde Messwert dieser Akte.
+//
+// Ein dritter Arm ('zwang': die anstehende Fremdzustellung vor JEDEN Tor-Task
+// einreihen) wurde gebaut und wieder entfernt. Er ordnet nicht bloss um, er zieht
+// alle anstehende Fremdhistorie sofort vor und verschiebt damit das Szenario: der
+// Grundtext-Bestand verlor damit 352 statt 17 Zeilen (40 Seeds, DET=7), in BEIDEN
+// Armen. Eine obere Schranke, die den Bestand um Faktor 20 verschlechtert, misst
+// nicht mehr den Hebel.
+export function makeS0real(
+  transport,
+  scenario,
+  { layout = 'sidecar', rollTicks = 900, warteschlange = 'aus' } = {}
+) {
+  if (warteschlange !== 'aus' && !R.PathQueue)
+    throw new Error('warteschlange verlangt R.PathQueue — Bundle ohne diesen Export (real.cjs)');
   return scenario.deviceIds.map((clientId) => {
     const vault = R.makeVaultMock();
     let segSeq = 0, segFrames = [], segStart = 0, dateien = 0;
@@ -213,6 +256,35 @@ export function makeS0real(transport, scenario, { layout = 'sidecar', rollTicks 
       // Herkunftstor (main.ts:329-335) und Frist-Uhr (main.ts:611-613/1613-1621).
       torRuf: 0, torEigen: 0, torFremd: 0, torGit: 0,
       uhrDurchlaeufe: 0, uhrTicks: 0, uhrAufgeloest: 0, uhrNachtrag: 0, sicherung: 0,
+      // --- Das Warteschlangen-Fenster (nur bei `warteschlange !== 'aus'`) ------
+      // lokalRuf   Tor-Aufrufe, die aus einem EIGENEN Tastendruck stammen und
+      //            deren Text beim Lesen im Task noch unveraendert dastand — nur
+      //            fuer die ist „fremd" ueberhaupt ein Fehlurteil.
+      // lokalUeberholt  davon: der Doc ist zwischen dem Einreihen und dem Lauf
+      //            des Tasks vorausgelaufen. DAS FENSTER. Bleibt es 0, hat das
+      //            Instrument die Lage nicht erzeugt und die Messung ist BLIND.
+      // fehlpark   davon: das Tor sagte „fremd". DIE FEHLPARKUNG.
+      // lokalUeberschrieben  der Text war beim Lesen nicht mehr der eigene (eine
+      //            Fremdzustellung hat die .md ueberschrieben) — Parken ist dort
+      //            RICHTIG und zaehlt nicht als Fehlurteil.
+      lokalRuf: 0, lokalUeberholt: 0, fehlpark: 0, lokalUeberschrieben: 0,
+      // Fehlurteil in der Gegenrichtung: ein per Transport GELIEFERTER Text
+      // passiert das Tor als „eigen". Aufgeschluesselt danach, woher der Stand
+      // stammt, mit dem er kollidiert — das entscheidet, ob eine Verbrauchsregel
+      // am Tor ihn ueberhaupt erreichen kann.
+      falschEigen: 0, falschEigenNutzer: 0, falschEigenWriteBack: 0,
+    };
+    // Eine Warteschlange JE GERAET — im Plugin ist jedes Geraet ein eigener
+    // Obsidian-Prozess mit eigener `PathQueue` (main.ts:140).
+    const q = warteschlange === 'aus' ? null : new R.PathQueue();
+    const offen = new Set();
+    const einreihen = (key, fn) => {
+      const p = q.run(key, fn).then(
+        () => offen.delete(p),
+        () => offen.delete(p)
+      );
+      offen.add(p);
+      return p;
     };
 
     // Jeder Schreibvorgang DIESES Prozesses laeuft ueber den Adapter — genau wie
@@ -220,7 +292,14 @@ export function makeS0real(transport, scenario, { layout = 'sidecar', rollTicks 
     // `DataAdapter.process`/`.write`). Vorher setzte der Spike `_textFiles`
     // direkt: fuer die Schreibspur war damit JEDER Stand fremd, auch der eigene
     // Tastendruck, und das Tor waere sofort im Dauerparken gelandet.
-    const schreibeMd = async (path, text) => {
+    // Woher stammt der zuletzt gemerkte Stand dieses Pfades? Der Unterschied ist
+    // fuer das Herkunftstor entscheidend: ein Write-Back laeuft unter
+    // `writingPaths` (main.ts:951-970), sein modify-Ereignis wird unterdrueckt,
+    // sein gemerkter Stand also NIE durch einen Tor-Aufruf verbraucht. Ein
+    // Nutzer-Write dagegen zieht genau ein Ereignis nach sich.
+    const letzteWriteHerkunft = new Map();
+    const schreibeMd = async (path, text, herkunft = 'nutzer') => {
+      letzteWriteHerkunft.set(path, herkunft);
       await vault.adapter.write(path, text);
       transport.write(clientId, path, text);
     };
@@ -238,7 +317,7 @@ export function makeS0real(transport, scenario, { layout = 'sidecar', rollTicks 
       if (merged === undefined || merged === erwartet) return;
       pfad.wbAngeboten++;
       if ((vault._textFiles.get(path) ?? '') !== erwartet) { pfad.wbAbgelehnt++; return; }
-      await schreibeMd(path, merged);
+      await schreibeMd(path, merged, 'writeback');
       pfad.wbGeschrieben++;
       handler.noteLocalDiffBase(path, merged);
       pfad.basisNachWb++;
@@ -253,15 +332,38 @@ export function makeS0real(transport, scenario, { layout = 'sidecar', rollTicks 
     // Szenario gibt es kein `.git/index.lock`, der Zweig ist also immer falsch —
     // `torGit` weist die Null aus, statt sie anzunehmen.
     const gitSchreibtGerade = async () => vault.adapter.exists('.git/index.lock');
-    const verarbeiteLokal = async (path, text) => {
+    const verarbeiteLokal = async (path, text, eigen, istZustellung = false) => {
       pfad.torRuf++;
+      // Buchhaltung des Warteschlangen-Fensters. `eigen` ist nur gesetzt, wenn
+      // der Task aus einem eigenen Tastendruck stammt; `eigen.text` ist, was
+      // dieses Geraet geschrieben hat, `eigen.doc` der Doc-Stand im Moment des
+      // Einreihens — also genau das, was `merke()` als Doc-Marke gesehen haette.
+      let bewertbar = false;
+      if (eigen !== undefined) {
+        if (text !== eigen.text) pfad.lokalUeberschrieben++;
+        else {
+          bewertbar = true;
+          pfad.lokalRuf++;
+          if (crdt.getContent(path) !== eigen.doc) pfad.lokalUeberholt++;
+        }
+      }
       if (spur !== null && !spur.istEigen(path, text)) {
         if (await gitSchreibtGerade()) pfad.torGit++;
         else {
           pfad.torFremd++;
+          // Der Text stammt nachweislich aus diesem Prozess und wird trotzdem
+          // geparkt: DIE FEHLPARKUNG.
+          if (bewertbar) pfad.fehlpark++;
           handler.parkForeign(path, text);
           return;
         }
+      }
+      // Das Tor sagt „eigen" fuer einen Text, der per Transport kam — eine
+      // Inhaltskollision, keine echte Eigenherkunft.
+      if (istZustellung) {
+        pfad.falschEigen++;
+        if (letzteWriteHerkunft.get(path) === 'writeback') pfad.falschEigenWriteBack++;
+        else pfad.falschEigenNutzer++;
       }
       pfad.torEigen++;
       const merged = await handler.applyLocalContent(path, text);
@@ -312,7 +414,21 @@ export function makeS0real(transport, scenario, { layout = 'sidecar', rollTicks 
       async userEdit(path, token, pos) {
         const neu = insertLine(vault._textFiles.get(path) ?? '', token, pos);
         await schreibeMd(path, neu);
-        await verarbeiteLokal(path, neu);
+        if (q === null) {
+          await verarbeiteLokal(path, neu);
+          return;
+        }
+        // main.ts:302-344. Drei Eigenschaften, die der inline-Aufruf oben nicht
+        // hat: der Handler wird NICHT abgewartet (Obsidian awaitet ihn nicht),
+        // er liest die Datei erst im Task (main.ts:312), und er teilt sich den
+        // Schluessel mit jeder anderen Doc-Mutation dieses Pfades.
+        const docBeimEinreihen = crdt.getContent(path);
+        einreihen(path, () =>
+          verarbeiteLokal(path, vault._textFiles.get(path) ?? '', {
+            text: neu,
+            doc: docBeimEinreihen,
+          })
+        );
       },
       receiveFile(path, bytes) {
         if (path.endsWith('.md')) {
@@ -336,10 +452,19 @@ export function makeS0real(transport, scenario, { layout = 'sidecar', rollTicks 
           }
       },
       _sofort: [],
+      // Alle eingereihten, noch nicht gelaufenen Tasks abwarten. Im Plugin tut das
+      // niemand — die Ereignisschleife erledigt es. Der Apparat braucht den Punkt
+      // nur vor dem Auswerten, sonst zaehlte er einen halb gelaufenen Zustand.
+      async austrudeln() {
+        while (offen.size) await Promise.all([...offen]);
+      },
       async onTick(t, final) {
         while (this._sofort.length) {
           const p = this._sofort.shift();
-          await verarbeiteLokal(p, vault._textFiles.get(p));
+          // Fremd geliefert: derselbe modify-Handler, dieselbe Warteschlange —
+          // aber kein `eigen`, das Parken ist hier der gewollte Ausgang.
+          if (q === null) await verarbeiteLokal(p, vault._textFiles.get(p), undefined, true);
+          else einreihen(p, () => verarbeiteLokal(p, vault._textFiles.get(p) ?? '', undefined, true));
         }
         if (layout === 'segment' && (final || t - segStart >= rollTicks)) {
           segStart = t;
@@ -353,7 +478,10 @@ export function makeS0real(transport, scenario, { layout = 'sidecar', rollTicks 
         await this.onTick(transport.tick);
         for (const note of [...pendingHistory]) {
           pendingHistory.delete(note);
-          await fremdZustellung(note);
+          // main.ts:236 / :1720 — auch der Waechter geht ueber die Warteschlange,
+          // und auch er wird von seinem Intervall nicht abgewartet.
+          if (q === null) await fremdZustellung(note);
+          else einreihen(note, () => fremdZustellung(note));
         }
         // --- main.ts:611-613 / 1613-1621 die FRIST-UHR ------------------------
         // Ein Tick ist ein Durchlauf von SCAN_INTERVAL_MS (30 s) — dieselbe
@@ -373,7 +501,10 @@ export function makeS0real(transport, scenario, { layout = 'sidecar', rollTicks 
         // sind beide nur an der Deckungsfrage zu unterscheiden; sie wird hier
         // NACHGERECHNET, nicht nachgebaut: der Aufruf selbst bleibt unberuehrt.
         pfad.uhrDurchlaeufe++;
-        for (const note of handler.parkedPaths()) {
+        // main.ts:1614-1621 — `tickParkedNotes` reiht JEDE geparkte Notiz einzeln
+        // ein. Die Beobachtung ringsum wandert mit in den Task, sonst laege sie
+        // ausserhalb der Serialisierung und maesse einen anderen Zustand.
+        const uhrTask = async (note) => {
           pfad.uhrTicks++;
           const geparkterText = handler.parkedText(note);
           const docVorher = crdt.getContent(note);
@@ -382,6 +513,10 @@ export function makeS0real(transport, scenario, { layout = 'sidecar', rollTicks 
             if (R.unionMerge(geparkterText, docVorher) === docVorher) pfad.uhrAufgeloest++;
             else pfad.uhrNachtrag++;
           }
+        };
+        for (const note of handler.parkedPaths()) {
+          if (q === null) await uhrTask(note);
+          else einreihen(note, () => uhrTask(note));
         }
       },
       currentText: (path) => vault._textFiles.get(path) ?? '',
