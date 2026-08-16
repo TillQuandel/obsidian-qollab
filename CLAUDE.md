@@ -2,12 +2,17 @@
 
 ## Zuerst lesen
 
-**`obsidian-qollab-doku/sdd/folgeprompt-aktuell.md`** (privates Repo) — der Übergabe-Prompt der
-letzten Session: Stand (Commit, Testzahl), der offene Auftrag, die **Sperrliste** (was gemessen
-gefallen ist, mit Zahl und Grund) und die Harness-Fallstricke. **Als Erstes lesen** — er verhindert,
-dass eine neue Session Kandidaten durchprobiert, die schon mehrfach gefallen sind. Ältere Stände
-liegen datiert daneben (`folgeprompt-<datum>.md`) und sind Historie. Wer eine Session abschließt,
-**überschreibt sie** (siehe deren Schlussabschnitt).
+**`obsidian-qollab-doku/sdd/folgeprompt-aktuell.md`** (privates Repo) — **die Regie der Session.**
+Stand (Commit, Testzahl), der offene Auftrag, die **Sperrliste** (was gemessen gefallen ist, mit
+Zahl und Grund), die Harness-Fallstricke — **und seit dem 2026-08-16 die Besetzung**: §4.0 sagt,
+wer welchen Auftragspunkt ausführt, was an einen Subagenten geht, was Codex gegenliest und was
+ausschließlich Till darf; §4.5 legt die Abnahme fest und listet, was nie delegiert wird.
+
+**Als Erstes lesen** — er verhindert zweierlei: dass eine neue Session Kandidaten durchprobiert,
+die schon mehrfach gefallen sind, und dass sie Arbeit delegiert, die niemand delegieren darf
+(Messdesign, Verdikte, Realtest-Start, Push). Ältere Stände liegen datiert daneben
+(`folgeprompt-<datum>.md`) und sind Historie. Wer eine Session abschließt, **überschreibt sie** —
+und **besetzt dabei neu, statt die Besetzung zu löschen** (siehe deren Schlussabschnitt).
 
 > **Der Verweis zeigte bis zum 2026-08-12 auf `.superpowers/sdd/folgeprompt-aktuell.md` — und damit
 > ins Leere.** Er wurde am 2026-08-11 um 21:05 eingetragen, als `.superpowers/sdd/` seit dem Umzug
